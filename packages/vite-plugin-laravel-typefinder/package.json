@@ -45,6 +45,9 @@
     "files": [
         "dist"
     ],
+    "publishConfig": {
+        "access": "public"
+    },
     "author": "Pentacore <contact@pentacore.se>",
     "bugs": {
         "url": "https://github.com/pentacore/Laravel-Typefinder/issues"
