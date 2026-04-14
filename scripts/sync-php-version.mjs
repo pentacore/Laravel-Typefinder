@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const SEMVER = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
-const CONST_RE = /public const VERSION = '[^']*';/;
+const CONST_RE = /public const string VERSION = '[^']*';/;
 
 export function syncPhpVersion({ file, version }) {
     if (!SEMVER.test(version)) {
@@ -13,7 +13,7 @@ export function syncPhpVersion({ file, version }) {
     if (!CONST_RE.test(src)) {
         throw new Error(`VERSION constant not found in ${file}`);
     }
-    const next = src.replace(CONST_RE, `public const VERSION = '${version}';`);
+    const next = src.replace(CONST_RE, `public const string VERSION = '${version}';`);
     writeFileSync(file, next);
 }
 
