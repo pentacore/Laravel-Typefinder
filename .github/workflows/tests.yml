@@ -50,9 +50,6 @@ jobs:
       - name: Run tests
         run: vendor/bin/phpunit --log-junit "phpunit-P${{ matrix.php }}-L${LARAVEL_SLUG}.xml"
 
-      - name: Generate .d.ts against workbench
-        run: vendor/bin/testbench typefinder:generate || true
-
       - name: Upload JUnit
         if: always()
         uses: actions/upload-artifact@v4
@@ -66,8 +63,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: generated-dts-P${{ matrix.php }}-L${{ env.LARAVEL_SLUG }}
-          path: workbench/resources/js/**
-          if-no-files-found: warn
+          path: workbench/resources/js/types/**
+          if-no-files-found: error
 
   pint:
     runs-on: ubuntu-latest
