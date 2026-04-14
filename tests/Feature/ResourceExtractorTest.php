@@ -20,17 +20,17 @@ use function Orchestra\Testbench\workbench_path;
 
 final class ResourceExtractorTest extends TestCase
 {
-    private ResourceExtractor $extractor;
+    private ResourceExtractor $resourceExtractor;
 
     protected function setUp(): void
     {
         parent::setUp();
-        $this->extractor = new ResourceExtractor;
+        $this->resourceExtractor = new ResourceExtractor;
     }
 
     public function test_tier_1_explicit_shape(): void
     {
-        $result = $this->extractor->extract(PostResource::class);
+        $result = $this->resourceExtractor->extract(PostResource::class);
 
         $this->assertSame('shape', $result['shape']['kind']);
         $this->assertSame('number', $result['shape']['fields']['id']);
@@ -39,7 +39,7 @@ final class ResourceExtractorTest extends TestCase
 
     public function test_tier_2_model_extension(): void
     {
-        $result = $this->extractor->extract(AdminUserResource::class);
+        $result = $this->resourceExtractor->extract(AdminUserResource::class);
 
         $this->assertSame('model', $result['shape']['kind']);
         $this->assertSame(User::class, $result['shape']['model']);
@@ -49,7 +49,7 @@ final class ResourceExtractorTest extends TestCase
 
     public function test_tier_3_name_convention_matches(): void
     {
-        $result = $this->extractor->extract(UserResource::class);
+        $result = $this->resourceExtractor->extract(UserResource::class);
 
         $this->assertSame('model', $result['shape']['kind']);
         $this->assertSame(User::class, $result['shape']['model']);
@@ -59,14 +59,14 @@ final class ResourceExtractorTest extends TestCase
 
     public function test_tier_3_name_convention_miss_returns_null(): void
     {
-        $result = $this->extractor->extract(OrphanResource::class);
+        $result = $this->resourceExtractor->extract(OrphanResource::class);
 
         $this->assertNull($result);
     }
 
     public function test_typefinder_ignore_skips(): void
     {
-        $result = $this->extractor->extract(LegacyResource::class);
+        $result = $this->resourceExtractor->extract(LegacyResource::class);
 
         $this->assertNull($result);
     }
@@ -75,8 +75,8 @@ final class ResourceExtractorTest extends TestCase
     {
         // InvalidResource is tagged #[TypefinderIgnore] so directory scans stay clean.
         // To exercise the validation branch, remove the ignore from the fixture.
-        $rc = new ReflectionClass(InvalidResource::class);
-        if ($rc->getAttributes(TypefinderIgnore::class) !== []) {
+        $reflectionClass = new ReflectionClass(InvalidResource::class);
+        if ($reflectionClass->getAttributes(TypefinderIgnore::class) !== []) {
             $this->markTestSkipped(
                 'InvalidResource is tagged TypefinderIgnore so extract() returns null before validation. '
                 .'To exercise the mutex error, remove the ignore tag from the fixture and re-run.',
@@ -86,13 +86,13 @@ final class ResourceExtractorTest extends TestCase
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessageMatches('/mutually exclusive/i');
 
-        $this->extractor->extract(InvalidResource::class);
+        $this->resourceExtractor->extract(InvalidResource::class);
     }
 
     public function test_extract_from_directory_warns_on_orphan(): void
     {
         $warned = [];
-        $results = $this->extractor->extractFromDirectory(
+        $results = $this->resourceExtractor->extractFromDirectory(
             workbench_path('app/Http/Resources'),
             onExtract: null,
             onWarn: function (string $cls, \Throwable $throwable) use (&$warned): void {

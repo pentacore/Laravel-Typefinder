@@ -11,8 +11,8 @@ final class HelpersRenderTest extends TestCase
 {
     public function test_emits_all_seven_response_helpers(): void
     {
-        $renderer = new TypeScriptRenderer;
-        $output = $renderer->renderHelpers();
+        $typeScriptRenderer = new TypeScriptRenderer;
+        $output = $typeScriptRenderer->renderHelpers();
 
         $this->assertStringContainsString('export type Wrapped<T> = { data: T };', $output);
         $this->assertStringContainsString('export type WrappedCollection<T> = { data: T[] };', $output);

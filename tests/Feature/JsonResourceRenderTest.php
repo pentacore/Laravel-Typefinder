@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Http\Resources\AdminUserResource;
+use App\Http\Resources\PostResource;
 use App\Http\Resources\UserResource;
 use App\Models\User;
 use Pentacore\Typefinder\Renderers\TypeScriptRenderer;
@@ -13,11 +15,11 @@ final class JsonResourceRenderTest extends TestCase
 {
     public function test_renders_tier_1_explicit_shape(): void
     {
-        $renderer = new TypeScriptRenderer;
+        $typeScriptRenderer = new TypeScriptRenderer;
 
         $resource = [
             'name' => 'PostResource',
-            'fqcn' => 'App\\Http\\Resources\\PostResource',
+            'fqcn' => PostResource::class,
             'shape' => [
                 'kind' => 'shape',
                 'fields' => [
@@ -29,7 +31,7 @@ final class JsonResourceRenderTest extends TestCase
             ],
         ];
 
-        $output = $renderer->renderResource(
+        $output = $typeScriptRenderer->renderResource(
             $resource,
             [],
             [],
@@ -46,11 +48,11 @@ final class JsonResourceRenderTest extends TestCase
 
     public function test_renders_tier_2_model_extension_with_omit_and_extend(): void
     {
-        $renderer = new TypeScriptRenderer;
+        $typeScriptRenderer = new TypeScriptRenderer;
 
         $resource = [
             'name' => 'AdminUserResource',
-            'fqcn' => 'App\\Http\\Resources\\AdminUserResource',
+            'fqcn' => AdminUserResource::class,
             'shape' => [
                 'kind' => 'model',
                 'model' => User::class,
@@ -59,7 +61,7 @@ final class JsonResourceRenderTest extends TestCase
             ],
         ];
 
-        $output = $renderer->renderResource(
+        $output = $typeScriptRenderer->renderResource(
             $resource,
             [['name' => 'User', 'fqcn' => User::class]],
             [],
@@ -72,11 +74,11 @@ final class JsonResourceRenderTest extends TestCase
 
     public function test_renders_tier_2_with_empty_omit_skips_omit_wrapper(): void
     {
-        $renderer = new TypeScriptRenderer;
+        $typeScriptRenderer = new TypeScriptRenderer;
 
         $resource = [
             'name' => 'UserResource',
-            'fqcn' => 'App\\Http\\Resources\\UserResource',
+            'fqcn' => UserResource::class,
             'shape' => [
                 'kind' => 'model',
                 'model' => User::class,
@@ -85,7 +87,7 @@ final class JsonResourceRenderTest extends TestCase
             ],
         ];
 
-        $output = $renderer->renderResource(
+        $output = $typeScriptRenderer->renderResource(
             $resource,
             [['name' => 'User', 'fqcn' => User::class]],
             [],
@@ -99,11 +101,11 @@ final class JsonResourceRenderTest extends TestCase
 
     public function test_renders_tier_2_with_extend_only(): void
     {
-        $renderer = new TypeScriptRenderer;
+        $typeScriptRenderer = new TypeScriptRenderer;
 
         $resource = [
             'name' => 'AdminUserResource',
-            'fqcn' => 'App\\Http\\Resources\\AdminUserResource',
+            'fqcn' => AdminUserResource::class,
             'shape' => [
                 'kind' => 'model',
                 'model' => User::class,
@@ -112,7 +114,7 @@ final class JsonResourceRenderTest extends TestCase
             ],
         ];
 
-        $output = $renderer->renderResource(
+        $output = $typeScriptRenderer->renderResource(
             $resource,
             [['name' => 'User', 'fqcn' => User::class]],
             [],

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Pentacore\Typefinder\Renderers;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Http\Resources\Json\JsonResource;
 
 class TypeScriptRenderer
 {
@@ -433,23 +434,23 @@ class TypeScriptRenderer
             $lines = [];
             foreach ($shape['fields'] as $fieldName => $type) {
                 $resolved = $this->resolveAnyTypeString((string) $type, $allModels, $allEnums, $allResources, $imports, $resource['fqcn']);
-                $lines[] = "  {$fieldName}: {$resolved};";
+                $lines[] = sprintf('  %s: %s;', $fieldName, $resolved);
             }
 
             return $this->assembleResourceFile($imports, "export type {$name} = {\n".implode("\n", $lines)."\n};\n");
         }
 
         $modelShort = $this->resolveModelName($shape['model'], $allModels);
-        $imports[] = "import type { {$modelShort} } from '../models';";
+        $imports[] = sprintf("import type { %s } from '../models';", $modelShort);
 
-        $body = "export type {$name} = ";
+        $body = sprintf('export type %s = ', $name);
 
         $omit = $shape['omit'];
         $extend = $shape['extend'];
 
         if ($omit !== []) {
-            $omitUnion = implode(' | ', array_map(fn (string $field): string => "'{$field}'", $omit));
-            $body .= "Omit<{$modelShort}, {$omitUnion}>";
+            $omitUnion = implode(' | ', array_map(fn (string $field): string => sprintf("'%s'", $field), $omit));
+            $body .= sprintf('Omit<%s, %s>', $modelShort, $omitUnion);
         } else {
             $body .= $modelShort;
         }
@@ -458,8 +459,9 @@ class TypeScriptRenderer
             $parts = [];
             foreach ($extend as $fieldName => $type) {
                 $resolved = $this->resolveAnyTypeString((string) $type, $allModels, $allEnums, $allResources, $imports, $resource['fqcn']);
-                $parts[] = "{$fieldName}: {$resolved}";
+                $parts[] = sprintf('%s: %s', $fieldName, $resolved);
             }
+
             $body .= ' & { '.implode('; ', $parts).' }';
         }
 
@@ -559,10 +561,10 @@ TS;
         array &$imports,
         ?string $selfFqcn = null,
     ): string {
-        if (class_exists($type) && is_subclass_of($type, \Illuminate\Http\Resources\Json\JsonResource::class)) {
+        if (class_exists($type) && is_subclass_of($type, JsonResource::class)) {
             $short = $this->resolveResourceName($type, $allResources);
             if ($type !== $selfFqcn) {
-                $imports[] = "import type { {$short} } from './{$short}';";
+                $imports[] = sprintf("import type { %s } from './%s';", $short, $short);
             }
 
             return $short;
@@ -576,9 +578,9 @@ TS;
      */
     protected function resolveResourceName(string $fqcn, array $allResources): string
     {
-        foreach ($allResources as $resource) {
-            if ($resource['fqcn'] === $fqcn) {
-                return $resource['name'];
+        foreach ($allResources as $allResource) {
+            if ($allResource['fqcn'] === $fqcn) {
+                return $allResource['name'];
             }
         }
 

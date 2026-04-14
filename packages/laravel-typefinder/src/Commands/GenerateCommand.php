@@ -159,7 +159,7 @@ class GenerateCommand extends Command
 
                 $onResource = fn (string $cls) => $this->debugLine('parsing category=resources class='.$cls, $useJson, $useDebug);
                 $onResourceWarn = function (string $cls, \Throwable $throwable) use ($useJson): void {
-                    $message = "skipped {$cls}: ".$throwable->getMessage();
+                    $message = sprintf('skipped %s: ', $cls).$throwable->getMessage();
                     $this->warnings[] = $message;
                     if (! $useJson) {
                         $this->warn('[typefinder] '.$message);
@@ -238,13 +238,10 @@ class GenerateCommand extends Command
 
             $this->writeHelpers($typeScriptRenderer, $outputPath, $useJson, $useDebug);
             $categories[] = 'helpers';
-
-            if ($categories !== []) {
-                $barrel = $typeScriptRenderer->renderTopLevelBarrel($categories);
-                File::ensureDirectoryExists($outputPath);
-                $wrote = $this->writeIfChanged($outputPath.'/index.d.ts', $barrel);
-                $this->files[] = ['path' => 'index.d.ts', 'written' => $wrote];
-            }
+            $barrel = $typeScriptRenderer->renderTopLevelBarrel($categories);
+            File::ensureDirectoryExists($outputPath);
+            $wrote = $this->writeIfChanged($outputPath.'/index.d.ts', $barrel);
+            $this->files[] = ['path' => 'index.d.ts', 'written' => $wrote];
 
             if (! $useCheck && config('typefinder.gitignore_generated', true)) {
                 $this->ensureGitignored($outputPath, $useJson, $useDebug);

@@ -20,39 +20,39 @@ class ResourceExtractor
      */
     public function extract(string $resourceClass): ?array
     {
-        $reflection = new ReflectionClass($resourceClass);
+        $reflectionClass = new ReflectionClass($resourceClass);
 
-        if (! $reflection->isSubclassOf(JsonResource::class)) {
+        if (! $reflectionClass->isSubclassOf(JsonResource::class)) {
             return null;
         }
 
-        if ($reflection->getAttributes(TypefinderIgnore::class, ReflectionAttribute::IS_INSTANCEOF) !== []) {
+        if ($reflectionClass->getAttributes(TypefinderIgnore::class, ReflectionAttribute::IS_INSTANCEOF) !== []) {
             return null;
         }
 
-        $attribute = $this->getAttribute($reflection);
+        $attribute = $this->getAttribute($reflectionClass);
 
-        if ($attribute !== null && $attribute->shape !== [] && $attribute->model !== null) {
+        if ($attribute instanceof TypefinderResource && $attribute->shape !== [] && $attribute->model !== null) {
             throw new \RuntimeException(
-                "TypefinderResource on {$resourceClass}: `shape` and `model` are mutually exclusive.",
+                sprintf('TypefinderResource on %s: `shape` and `model` are mutually exclusive.', $resourceClass),
             );
         }
 
-        if ($attribute !== null && $attribute->shape !== []) {
+        if ($attribute instanceof TypefinderResource && $attribute->shape !== []) {
             return [
-                'name' => $reflection->getShortName(),
+                'name' => $reflectionClass->getShortName(),
                 'fqcn' => $resourceClass,
                 'shape' => ['kind' => 'shape', 'fields' => $attribute->shape],
             ];
         }
 
-        if ($attribute !== null && $attribute->model !== null) {
+        if ($attribute instanceof TypefinderResource && $attribute->model !== null) {
             if (! class_exists($attribute->model) || ! is_subclass_of($attribute->model, Model::class)) {
                 return null;
             }
 
             return [
-                'name' => $reflection->getShortName(),
+                'name' => $reflectionClass->getShortName(),
                 'fqcn' => $resourceClass,
                 'shape' => [
                     'kind' => 'model',
@@ -63,7 +63,7 @@ class ResourceExtractor
             ];
         }
 
-        $short = $reflection->getShortName();
+        $short = $reflectionClass->getShortName();
         if (str_ends_with($short, 'Resource')) {
             $modelShort = substr($short, 0, -strlen('Resource'));
             $modelFqcn = $this->resolveModelFqcn($modelShort);
@@ -98,7 +98,11 @@ class ResourceExtractor
 
         foreach ($finder as $file) {
             $className = $this->resolveClassName($file->getRealPath());
-            if ($className === null || ! class_exists($className)) {
+            if ($className === null) {
+                continue;
+            }
+
+            if (! class_exists($className)) {
                 continue;
             }
 
@@ -126,6 +130,7 @@ class ResourceExtractor
 
                     continue;
                 }
+
                 $results[] = $entry;
             } catch (Throwable $throwable) {
                 if ($onWarn !== null) {
@@ -137,9 +142,9 @@ class ResourceExtractor
         return $results;
     }
 
-    protected function getAttribute(ReflectionClass $reflection): ?TypefinderResource
+    protected function getAttribute(ReflectionClass $reflectionClass): ?TypefinderResource
     {
-        $attrs = $reflection->getAttributes(TypefinderResource::class, ReflectionAttribute::IS_INSTANCEOF);
+        $attrs = $reflectionClass->getAttributes(TypefinderResource::class, ReflectionAttribute::IS_INSTANCEOF);
 
         return $attrs === [] ? null : $attrs[0]->newInstance();
     }
@@ -154,6 +159,7 @@ class ResourceExtractor
             if (! is_subclass_of($class, Model::class)) {
                 continue;
             }
+
             if ((new ReflectionClass($class))->getShortName() === $shortName) {
                 return $class;
             }
