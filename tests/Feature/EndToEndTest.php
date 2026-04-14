@@ -60,7 +60,7 @@ class EndToEndTest extends TestCase
         $this->assertStringContainsString('export type Post = {', $postContent);
         // Enum cast
         $this->assertStringContainsString('status: PostStatus;', $postContent);
-        // HasTypeOverrides: metadata should be Record<string, string>
+        // #[TypefinderOverrides]: metadata should be Record<string, string>
         $this->assertStringContainsString('Record<string, string>', $postContent);
         // Relationships
         $this->assertStringContainsString('user?: User | null;', $postContent);

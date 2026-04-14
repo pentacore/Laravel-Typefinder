@@ -23,7 +23,7 @@ php artisan typefinder:generate --debug
 
 ### What gets generated
 
-- **Models** (`app/Models/*`) → `{output_path}/models/<Name>.d.ts`. Respects `$hidden` / `$visible`. Uses `$casts` plus DB schema. Relationships are emitted as optional fields. Use the `\Pentacore\Typefinder\Concerns\HasTypeOverrides` trait on a model to override a field's TypeScript type or add virtual fields.
+- **Models** (`app/Models/*`) → `{output_path}/models/<Name>.d.ts`. Respects `$hidden` / `$visible`. Uses `$casts` plus DB schema. Relationships are emitted as optional fields. Use `#[\Pentacore\Typefinder\Attributes\TypefinderOverrides([...])]` on the model class to override a field's TypeScript type or add virtual fields, and `#[\Pentacore\Typefinder\Attributes\TypefinderWriteShape(...)]` to tune Create/Update shapes.
 - **Enums** (`app/Enums/*`) → `{output_path}/enums/<Name>.d.ts`. Backed enums only. String union for string-backed, integer union for int-backed.
 - **Form Requests** (`app/Http/Requests/*`) → `{output_path}/requests/<Name>.d.ts`. Extracted from `rules()`. Supports `Rule::enum()`, `Rule::in()`, `Rule::anyOf()`, `confirmed`, nested `a.b` keys, `a.*` wildcards.
 - **Pivots** — auto-derived from `belongsToMany` / `morphToMany` relationships.

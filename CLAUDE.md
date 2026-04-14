@@ -16,7 +16,7 @@ Both are versioned in lockstep by semantic-release.
 ├── packages/
 │   ├── laravel-typefinder/src/     PHP source (namespace Pentacore\Typefinder\*)
 │   │   ├── Commands/               typefinder:generate artisan command
-│   │   ├── Concerns/               opt-in traits (HasTypeOverrides, HasWriteShapeContract)
+│   │   ├── Attributes/             class-level attributes (TypefinderOverrides, TypefinderWriteShape, TypefinderPage)
 │   │   ├── Extractors/             Model / Enum / Request AST→metadata
 │   │   ├── Renderers/              TypeScriptRenderer emits the .d.ts strings
 │   │   └── Resolvers/              column / cast / morph resolvers
@@ -72,15 +72,12 @@ Examples:
 
 ## Per-model contracts
 
-Two opt-in contracts for model-level customization, detected via `method_exists` (so using the matching trait is optional documentation, not required):
+Two class-level attributes for model-level customization, read via reflection:
 
-- `HasTypeOverrides::typeOverrides(): array<string, string>` — override the TS type for specific columns.
-- `HasWriteShapeContract`:
-  - `typefinderServerFilled(): array` — extra columns omitted from Create shape.
-  - `typefinderRespectMassAssignment(): ?bool` — override global `respect_mass_assignment`.
-  - `typefinderImmutableOnUpdate(): array` — extra columns excluded from Update shape.
+- `#[TypefinderOverrides(['col' => 'TSType'])]` — override the TS type for specific columns (or add virtual ones).
+- `#[TypefinderWriteShape(serverFilled: [...], respectMassAssignment: null, immutableOnUpdate: [...])]` — tune the Create/Update companion shapes per model.
 
-Workbench fixtures (`workbench/app/Models/Article.php`, `Product.php`, `Invoice.php`) demonstrate these and should be kept working.
+Workbench fixtures (`workbench/app/Models/Post.php` for overrides, `Invoice.php` for write-shape, `Article.php`/`Product.php` for `$fillable`/`$guarded`) demonstrate the intended usage.
 
 ## Releases
 
