@@ -213,6 +213,68 @@ class TypeScriptRenderer
     }
 
     /**
+     * Render the consolidated pages.d.ts content.
+     *
+     * @param  list<array{component: string, props: array<string, string>, optional: list<string>}>  $pages
+     * @param  list<array>  $allModels
+     * @param  list<array>  $allEnums
+     */
+    public function renderPages(array $pages, array $allModels, array $allEnums): string
+    {
+        $imports = [];
+        $entries = [];
+
+        foreach ($pages as $page) {
+            $propLines = [];
+            foreach ($page['props'] as $name => $type) {
+                $resolved = $this->resolvePagePropType((string) $type, $allModels, $allEnums, $imports);
+                $optional = in_array($name, $page['optional'], true) ? '?' : '';
+                $propLines[] = "{$name}{$optional}: {$resolved}";
+            }
+
+            $entries[] = "  '{$page['component']}': { ".implode('; ', $propLines).' };';
+        }
+
+        $imports = array_values(array_unique($imports));
+        sort($imports);
+
+        $output = self::FILE_HEADER."\n";
+        if (! empty($imports)) {
+            $output .= implode("\n", $imports)."\n\n";
+        }
+        $output .= "export type PageProps = {\n";
+        $output .= implode("\n", $entries)."\n";
+        $output .= "};\n\n";
+        $output .= "export type PageName = keyof PageProps;\n";
+
+        return $output;
+    }
+
+    /**
+     * @param  list<array>  $allModels
+     * @param  list<array>  $allEnums
+     * @param  list<string>  $imports
+     */
+    protected function resolvePagePropType(string $type, array $allModels, array $allEnums, array &$imports): string
+    {
+        if (class_exists($type) && is_subclass_of($type, \Illuminate\Database\Eloquent\Model::class)) {
+            $short = $this->resolveModelName($type, $allModels);
+            $imports[] = "import type { {$short} } from './models';";
+
+            return $short;
+        }
+
+        if (enum_exists($type)) {
+            $short = $this->resolveEnumName($type, $allEnums);
+            $imports[] = "import type { {$short} } from './enums';";
+
+            return $short;
+        }
+
+        return $type;
+    }
+
+    /**
      * Render a request to a .d.ts file content string.
      *
      * @param  list<array>  $allEnums
