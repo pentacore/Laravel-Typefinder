@@ -1,10 +1,28 @@
 {
-    "name": "laravel-typefinder/monorepo",
-    "description": "Monorepo for laravel-typefinder and its Vite plugin.",
-    "type": "project",
+    "name": "pentacore/laravel-typefinder",
+    "description": "Auto-generate TypeScript type definitions from Laravel Models, Enums, Casts, and Requests.",
+    "version": "1.1.0",
+    "type": "library",
     "license": "MIT",
+    "keywords": ["php", "laravel", "typescript", "types", "models", "enums"],
+    "homepage": "https://github.com/pentacore/laravel-typefinder",
+    "authors": [
+        {
+            "name": "Martin Claesson",
+            "role": "Maintainer"
+        }
+    ],
+    "support": {
+        "issues": "https://github.com/pentacore/laravel-typefinder/issues",
+        "source": "https://github.com/pentacore/laravel-typefinder"
+    },
     "require": {
-        "php": "^8.3"
+        "php": "^8.3",
+        "illuminate/console": "^11.0|^12.0|^13.0",
+        "illuminate/database": "^11.0|^12.0|^13.0",
+        "illuminate/filesystem": "^11.0|^12.0|^13.0",
+        "illuminate/support": "^11.0|^12.0|^13.0",
+        "illuminate/validation": "^11.0|^12.0|^13.0"
     },
     "require-dev": {
         "laravel/pint": "^1.21",
@@ -21,6 +39,13 @@
         "psr-4": {
             "App\\": "workbench/app/",
             "Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Pentacore\\Typefinder\\TypefinderServiceProvider"
+            ]
         }
     },
     "config": {

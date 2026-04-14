@@ -22,7 +22,7 @@
         "package.json",
         "packages/vite-plugin-laravel-typefinder/package.json",
         "packages/laravel-typefinder/src/Version.php",
-        "packages/laravel-typefinder/composer.json"
+        "composer.json"
       ],
       "message": "chore(release): ${nextRelease.version}\n\n${nextRelease.notes}"
     }],

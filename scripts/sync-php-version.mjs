@@ -37,7 +37,7 @@ if (isMain) {
         process.exit(1);
     }
     const phpFile = resolve(process.cwd(), 'packages/laravel-typefinder/src/Version.php');
-    const composerFile = resolve(process.cwd(), 'packages/laravel-typefinder/composer.json');
+    const composerFile = resolve(process.cwd(), 'composer.json');
     syncPhpVersion({ file: phpFile, version });
     syncComposerVersion({ file: composerFile, version });
     console.log(`synced ${phpFile} and ${composerFile} → ${version}`);
