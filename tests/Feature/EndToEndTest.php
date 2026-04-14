@@ -136,18 +136,8 @@ class EndToEndTest extends TestCase
         $this->assertDirectoryDoesNotExist($this->outputPath.'/requests');
     }
 
-    public function test_write_shapes_are_not_emitted_by_default(): void
+    public function test_write_shapes_are_emitted_by_default(): void
     {
-        $this->artisan('typefinder:generate')->assertSuccessful();
-
-        $this->assertFileDoesNotExist($this->outputPath.'/models/UserCreate.d.ts');
-        $this->assertFileDoesNotExist($this->outputPath.'/models/UserUpdate.d.ts');
-    }
-
-    public function test_write_shapes_are_emitted_when_enabled(): void
-    {
-        config(['typefinder.models.emit_write_shapes' => true]);
-
         $this->artisan('typefinder:generate')->assertSuccessful();
 
         $this->assertFileExists($this->outputPath.'/models/User.d.ts');
@@ -160,10 +150,19 @@ class EndToEndTest extends TestCase
         $this->assertStringContainsString("export type { UserUpdate } from './UserUpdate';", $barrel);
     }
 
+    public function test_write_shapes_can_be_disabled(): void
+    {
+        config(['typefinder.models.emit_write_shapes' => false]);
+
+        $this->artisan('typefinder:generate')->assertSuccessful();
+
+        $this->assertFileExists($this->outputPath.'/models/User.d.ts');
+        $this->assertFileDoesNotExist($this->outputPath.'/models/UserCreate.d.ts');
+        $this->assertFileDoesNotExist($this->outputPath.'/models/UserUpdate.d.ts');
+    }
+
     public function test_write_shapes_respect_per_model_contract(): void
     {
-        config(['typefinder.models.emit_write_shapes' => true]);
-
         $this->artisan('typefinder:generate')->assertSuccessful();
 
         $create = File::get($this->outputPath.'/models/InvoiceCreate.d.ts');
