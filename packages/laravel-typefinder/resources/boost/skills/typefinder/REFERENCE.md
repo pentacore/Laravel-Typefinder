@@ -131,7 +131,7 @@ export type Comment<T extends Post | Video = Post | Video> = {
 
 When multiple sources could provide a type for a model attribute, the following priority order applies (highest first):
 
-1. `typeOverrides()` from `HasTypeOverrides` trait
+1. `#[TypefinderOverrides([...])]` attribute on the model class
 2. Cast resolution (via `HasTypeDefinition` interface or built-in map)
 3. Enum cast auto-detection (BackedEnum subclass → enum type reference)
 4. Relationship introspection

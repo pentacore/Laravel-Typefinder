@@ -117,8 +117,8 @@ This scans all configured directories, resolves types, and writes `.d.ts` files 
         "pivots": 1
     },
     "files": [
-        { "path": "resources/js/types/models/Post.d.ts", "written": true },
-        { "path": "resources/js/types/models/User.d.ts", "written": false }
+        { "path": "resources/js/typefinder/models/Post.d.ts", "written": true },
+        { "path": "resources/js/typefinder/models/User.d.ts", "written": false }
     ],
     "warnings": [
         "Unknown cast type 'App\\Casts\\FooCast' — defaulting to unknown"
@@ -138,7 +138,7 @@ This scans all configured directories, resolves types, and writes `.d.ts` files 
 ### Output structure
 
 ```
-resources/js/types/
+resources/js/typefinder/
 ├── models/
 │   ├── Post.d.ts
 │   ├── User.d.ts
@@ -248,30 +248,49 @@ export type UserRolePivot = {
 };
 ```
 
-## Model trait: HasTypeOverrides
+## Model attribute: `#[TypefinderOverrides]`
 
-Use this trait to manually override inferred types or add virtual fields (e.g. accessor-only attributes):
+Apply at class level to manually override inferred types or add virtual fields (e.g. accessor-only attributes):
 
 ```php
-use Pentacore\Typefinder\Concerns\HasTypeOverrides;
+use Pentacore\Typefinder\Attributes\TypefinderOverrides;
 
-class Post extends Model
-{
-    use HasTypeOverrides;
-
-    public function typeOverrides(): array
-    {
-        return [
-            // Override an inferred type
-            'metadata' => 'Record<string, string>',
-            // Add a virtual/accessor-only field
-            'full_title' => 'string',
-        ];
-    }
-}
+#[TypefinderOverrides([
+    // Override an inferred type
+    'metadata' => 'Record<string, string>',
+    // Add a virtual/accessor-only field
+    'full_title' => 'string',
+])]
+class Post extends Model {}
 ```
 
-`typeOverrides()` has the highest priority in the type resolution chain — it always wins over cast, column, or relationship inference.
+`#[TypefinderOverrides]` has the highest priority in the type resolution chain — it always wins over cast, column, or relationship inference.
+
+## Model attribute: `#[TypefinderWriteShape]`
+
+Tune the generated `ModelCreate` / `ModelUpdate` companion types for a specific model:
+
+```php
+use Pentacore\Typefinder\Attributes\TypefinderWriteShape;
+
+#[TypefinderWriteShape(
+    serverFilled: ['reference'],           // extra fields omitted from Create
+    respectMassAssignment: false,          // ignore $fillable/$guarded for this model
+    immutableOnUpdate: ['customer_id'],    // extra fields excluded from Update
+)]
+class Invoice extends Model {}
+```
+
+## Skip a class: `#[TypefinderIgnore]`
+
+Class-level marker. Works on models, enums, form requests, and controllers. Any class tagged with this attribute is skipped by the generator:
+
+```php
+use Pentacore\Typefinder\Attributes\TypefinderIgnore;
+
+#[TypefinderIgnore]
+class LegacyModel extends Model {}
+```
 
 ## Custom casts: HasTypeDefinition
 

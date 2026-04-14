@@ -35,7 +35,7 @@ The stdout will be a single JSON object. Parse it. Relevant fields:
 
 - If any frontend code imports from the regenerated types, verify it still type-checks. Run the project's TypeScript check (typically `tsc --noEmit` or the build script).
 - If `warnings` is non-empty, mention them to the user — an unknown cast type usually means an intentional custom cast needs a `HasTypeDefinition` implementation.
-- Do not manually edit files under the output path (default `resources/js/types/`) — they are regenerated on each run and edits will be lost. Use `HasTypeOverrides` on the model instead.
+- Do not manually edit files under the output path (default `resources/js/typefinder/`) — they are regenerated on each run and edits will be lost. Apply `#[TypefinderOverrides([...])]` on the model class instead.
 
 ## Debug mode
 

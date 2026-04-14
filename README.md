@@ -38,13 +38,13 @@ export default defineConfig({
 php artisan typefinder:generate
 ```
 
-Types are written to `resources/js/types/` by default. The Vite plugin re-runs generation automatically on HMR file changes.
+Types are written to `resources/js/typefinder/` by default. The Vite plugin re-runs generation automatically on HMR file changes.
 
 ## Documentation
 
 Full documentation for each package:
 
-- [packages/laravel-typefinder/README.md](packages/laravel-typefinder/README.md) — configuration, all features, CLI flags, `HasTypeOverrides`, `HasTypeDefinition`
+- [packages/laravel-typefinder/README.md](packages/laravel-typefinder/README.md) — configuration, all features, CLI flags, `#[TypefinderOverrides]`, `#[TypefinderWriteShape]`, `#[TypefinderPage]`, `#[TypefinderIgnore]`, `HasTypeDefinition`
 - [packages/vite-plugin-laravel-typefinder/README.md](packages/vite-plugin-laravel-typefinder/README.md) — plugin options, debounce behaviour, alternative install from vendor
 
 ## Development
