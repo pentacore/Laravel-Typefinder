@@ -1,3 +1,9 @@
+## [3.0.1](https://github.com/pentacore/Laravel-Typefinder/compare/v3.0.0...v3.0.1) (2026-04-14)
+
+### Bug Fixes
+
+* publish npm package via OIDC trusted publisher instead of NPM_TOKEN ([7cb6344](https://github.com/pentacore/Laravel-Typefinder/commit/7cb63441bddbe8f52ee3eb7d68dda3f096d8ac5a))
+
 ## [3.0.0](https://github.com/pentacore/Laravel-Typefinder/compare/v2.0.0...v3.0.0) (2026-04-14)
 
 ### ⚠ BREAKING CHANGES
