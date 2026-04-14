@@ -17,6 +17,7 @@ use Pentacore\Typefinder\Renderers\TypeScriptRenderer;
 use Pentacore\Typefinder\Resolvers\CastTypeResolver;
 use Pentacore\Typefinder\Resolvers\ColumnTypeResolver;
 use Pentacore\Typefinder\Resolvers\MorphToResolver;
+use Pentacore\Typefinder\TypefinderRegistry;
 use ReflectionAttribute;
 use ReflectionClass;
 
@@ -45,7 +46,7 @@ class GenerateCommand extends Command
         $useCheck = (bool) $this->option('check');
 
         $outputPath = $useCheck
-            ? sys_get_temp_dir().'/typefinder-check-'.uniqid()
+            ? sys_get_temp_dir().'/typefinder-check-'.uniqid('', true)
             : $realOutputPath;
 
         $this->files = [];
@@ -86,7 +87,7 @@ class GenerateCommand extends Command
                 $castOverrides = config('typefinder.casts.type_map', []);
                 $modelExtractor = new ModelExtractor(
                     new ColumnTypeResolver,
-                    new CastTypeResolver($castOverrides),
+                    new CastTypeResolver($castOverrides, app(TypefinderRegistry::class)),
                 );
 
                 $paths = config('typefinder.models.paths', []);

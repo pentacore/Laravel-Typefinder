@@ -14,7 +14,8 @@ Trigger this skill when any of the following change:
 - Backed PHP enums under `app/Enums` (new case, new enum)
 - FormRequest `rules()` methods
 - Migrations that change column types, add/remove columns, or change nullability
-- Custom Cast classes that implement `Pentacore\Typefinder\Contracts\HasTypeDefinition`
+- Custom Cast classes tagged with `#[\Pentacore\Typefinder\Attributes\TypefinderCast('…')]`, or registered via `Typefinder::registerCast(...)` for third-party casts
+- JsonResource subclasses (`app/Http/Resources/*`), controller actions tagged `#[TypefinderPage]` (opt-in), broadcast events (opt-in)
 
 ## How to run
 
@@ -34,7 +35,7 @@ The stdout will be a single JSON object. Parse it. Relevant fields:
 ## After running
 
 - If any frontend code imports from the regenerated types, verify it still type-checks. Run the project's TypeScript check (typically `tsc --noEmit` or the build script).
-- If `warnings` is non-empty, mention them to the user — an unknown cast type usually means an intentional custom cast needs a `HasTypeDefinition` implementation.
+- If `warnings` is non-empty, mention them to the user — an unknown cast type usually means the cast needs a `#[TypefinderCast('…')]` attribute or a `Typefinder::registerCast(...)` entry in a service provider.
 - Do not manually edit files under the output path (default `resources/js/typefinder/`) — they are regenerated on each run and edits will be lost. Apply `#[TypefinderOverrides([...])]` on the model class instead.
 
 ## Debug mode

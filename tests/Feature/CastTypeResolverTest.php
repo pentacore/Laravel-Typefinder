@@ -95,7 +95,7 @@ final class CastTypeResolverTest extends TestCase
         $this->assertSame(PostTag::class, $result['enumCollection']);
     }
 
-    public function test_has_type_definition_cast(): void
+    public function test_typefinder_cast_attribute(): void
     {
         $this->assertSame('{ theme: string; notifications: boolean }', $this->castTypeResolver->resolve(SettingsCast::class));
     }

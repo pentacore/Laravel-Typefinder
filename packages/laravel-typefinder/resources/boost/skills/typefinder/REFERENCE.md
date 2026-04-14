@@ -49,7 +49,7 @@ The `CastTypeResolver` maps Laravel cast strings to TypeScript types. All entrie
 | `AsCollection` | `unknown[]` |
 | `AsStringable` | `string` |
 | `AsEnumCollection` | inferred enum type, e.g. `PostStatus[]` |
-| Unknown custom cast without `HasTypeDefinition` | `unknown` (warning emitted) |
+| Unknown custom cast with no `#[TypefinderCast]` attribute and no `Typefinder::registerCast(...)` entry | `unknown` (warning emitted) |
 
 ### Enum cast auto-detection
 
@@ -132,7 +132,7 @@ export type Comment<T extends Post | Video = Post | Video> = {
 When multiple sources could provide a type for a model attribute, the following priority order applies (highest first):
 
 1. `#[TypefinderOverrides([...])]` attribute on the model class
-2. Cast resolution (via `HasTypeDefinition` interface or built-in map)
+2. Cast resolution (in order: `Typefinder::registerCast(...)` runtime map → `casts.type_map` config → `#[TypefinderCast]` attribute → built-in name/class map)
 3. Enum cast auto-detection (BackedEnum subclass → enum type reference)
 4. Relationship introspection
 5. DB schema column types (lowest priority)

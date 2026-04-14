@@ -4,9 +4,10 @@ namespace App\Casts;
 
 use Illuminate\Contracts\Database\Eloquent\CastsAttributes;
 use Illuminate\Database\Eloquent\Model;
-use Pentacore\Typefinder\Contracts\HasTypeDefinition;
+use Pentacore\Typefinder\Attributes\TypefinderCast;
 
-class SettingsCast implements CastsAttributes, HasTypeDefinition
+#[TypefinderCast('{ theme: string; notifications: boolean }')]
+class SettingsCast implements CastsAttributes
 {
     public function get(Model $model, string $key, mixed $value, array $attributes): mixed
     {
@@ -16,10 +17,5 @@ class SettingsCast implements CastsAttributes, HasTypeDefinition
     public function set(Model $model, string $key, mixed $value, array $attributes): mixed
     {
         return json_encode($value);
-    }
-
-    public static function typeDefinition(): string
-    {
-        return '{ theme: string; notifications: boolean }';
     }
 }

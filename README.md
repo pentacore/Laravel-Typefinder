@@ -1,6 +1,6 @@
 # Laravel Typefinder
 
-Laravel Typefinder auto-generates TypeScript type definitions (`.d.ts` files) from your Laravel application's Models, Enums, Form Requests, and Casts. It introspects your database schema, cast declarations, validation rules, and relationships to produce accurate, always-fresh types — no manual maintenance required.
+Laravel Typefinder auto-generates TypeScript type definitions (`.d.ts` files) from your Laravel application. It introspects Eloquent models, backed enums, Form Requests, API Resources, Inertia controllers, broadcast events, and pivot tables to produce accurate, always-fresh types — no manual maintenance required. Ships with opt-in attributes (`#[TypefinderOverrides]`, `#[TypefinderWriteShape]`, `#[TypefinderResource]`, `#[TypefinderPage]`, `#[TypefinderBroadcast]`, `#[TypefinderCast]`, `#[TypefinderIgnore]`) for the cases where static inference needs a nudge, plus a runtime facade for registering types for third-party casts.
 
 ## Packages
 
@@ -44,7 +44,7 @@ Types are written to `resources/js/typefinder/` by default. The Vite plugin re-r
 
 Full documentation for each package:
 
-- [packages/laravel-typefinder/README.md](packages/laravel-typefinder/README.md) — configuration, all features, CLI flags, `#[TypefinderOverrides]`, `#[TypefinderWriteShape]`, `#[TypefinderPage]`, `#[TypefinderIgnore]`, `HasTypeDefinition`
+- [packages/laravel-typefinder/README.md](packages/laravel-typefinder/README.md) — configuration, every generated category (models / enums / requests / resources / pivots / pages / broadcasting / helpers), the full attribute reference, the third-party cast registry, and CLI flags (`--check`, `--json`, `--debug`).
 - [packages/vite-plugin-laravel-typefinder/README.md](packages/vite-plugin-laravel-typefinder/README.md) — plugin options, debounce behaviour, alternative install from vendor
 
 ## Development

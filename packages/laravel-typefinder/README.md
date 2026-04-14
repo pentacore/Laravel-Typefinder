@@ -1,12 +1,12 @@
 # laravel-typefinder
 
-Auto-generate TypeScript type definitions from your Laravel application's Models, Enums, Form Requests, and Casts.
+Auto-generate TypeScript type definitions from your Laravel application's Models, Enums, Form Requests, API Resources, Inertia pages, and broadcast events.
 
-Laravel Typefinder introspects your database schema, `$casts` declarations, validation rules, and Eloquent relationships to emit accurate `.d.ts` files into your frontend source tree. Types stay in sync without any manual maintenance — run the artisan command or let the Vite plugin do it on every HMR change.
+Laravel Typefinder introspects your database schema, `$casts` declarations, validation rules, Eloquent relationships, controller attributes, and broadcast events to emit accurate `.d.ts` files into your frontend source tree. Types stay in sync without any manual maintenance — run the artisan command or let the Vite plugin do it on every HMR change.
 
 ## Requirements
 
-- PHP 8.2+
+- PHP 8.3+
 - Laravel 11, 12, or 13
 
 > `Rule::anyOf()` support in Form Request generation requires Laravel 13+. The package works on older Laravel versions — that rule is simply not specially handled.
@@ -27,67 +27,6 @@ php artisan vendor:publish --tag=typefinder-config
 
 This copies `config/typefinder.php` into your application's `config/` directory.
 
-## Configuration
-
-```php
-// config/typefinder.php
-return [
-    /*
-     | The directory where generated .d.ts files will be written.
-     */
-    'output_path' => resource_path('js/types'),
-
-    'models' => [
-        'enabled' => true,
-
-        // Directories to scan for Eloquent model classes.
-        'paths' => [app_path('Models')],
-
-        // Whether to introspect relationship methods and include them in types.
-        'include_relationships' => true,
-    ],
-
-    'enums' => [
-        'enabled' => true,
-
-        // Directories to scan for backed PHP enum classes.
-        'paths' => [app_path('Enums')],
-    ],
-
-    'requests' => [
-        'enabled' => true,
-
-        // Directories to scan for FormRequest classes.
-        'paths' => [app_path('Http/Requests')],
-
-        // When true, nested validation keys (e.g. "address.street") are extracted
-        // into separate named types instead of inline object literals.
-        'extract_nested' => false,
-    ],
-
-    'casts' => [
-        // Override or extend the built-in cast → TypeScript type mappings.
-        // Example: 'datetime' => 'Date',
-        'type_map' => [],
-    ],
-];
-```
-
-### Key options
-
-| Key | Default | Description |
-|---|---|---|
-| `output_path` | `resource_path('js/types')` | Root directory for all generated `.d.ts` files |
-| `models.enabled` | `true` | Enable/disable model type generation |
-| `models.paths` | `[app_path('Models')]` | Directories to scan for Eloquent models |
-| `models.include_relationships` | `true` | Introspect relationship methods and include optional relationship fields |
-| `enums.enabled` | `true` | Enable/disable enum type generation |
-| `enums.paths` | `[app_path('Enums')]` | Directories to scan for backed PHP enums |
-| `requests.enabled` | `true` | Enable/disable form request type generation |
-| `requests.paths` | `[app_path('Http/Requests')]` | Directories to scan for FormRequest classes |
-| `requests.extract_nested` | `false` | Extract nested object types into separate named types |
-| `casts.type_map` | `[]` | Extend or override the built-in cast→TS type map |
-
 ## Usage
 
 ### Generating types
@@ -96,149 +35,104 @@ return [
 php artisan typefinder:generate
 ```
 
-This scans all configured directories, resolves types, and writes `.d.ts` files to `output_path`. Only files whose content has changed are rewritten; stale generated files are pruned automatically.
+Scans configured directories, resolves types, and writes `.d.ts` files to `output_path`. Only files whose content has changed are rewritten; stale generated files are pruned automatically. The `output_path` is added to your project `.gitignore` on first run.
 
 ### Flags
 
 | Flag | Description |
 |---|---|
-| `--debug` | Print line-oriented diagnostic output prefixed with `[typefinder]` |
-| `--json` | Output a single JSON object to stdout (machine-readable, used by the Claude Code skill and Vite plugin) |
-
-### JSON output shape
-
-```json
-{
-    "success": true,
-    "counts": {
-        "models": 3,
-        "enums": 2,
-        "requests": 2,
-        "pivots": 1
-    },
-    "files": [
-        { "path": "resources/js/typefinder/models/Post.d.ts", "written": true },
-        { "path": "resources/js/typefinder/models/User.d.ts", "written": false }
-    ],
-    "warnings": [
-        "Unknown cast type 'App\\Casts\\FooCast' — defaulting to unknown"
-    ],
-    "errors": []
-}
-```
-
-- `success` — `false` if a fatal error occurred; read `errors` for details
-- `counts` — number of types generated per category
-- `files[].written` — `true` if the file was actually rewritten; `false` means the type was unchanged
-- `warnings` — non-fatal notices (e.g. unknown custom cast)
-- `errors` — fatal errors that prevented generation
+| `--check` | Dry-run: generate into a temp directory, compare against the on-disk output, exit non-zero if they differ. Useful as a CI gate. |
+| `--debug` | Print line-oriented diagnostic output prefixed with `[typefinder]`. Includes per-class parsing lines so you can pinpoint a failing class. |
+| `--json` | Output a single JSON object to stdout (machine-readable, used by the Vite plugin). |
 
 ## What gets generated
 
-### Output structure
+Every run produces a single tree under `output_path` (default `resources/js/typefinder/`). The categories below are each gated by config — most are default-on, the ones that depend on optional packages are opt-in.
 
 ```
 resources/js/typefinder/
-├── models/
-│   ├── Post.d.ts
-│   ├── User.d.ts
+├── index.d.ts                  top-level barrel — re-exports every category
+├── helpers.d.ts                generic response wrappers (always emitted)
+├── models/                     Eloquent models
+│   ├── User.d.ts               contains User, UserCreate, UserUpdate
 │   └── index.d.ts
-├── enums/
+├── enums/                      backed PHP enums
 │   ├── PostStatus.d.ts
 │   └── index.d.ts
-├── requests/
+├── requests/                   FormRequest classes
 │   ├── StorePostRequest.d.ts
 │   └── index.d.ts
-├── pivots/
+├── pivots/                     derived from belongsToMany / morphToMany
 │   ├── UserRolePivot.d.ts
 │   └── index.d.ts
-└── index.d.ts
+├── resources/                  JsonResource subclasses
+│   ├── UserResource.d.ts
+│   └── index.d.ts
+├── pages.d.ts                  Inertia PageProps map (opt-in)
+└── broadcasting.d.ts           Echo channel + event types (opt-in)
 ```
 
 ### Models
 
-Types represent the default JSON-serializable shape of an Eloquent model before API Resource transformation — the shape you get when you return a model directly from a controller or `toArray()`.
+Types represent the default JSON-serializable shape of an Eloquent model — the shape you get when you return a model directly from a controller or `toArray()`. Relationships are optional (present only when eagerly loaded). `$hidden`/`$visible` are respected.
+
+Each model file also contains `{Model}Create` and `{Model}Update` companion types derived from the same metadata (unless you disable `emit_write_shapes` in config). Create shapes omit server-filled fields (primary key, timestamps); Update shapes make every field optional and drop immutable columns.
 
 ```typescript
-import { PostStatus } from '../enums';
-import { Comment } from './Comment';
-import { User } from './User';
-import { Tag } from './Tag';
-import { TaggablePivot } from '../pivots';
+import type { PostStatus } from '../enums';
+import type { User } from './User';
 
 export type Post = {
   id: number;
   title: string;
-  body: string;
-  user_id: number;
   status: PostStatus;
   published_at: string | null;
-  metadata: Record<string, unknown>;
-  created_at: string;
-  updated_at: string;
-
-  // Relationships (optional — only present when eagerly loaded)
   user?: User | null;
-  comments?: Comment[];
-  tags?: (Tag & { pivot: TaggablePivot })[];
+};
+
+export type PostCreate = {
+  title: string;
+  status: PostStatus;
+  published_at?: string | null;
+};
+
+export type PostUpdate = {
+  title?: string;
+  status?: PostStatus;
+  published_at?: string | null;
 };
 ```
-
-Attributes in `$hidden` are excluded. When `$visible` is non-empty, only those attributes are included.
 
 ### Enums
 
 Backed PHP enums become TypeScript string or number literal union types:
 
 ```typescript
-// string-backed enum
 export type PostStatus = 'draft' | 'published' | 'archived';
-
-// integer-backed enum
 export type Priority = 1 | 2 | 3;
 ```
 
 ### Form Requests
 
-Validation rules are mapped to TypeScript types:
+Validation rules map to TypeScript types. `required` → non-optional; `nullable` → adds `| null`; `sometimes` and conditional `required_*` rules → optional. Fields without `required` are optional.
 
 ```typescript
-import { PostStatus } from '../enums';
+import type { PostStatus } from '../enums';
 
 export type StorePostRequest = {
   title: string;
   body: string;
   status: PostStatus;
   tags?: string[];
-  metadata?: {
-    key?: string;
-  };
+  metadata?: { key?: string };
 };
 ```
 
-- `required` → non-optional field
-- `nullable` → adds `| null`
-- `sometimes` → optional field (`?`)
-- Conditional rules (`required_if`, `required_unless`, etc.) → optional field
-- Fields without `required` or `sometimes` → optional
-
-With `extract_nested: true`, nested keys are extracted into named types:
-
-```typescript
-export type StoreUserRequestAddress = {
-  street: string;
-  city: string;
-  zip?: string | null;
-};
-
-export type StoreUserRequest = {
-  address: StoreUserRequestAddress;
-};
-```
+With `extract_nested: true`, nested keys become named types (`StorePostRequestMetadata`).
 
 ### Pivots
 
-Pivot types are generated for `belongsToMany` and `morphToMany` relationships:
+Pivot types are derived from `belongsToMany` / `morphToMany` declarations:
 
 ```typescript
 export type UserRolePivot = {
@@ -248,88 +142,175 @@ export type UserRolePivot = {
 };
 ```
 
-## Model attribute: `#[TypefinderOverrides]`
+### Resources (default-on)
 
-Apply at class level to manually override inferred types or add virtual fields (e.g. accessor-only attributes):
+Classes extending `JsonResource`. Three declaration tiers are tried in order:
 
-```php
-use Pentacore\Typefinder\Attributes\TypefinderOverrides;
+1. **Explicit shape** via `#[TypefinderResource(shape: [...])]`.
+2. **Model extension** via `#[TypefinderResource(model: User::class, omit: [...], extend: [...])]` → `Omit<User, ...> & { ... }`.
+3. **Name convention** — `UserResource` → `User` automatically when a matching model was discovered.
 
-#[TypefinderOverrides([
-    // Override an inferred type
-    'metadata' => 'Record<string, string>',
-    // Add a virtual/accessor-only field
-    'full_title' => 'string',
-])]
-class Post extends Model {}
+Resources that match none of the above are skipped with a warning.
+
+### Pages (opt-in, `typefinder.inertia.enabled`)
+
+Consolidated `pages.d.ts` with a `PageProps` map keyed by Inertia component name. Controllers declare their pages via `#[TypefinderPage(component: ..., props: [...])]` on action methods. Collisions (same component from two methods) fail the run.
+
+### Broadcasting (opt-in, `typefinder.broadcasting.enabled`)
+
+Consolidated `broadcasting.d.ts` with four maps: `BroadcastPublicChannels`, `BroadcastPrivateChannels`, `BroadcastPresenceChannels`, and a flat `BroadcastEvents` keyed by broadcast name. Classes implementing `ShouldBroadcast` are discovered automatically; `#[TypefinderBroadcast(payload: [...], channel: ...)]` overrides reflection for the tricky cases.
+
+### Helpers (always emitted)
+
+`helpers.d.ts` ships seven generic response wrappers that work with *any* generated type:
+
+```typescript
+Wrapped<T>                      { data: T }
+WrappedCollection<T>            { data: T[] }
+PaginatedCollection<T>          { data: T[]; links: ...; meta: ... }   // paginate()
+CursorPaginatedCollection<T>    cursorPaginate()
+SimplePaginatedCollection<T>    simplePaginate()
+ValidationErrorResponse         { message: string; errors: Record<string, string[]> }
+ErrorResponse                   { message: string }
 ```
 
-`#[TypefinderOverrides]` has the highest priority in the type resolution chain — it always wins over cast, column, or relationship inference.
+Consumers write `Wrapped<UserResource>` or `PaginatedCollection<Post>` at the fetch site.
 
-## Model attribute: `#[TypefinderWriteShape]`
+## Attribute reference
 
-Tune the generated `ModelCreate` / `ModelUpdate` companion types for a specific model:
+All attributes live under `Pentacore\Typefinder\Attributes\`.
 
-```php
-use Pentacore\Typefinder\Attributes\TypefinderWriteShape;
+| Attribute | Target | Purpose |
+|---|---|---|
+| `#[TypefinderIgnore]` | class | Skip any model, enum, form request, resource, controller, or event. |
+| `#[TypefinderOverrides(['col' => 'T'])]` | model, form request | Override or add fields. Highest priority in type resolution. |
+| `#[TypefinderWriteShape(serverFilled, respectMassAssignment, immutableOnUpdate)]` | model | Tune the Create/Update companions. |
+| `#[TypefinderResource(shape / model / omit / extend)]` | `JsonResource` subclass | Declare a resource's TS shape or model extension. |
+| `#[TypefinderPage(component, props, optional)]` | controller action method | Map the method to an Inertia page component. Repeatable. |
+| `#[TypefinderBroadcast(payload, as, channel, channelType)]` | broadcast event class | Override reflection for events with dynamic `broadcastOn()`/`broadcastWith()`. |
+| `#[TypefinderCast('T')]` | custom cast class | Declare the TS shape for a cast you own. |
 
-#[TypefinderWriteShape(
-    serverFilled: ['reference'],           // extra fields omitted from Create
-    respectMassAssignment: false,          // ignore $fillable/$guarded for this model
-    immutableOnUpdate: ['customer_id'],    // extra fields excluded from Update
-)]
-class Invoice extends Model {}
-```
+## Custom casts
 
-## Skip a class: `#[TypefinderIgnore]`
+### Your own casts — `#[TypefinderCast]`
 
-Class-level marker. Works on models, enums, form requests, and controllers. Any class tagged with this attribute is skipped by the generator:
-
-```php
-use Pentacore\Typefinder\Attributes\TypefinderIgnore;
-
-#[TypefinderIgnore]
-class LegacyModel extends Model {}
-```
-
-## Custom casts: HasTypeDefinition
-
-Custom cast classes can tell Typefinder their TypeScript shape by implementing `HasTypeDefinition`:
+For cast classes you control, tag them with the attribute:
 
 ```php
-use Pentacore\Typefinder\Contracts\HasTypeDefinition;
+use Pentacore\Typefinder\Attributes\TypefinderCast;
 use Illuminate\Contracts\Database\Eloquent\CastsAttributes;
 
-class SettingsCast implements CastsAttributes, HasTypeDefinition
+#[TypefinderCast('{ theme: string; notifications: boolean }')]
+class SettingsCast implements CastsAttributes
 {
-    public static function typeDefinition(): string
-    {
-        return '{ theme: string; notifications: boolean }';
-    }
-
     // ... get() / set() implementations
 }
 ```
 
-Without this interface, unknown custom casts fall back to `unknown` (a warning is emitted in JSON output).
+### Third-party casts — `Typefinder` facade
+
+For casts you can't modify (Spatie, Cknow, etc.), register them from a service provider:
+
+```php
+// AppServiceProvider::boot()
+use Pentacore\Typefinder\Facades\Typefinder;
+
+Typefinder::registerCast(
+    \Spatie\MediaLibrary\Cast::class,
+    'Media[]',
+);
+
+// Closure form — useful when the shape depends on runtime config:
+Typefinder::registerCast(
+    \Cknow\Money\MoneyCast::class,
+    fn () => config('app.strict_money')
+        ? '{ amount: number; currency: string; formatted: string }'
+        : '{ amount: number; currency: string }',
+);
+```
+
+### Resolution priority
+
+When a cast is encountered, the resolver tries in order:
+
+1. Runtime registry (`Typefinder::registerCast(...)`).
+2. Config overrides (`typefinder.casts.type_map`).
+3. `#[TypefinderCast]` attribute on the cast class.
+4. Built-in name map (`datetime`, `array`, etc.) and class map (`AsCollection::class`, etc.).
+5. `BackedEnum` detection → emits a reference to the generated enum type.
+6. Fall back to `unknown` (emits a warning in `--json` mode).
+
+## Configuration
+
+```php
+// config/typefinder.php
+return [
+    'output_path' => resource_path('js/typefinder'),
+    'gitignore_generated' => true,
+
+    'models' => [
+        'enabled' => true,
+        'paths' => [app_path('Models')],
+        'include_relationships' => true,
+        'emit_write_shapes' => true,
+        'respect_mass_assignment' => true,
+        'immutable_on_update' => ['id', 'created_at', 'updated_at', 'deleted_at'],
+    ],
+
+    'enums' => [
+        'enabled' => true,
+        'paths' => [app_path('Enums')],
+    ],
+
+    'requests' => [
+        'enabled' => true,
+        'paths' => [app_path('Http/Requests')],
+        'extract_nested' => false,
+    ],
+
+    'resources' => [
+        'enabled' => true,                              // default-on; ships with Laravel core
+        'paths' => [app_path('Http/Resources')],
+    ],
+
+    'inertia' => [
+        'enabled' => false,                             // opt-in
+        'paths' => [app_path('Http/Controllers')],
+    ],
+
+    'broadcasting' => [
+        'enabled' => false,                             // opt-in
+        'paths' => [app_path('Events')],
+    ],
+
+    'casts' => [
+        'type_map' => [],
+    ],
+];
+```
+
+## JSON output shape (`--json`)
+
+```json
+{
+  "success": true,
+  "counts": { "models": 3, "enums": 2, "requests": 2, "resources": 1, "pivots": 1 },
+  "files": [
+    { "path": "models/Post.d.ts", "written": true },
+    { "path": "models/User.d.ts", "written": false }
+  ],
+  "warnings": ["skipped App\\Http\\Resources\\Foo: no shape, model, or name-match"],
+  "errors": []
+}
+```
 
 ## Publishing the Claude Code skill
-
-If you use Claude Code, you can publish the `typefinder` skill to `.claude/skills/`:
 
 ```bash
 php artisan vendor:publish --tag=typefinder-skill
 ```
 
-The skill teaches Claude Code to run `php artisan typefinder:generate --json`, parse the output, and act on warnings.
-
-## Publishing everything
-
-```bash
-php artisan vendor:publish --tag=typefinder-all
-```
-
-This publishes the config, skill, and any other publishable assets.
+Teaches Claude Code to run `php artisan typefinder:generate --json`, parse the output, and act on warnings.
 
 ## Testing
 

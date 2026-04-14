@@ -51,7 +51,7 @@ final class EndToEndTest extends TestCase
         $this->assertStringContainsString('name: string;', $userContent);
         $this->assertStringContainsString('email: string;', $userContent);
         $this->assertStringContainsString('is_admin: boolean;', $userContent);
-        // HasTypeDefinition cast on settings
+        // #[TypefinderCast] attribute on SettingsCast
         $this->assertStringContainsString('{ theme: string; notifications: boolean }', $userContent);
         // Relationships
         $this->assertStringContainsString('posts?: Post[];', $userContent);

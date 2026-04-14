@@ -16,6 +16,8 @@ class TypefinderServiceProvider extends ServiceProvider
             __DIR__.'/../config/typefinder.php',
             'typefinder'
         );
+
+        $this->app->singleton(TypefinderRegistry::class);
     }
 
     public function boot(): void

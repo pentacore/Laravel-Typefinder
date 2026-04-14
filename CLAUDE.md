@@ -70,14 +70,48 @@ Examples:
 - Inertia page prop typing — gated, because users without Inertia shouldn't pay the AST-walk cost or get irrelevant config noise.
 - Broadcasting / Echo events — gated, same reason.
 
-## Per-model contracts
+## What gets emitted
 
-Two class-level attributes for model-level customization, read via reflection:
+Every generation run produces a tree under `output_path` (default `resources/js/typefinder/`). Categories:
 
-- `#[TypefinderOverrides(['col' => 'TSType'])]` — override the TS type for specific columns (or add virtual ones).
-- `#[TypefinderWriteShape(serverFilled: [...], respectMassAssignment: null, immutableOnUpdate: [...])]` — tune the Create/Update companion shapes per model.
+| Category | Path | Default | Source |
+| --- | --- | --- | --- |
+| Models | `models/{Name}.d.ts` (includes `{Name}Create` + `{Name}Update`) | on | `app/Models/*` |
+| Enums | `enums/{Name}.d.ts` | on | `app/Enums/*` (backed enums) |
+| Form Requests | `requests/{Name}.d.ts` | on | `app/Http/Requests/*` |
+| Pivots | `pivots/{Name}Pivot.d.ts` | on | derived from `belongsToMany`/`morphToMany` |
+| Resources | `resources/{Name}.d.ts` | on | `app/Http/Resources/*` (`JsonResource` subclasses) |
+| Pages | `pages.d.ts` (single file) | **off** | controller actions tagged `#[TypefinderPage]` |
+| Broadcasting | `broadcasting.d.ts` (single file) | **off** | classes implementing `ShouldBroadcast` |
+| Helpers | `helpers.d.ts` (single file) | always | seven generic response wrappers — see README |
+| Top-level barrel | `index.d.ts` | always | re-exports every emitted category |
 
-Workbench fixtures (`workbench/app/Models/Post.php` for overrides, `Invoice.php` for write-shape, `Article.php`/`Product.php` for `$fillable`/`$guarded`) demonstrate the intended usage.
+Default-off categories are gated because they depend on optional Laravel features (Inertia, broadcasting). The rest default on per the gating rule above.
+
+## Attributes
+
+All under `Pentacore\Typefinder\Attributes\`. Detected via reflection; no trait inheritance involved.
+
+- `#[TypefinderIgnore]` — skip any model/enum/request/resource/controller/event.
+- `#[TypefinderOverrides(['col' => 'TSType'])]` — override or add fields on a model or form request.
+- `#[TypefinderWriteShape(serverFilled: [...], respectMassAssignment: null, immutableOnUpdate: [...])]` — tune the Create/Update companion shapes.
+- `#[TypefinderResource(shape / model / omit / extend)]` — declare a JSON resource's shape. Class-name convention (`UserResource` → `User`) is used when no attribute is present.
+- `#[TypefinderPage(component, props, optional)]` — tag a controller action method as an Inertia page (repeatable).
+- `#[TypefinderBroadcast(payload, as, channel, channelType)]` — override reflection for broadcast events with dynamic `broadcastOn()`/`broadcastWith()`.
+- `#[TypefinderCast('{ … }')]` — declare the TS shape for a custom cast class you own. For third-party casts, use `Typefinder::registerCast()` from a service provider instead.
+
+Workbench fixtures demonstrate each: `Post.php` (overrides), `Invoice.php` (write-shape), `Article.php`/`Product.php` (fillable/guarded), `LegacyModel.php` (ignore), `Http/Resources/*` (resources), `Http/Controllers/*` (pages), `Events/*` (broadcasting), `Casts/SettingsCast.php` (cast attribute).
+
+## Cast type resolution
+
+When a model uses `protected $casts = ['foo' => SomeCast::class]`, the generator resolves the TS shape in this order:
+
+1. `Typefinder::registerCast(SomeCast::class, '…')` runtime registrations (facade-bound singleton).
+2. `config('typefinder.casts.type_map')` array.
+3. `#[TypefinderCast('…')]` attribute on `SomeCast`.
+4. Built-in name/class map (`datetime`, `AsCollection`, etc.).
+5. `BackedEnum` detection → emits a reference to the generated enum.
+6. Fallback to `unknown` with a warning.
 
 ## Releases
 
