@@ -10,13 +10,13 @@ test('rewrites VERSION constant to the provided version', () => {
     const file = join(dir, 'Version.php');
     writeFileSync(file, `<?php
 namespace Pentacore\\Typefinder;
-final class Version { public const VERSION = '0.1.0'; }
+final class Version { public const string VERSION = '0.1.0'; }
 `);
 
     syncPhpVersion({ file, version: '1.2.3' });
 
     const out = readFileSync(file, 'utf8');
-    assert.match(out, /public const VERSION = '1\.2\.3';/);
+    assert.match(out, /public const string VERSION = '1\.2\.3';/);
     rmSync(dir, { recursive: true });
 });
 
