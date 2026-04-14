@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Models\Post;
+use App\Models\User;
 use Pentacore\Typefinder\Renderers\TypeScriptRenderer;
 use Tests\TestCase;
 
@@ -15,14 +17,14 @@ final class WriteShapeTest extends TestCase
 
         $model = [
             'name' => 'User',
-            'fqcn' => \App\Models\User::class,
+            'fqcn' => User::class,
             'columns' => [
                 ['name' => 'id', 'type' => 'number', 'nullable' => false, 'is_primary' => true, 'is_server_filled' => true],
                 ['name' => 'name', 'type' => 'string', 'nullable' => false, 'is_primary' => false, 'is_server_filled' => false],
                 ['name' => 'bio', 'type' => 'string', 'nullable' => true, 'is_primary' => false, 'is_server_filled' => false],
                 ['name' => 'created_at', 'type' => 'string', 'nullable' => true, 'is_primary' => false, 'is_server_filled' => true],
             ],
-            'relationships' => [['name' => 'posts', 'type' => 'many', 'related' => \App\Models\Post::class, 'relationType' => '']],
+            'relationships' => [['name' => 'posts', 'type' => 'many', 'related' => Post::class, 'relationType' => '']],
             'assignable_columns' => [
                 ['name' => 'name', 'type' => 'string', 'nullable' => false, 'is_primary' => false, 'is_server_filled' => false],
                 ['name' => 'bio', 'type' => 'string', 'nullable' => true, 'is_primary' => false, 'is_server_filled' => false],
@@ -45,7 +47,7 @@ final class WriteShapeTest extends TestCase
 
         $model = [
             'name' => 'User',
-            'fqcn' => \App\Models\User::class,
+            'fqcn' => User::class,
             'columns' => [
                 ['name' => 'id', 'type' => 'number', 'nullable' => false, 'is_primary' => true, 'is_server_filled' => true],
                 ['name' => 'name', 'type' => 'string', 'nullable' => false, 'is_primary' => false, 'is_server_filled' => false],
