@@ -17,6 +17,18 @@ export function syncPhpVersion({ file, version }) {
     writeFileSync(file, next);
 }
 
+export function syncComposerVersion({ file, version }) {
+    if (!SEMVER.test(version)) {
+        throw new Error(`invalid version: ${version}`);
+    }
+    const src = readFileSync(file, 'utf8');
+    const parsed = JSON.parse(src);
+    parsed.version = version;
+    const indent = src.match(/^(\s+)"/m)?.[1] ?? '    ';
+    const trailingNewline = src.endsWith('\n') ? '\n' : '';
+    writeFileSync(file, JSON.stringify(parsed, null, indent) + trailingNewline);
+}
+
 const isMain = import.meta.url === `file://${process.argv[1]}`;
 if (isMain) {
     const version = process.argv[2];
@@ -24,7 +36,9 @@ if (isMain) {
         console.error('usage: sync-php-version.mjs <version>');
         process.exit(1);
     }
-    const file = resolve(process.cwd(), 'packages/laravel-typefinder/src/Version.php');
-    syncPhpVersion({ file, version });
-    console.log(`synced ${file} → ${version}`);
+    const phpFile = resolve(process.cwd(), 'packages/laravel-typefinder/src/Version.php');
+    const composerFile = resolve(process.cwd(), 'packages/laravel-typefinder/composer.json');
+    syncPhpVersion({ file: phpFile, version });
+    syncComposerVersion({ file: composerFile, version });
+    console.log(`synced ${phpFile} and ${composerFile} → ${version}`);
 }
