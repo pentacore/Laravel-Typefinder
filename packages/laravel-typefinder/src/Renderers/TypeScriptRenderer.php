@@ -255,6 +255,85 @@ class TypeScriptRenderer
     }
 
     /**
+     * Render the consolidated broadcasting.d.ts content.
+     *
+     * @param  list<array{event_class: string, broadcast_name: string, channels: list<array{type: string, name: string}>, payload: array<string, string>}>  $events
+     * @param  list<array>  $allModels
+     * @param  list<array>  $allEnums
+     */
+    public function renderBroadcasting(array $events, array $allModels, array $allEnums): string
+    {
+        $imports = [];
+
+        $byType = ['public' => [], 'private' => [], 'presence' => []];
+        $flatEvents = [];
+
+        foreach ($events as $event) {
+            $payloadStr = $this->renderPayloadRecord($event['payload'], $allModels, $allEnums, $imports);
+            $flatEvents[] = "  '{$event['broadcast_name']}': {$payloadStr};";
+
+            foreach ($event['channels'] as $channel) {
+                $byType[$channel['type']][$channel['name']][] = "'{$event['broadcast_name']}': {$payloadStr}";
+            }
+        }
+
+        $sections = [];
+        $sections[] = $this->renderChannelMap('BroadcastPublicChannels', $byType['public']);
+        $sections[] = $this->renderChannelMap('BroadcastPrivateChannels', $byType['private']);
+        $sections[] = $this->renderChannelMap('BroadcastPresenceChannels', $byType['presence']);
+        $sections[] = "export type BroadcastEvents = {\n".implode("\n", $flatEvents)."\n};\n";
+
+        $imports = array_values(array_unique($imports));
+        sort($imports);
+
+        $output = self::FILE_HEADER."\n";
+        if (! empty($imports)) {
+            $output .= implode("\n", $imports)."\n\n";
+        }
+        $output .= implode("\n", $sections);
+
+        return $output;
+    }
+
+    /**
+     * @param  array<string, list<string>>  $entries
+     */
+    protected function renderChannelMap(string $typeName, array $entries): string
+    {
+        if ($entries === []) {
+            return "export type {$typeName} = {};\n";
+        }
+
+        $lines = [];
+        foreach ($entries as $channelName => $eventBodies) {
+            $lines[] = "  '{$channelName}': { ".implode('; ', $eventBodies).' };';
+        }
+
+        return "export type {$typeName} = {\n".implode("\n", $lines)."\n};\n";
+    }
+
+    /**
+     * @param  array<string, string>  $payload
+     * @param  list<array>  $allModels
+     * @param  list<array>  $allEnums
+     * @param  list<string>  $imports
+     */
+    protected function renderPayloadRecord(array $payload, array $allModels, array $allEnums, array &$imports): string
+    {
+        if ($payload === []) {
+            return '{}';
+        }
+
+        $parts = [];
+        foreach ($payload as $name => $type) {
+            $resolved = $this->resolvePagePropType((string) $type, $allModels, $allEnums, $imports);
+            $parts[] = "{$name}: {$resolved}";
+        }
+
+        return '{ '.implode('; ', $parts).' }';
+    }
+
+    /**
      * @param  list<array>  $allModels
      * @param  list<array>  $allEnums
      * @param  list<string>  $imports
