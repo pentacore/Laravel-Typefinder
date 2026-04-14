@@ -5,7 +5,7 @@ Thank you for considering a contribution to Laravel Typefinder!
 ## Getting started
 
 ```bash
-git clone https://github.com/laravel-typefinder/laravel-typefinder.git
+git clone https://github.com/pentacore/laravel-typefinder.git
 cd laravel-typefinder
 composer install
 npm install

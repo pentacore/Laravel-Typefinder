@@ -10,10 +10,10 @@
         "types"
     ],
     "license": "MIT",
-    "homepage": "https://github.com/laravel-typefinder/laravel-typefinder",
+    "homepage": "https://github.com/pentacore/laravel-typefinder",
     "repository": {
         "type": "git",
-        "url": "git+https://github.com/laravel-typefinder/laravel-typefinder.git"
+        "url": "git+https://github.com/pentacore/laravel-typefinder.git"
     },
     "scripts": {
         "build": "unbuild",

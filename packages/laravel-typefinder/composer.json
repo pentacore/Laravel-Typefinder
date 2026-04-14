@@ -3,7 +3,7 @@
     "description": "Auto-generate TypeScript type definitions from Laravel Models, Enums, Casts, and Requests.",
     "version": "1.0.0",
     "keywords": ["php", "laravel", "typescript", "types", "models", "enums"],
-    "homepage": "https://github.com/laravel-typefinder/laravel-typefinder",
+    "homepage": "https://github.com/pentacore/laravel-typefinder",
     "authors": [
         {
             "name": "Martin Claesson",
@@ -11,8 +11,8 @@
         }
     ],
     "support": {
-        "issues": "https://github.com/laravel-typefinder/laravel-typefinder/issues",
-        "source": "https://github.com/laravel-typefinder/laravel-typefinder"
+        "issues": "https://github.com/pentacore/laravel-typefinder/issues",
+        "source": "https://github.com/pentacore/laravel-typefinder"
     },
     "license": "MIT",
     "require": {
