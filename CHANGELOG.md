@@ -1,3 +1,30 @@
+## [2.0.0](https://github.com/pentacore/Laravel-Typefinder/compare/v1.3.0...v2.0.0) (2026-04-14)
+
+### ⚠ BREAKING CHANGES
+
+* remove HasTypeOverrides and HasWriteShapeContract traits
+
+### Features
+
+* add BroadcastExtractor with ShouldBroadcast discovery ([5836066](https://github.com/pentacore/Laravel-Typefinder/commit/5836066831f160583eaef84a9ed318b5d135402a))
+* add ControllerExtractor for TypefinderPage attributes ([1898df1](https://github.com/pentacore/Laravel-Typefinder/commit/1898df151ca3efe6b9ff68f622b4197241d24b49))
+* add TypefinderBroadcast attribute ([40b01a0](https://github.com/pentacore/Laravel-Typefinder/commit/40b01a0bd4e65823cf46bac0b2176f4a275ecd58))
+* add TypefinderIgnore attribute to skip classes from generation ([1913d3e](https://github.com/pentacore/Laravel-Typefinder/commit/1913d3edc5bd1e34a6ee7ee7ae675e97a3c57c1c))
+* add TypefinderOverrides and TypefinderWriteShape attributes ([600fc65](https://github.com/pentacore/Laravel-Typefinder/commit/600fc65f881c8b553176e5bbc9862db1057d8b80))
+* add TypefinderPage attribute ([927df74](https://github.com/pentacore/Laravel-Typefinder/commit/927df745940b2bbbbb7092f0b57f2e6570f15839))
+* honour TypefinderOverrides attribute on FormRequests ([ce26b5f](https://github.com/pentacore/Laravel-Typefinder/commit/ce26b5f7ceb5138b8d3051cc800186eaa0cf89a0))
+* move default output_path to resources/js/typefinder ([e93f30d](https://github.com/pentacore/Laravel-Typefinder/commit/e93f30d6f5e945dd240c5b188cec530bfb5f4d8f))
+* recover form request rules() via null-safe proxy with overrides fallback ([e43d1f9](https://github.com/pentacore/Laravel-Typefinder/commit/e43d1f91a92e190dc1dd85cf07ca53579fa32da4))
+* render four broadcasting type maps ([de5dbf2](https://github.com/pentacore/Laravel-Typefinder/commit/de5dbf273f845c6fccf994a65517800fb3ef2996))
+* render PageProps map from extracted page metadata ([6518af3](https://github.com/pentacore/Laravel-Typefinder/commit/6518af3cf3b65f76ff75c56d8f415c5d802af137))
+* skip FormRequests whose rules() throws; emit warning instead ([bf184e7](https://github.com/pentacore/Laravel-Typefinder/commit/bf184e7b83dd24dbe0ea868aff669236520ead30))
+* wire broadcasting extraction and writeBroadcasting in GenerateCommand ([95398fc](https://github.com/pentacore/Laravel-Typefinder/commit/95398fc518609fc3b04c997f122ea2c16896fa17))
+* wire inertia extraction and writePages in GenerateCommand ([c382a6a](https://github.com/pentacore/Laravel-Typefinder/commit/c382a6a01d664b11e148364ab1af46e55755afc5))
+
+### Code Refactoring
+
+* remove HasTypeOverrides and HasWriteShapeContract traits ([37b8c54](https://github.com/pentacore/Laravel-Typefinder/commit/37b8c541c6d4b6d5d71bb463baa8b94dbbee7940))
+
 ## [1.3.0](https://github.com/pentacore/Laravel-Typefinder/compare/v1.2.0...v1.3.0) (2026-04-14)
 
 ### Features
