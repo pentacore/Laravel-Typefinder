@@ -107,6 +107,21 @@ return [
     |
     */
 
+    /*
+    |--------------------------------------------------------------------------
+    | Resources
+    |--------------------------------------------------------------------------
+    |
+    | Configuration for JsonResource type generation. Default-on: ships with
+    | Laravel core, no external dependency. Empty directory = no output.
+    |
+    */
+
+    'resources' => [
+        'enabled' => true,
+        'paths' => [app_path('Http/Resources')],
+    ],
+
     'inertia' => [
         'enabled' => false,
         'paths' => [app_path('Http/Controllers')],

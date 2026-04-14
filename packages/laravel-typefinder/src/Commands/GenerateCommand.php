@@ -12,6 +12,7 @@ use Pentacore\Typefinder\Extractors\ControllerExtractor;
 use Pentacore\Typefinder\Extractors\EnumExtractor;
 use Pentacore\Typefinder\Extractors\ModelExtractor;
 use Pentacore\Typefinder\Extractors\RequestExtractor;
+use Pentacore\Typefinder\Extractors\ResourceExtractor;
 use Pentacore\Typefinder\Renderers\TypeScriptRenderer;
 use Pentacore\Typefinder\Resolvers\CastTypeResolver;
 use Pentacore\Typefinder\Resolvers\ColumnTypeResolver;
@@ -149,6 +150,36 @@ class GenerateCommand extends Command
                 }
             }
 
+            $allResources = [];
+            if (config('typefinder.resources.enabled', true)) {
+                $resourceExtractor = new ResourceExtractor;
+                $paths = config('typefinder.resources.paths', []);
+
+                $this->debugLine('extracting category=resources paths=['.implode(',', array_map(fn ($p): string => '"'.$p.'"', $paths)).']', $useJson, $useDebug);
+
+                $onResource = fn (string $cls) => $this->debugLine('parsing category=resources class='.$cls, $useJson, $useDebug);
+                $onResourceWarn = function (string $cls, \Throwable $throwable) use ($useJson): void {
+                    $message = "skipped {$cls}: ".$throwable->getMessage();
+                    $this->warnings[] = $message;
+                    if (! $useJson) {
+                        $this->warn('[typefinder] '.$message);
+                    }
+                };
+
+                foreach ($paths as $path) {
+                    $allResources = array_merge($allResources, $resourceExtractor->extractFromDirectory($path, $onResource, $onResourceWarn));
+                }
+
+                $this->debugLine('extracted category=resources count='.count($allResources), $useJson, $useDebug);
+
+                if ($allResources !== []) {
+                    $this->writeResources($allResources, $allModels, $allEnums, $typeScriptRenderer, $outputPath, $useJson, $useDebug);
+                    $categories[] = 'resources';
+                    $this->counts['resources'] = count($allResources);
+                    $this->printInfo('Generated '.count($allResources).' resource type(s)', $useJson);
+                }
+            }
+
             if (config('typefinder.inertia.enabled', false)) {
                 $controllerExtractor = new ControllerExtractor;
                 $paths = config('typefinder.inertia.paths', []);
@@ -204,6 +235,9 @@ class GenerateCommand extends Command
                     $this->printInfo('Generated '.count($allBroadcasts).' broadcast event type(s)', $useJson);
                 }
             }
+
+            $this->writeHelpers($typeScriptRenderer, $outputPath, $useJson, $useDebug);
+            $categories[] = 'helpers';
 
             if ($categories !== []) {
                 $barrel = $typeScriptRenderer->renderTopLevelBarrel($categories);
@@ -401,6 +435,39 @@ class GenerateCommand extends Command
         $wrote = $this->writeIfChanged($dir.'/index.d.ts', $typeScriptRenderer->renderBarrelIndex($names));
         $this->files[] = ['path' => $indexPath, 'written' => $wrote];
         $this->debugLine('writing category=requests path='.$indexPath.' changed='.($wrote ? 'true' : 'false'), $useJson, $useDebug);
+    }
+
+    protected function writeResources(array $resources, array $allModels, array $allEnums, TypeScriptRenderer $typeScriptRenderer, string $outputPath, bool $useJson, bool $useDebug): void
+    {
+        $dir = $outputPath.'/resources';
+        File::ensureDirectoryExists($dir);
+
+        $names = [];
+        foreach ($resources as $resource) {
+            $content = $typeScriptRenderer->renderResource($resource, $allModels, $allEnums, $resources);
+            $relativePath = 'resources/'.$resource['name'].'.d.ts';
+            $wrote = $this->writeIfChanged($dir.'/'.$resource['name'].'.d.ts', $content);
+            $this->files[] = ['path' => $relativePath, 'written' => $wrote];
+            $this->debugLine('writing category=resources path='.$relativePath.' changed='.($wrote ? 'true' : 'false'), $useJson, $useDebug);
+            $names[] = $resource['name'];
+        }
+
+        $this->pruneStaleFiles($dir, array_map(fn (string $n): string => $n.'.d.ts', [...$names, 'index']));
+
+        $indexPath = 'resources/index.d.ts';
+        $wrote = $this->writeIfChanged($dir.'/index.d.ts', $typeScriptRenderer->renderBarrelIndex($names));
+        $this->files[] = ['path' => $indexPath, 'written' => $wrote];
+        $this->debugLine('writing category=resources path='.$indexPath.' changed='.($wrote ? 'true' : 'false'), $useJson, $useDebug);
+    }
+
+    protected function writeHelpers(TypeScriptRenderer $typeScriptRenderer, string $outputPath, bool $useJson, bool $useDebug): void
+    {
+        File::ensureDirectoryExists($outputPath);
+
+        $content = $typeScriptRenderer->renderHelpers();
+        $wrote = $this->writeIfChanged($outputPath.'/helpers.d.ts', $content);
+        $this->files[] = ['path' => 'helpers.d.ts', 'written' => $wrote];
+        $this->debugLine('writing category=helpers path=helpers.d.ts changed='.($wrote ? 'true' : 'false'), $useJson, $useDebug);
     }
 
     protected function writePivots(array $pivots, TypeScriptRenderer $typeScriptRenderer, string $outputPath, bool $useJson, bool $useDebug): void
