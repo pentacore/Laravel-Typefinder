@@ -107,7 +107,8 @@ Workflow files trigger a security reminder hook warning about command injection.
 ```yaml
 env:
   SOMETHING: ${{ github.event.… }}
-run: use "$SOMETHING", never "${{ github.event.… }}" inline in run:
+run: |
+  echo "$SOMETHING"   # safe — never inline ${{ github.event.… }} in a run: block
 ```
 
 Already applied in `release.yml`. Keep it that way when editing workflows.
