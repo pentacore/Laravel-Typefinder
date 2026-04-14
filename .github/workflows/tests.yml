@@ -116,6 +116,7 @@ jobs:
     runs-on: ubuntu-latest
     name: Test summary
     steps:
+      - uses: actions/checkout@v4
       - name: Download JUnit artifacts
         uses: actions/download-artifact@v4
         with:
