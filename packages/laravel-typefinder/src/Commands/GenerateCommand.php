@@ -21,7 +21,7 @@ use ReflectionClass;
 
 class GenerateCommand extends Command
 {
-    protected $signature = 'typefinder:generate {--debug} {--json}';
+    protected $signature = 'typefinder:generate {--debug} {--json} {--check : Dry-run: fail if regeneration would change on-disk files.}';
 
     protected $description = 'Generate TypeScript type definitions from Laravel Models, Enums, and Requests';
 
@@ -37,10 +37,15 @@ class GenerateCommand extends Command
     public function handle(): int
     {
         $startedAt = microtime(true);
-        $outputPath = config('typefinder.output_path');
+        $realOutputPath = (string) config('typefinder.output_path');
         $typeScriptRenderer = new TypeScriptRenderer;
         $useJson = (bool) $this->option('json');
         $useDebug = (bool) $this->option('debug');
+        $useCheck = (bool) $this->option('check');
+
+        $outputPath = $useCheck
+            ? sys_get_temp_dir().'/typefinder-check-'.uniqid()
+            : $realOutputPath;
 
         $this->files = [];
         $this->counts = [];
@@ -207,8 +212,37 @@ class GenerateCommand extends Command
                 $this->files[] = ['path' => 'index.d.ts', 'written' => $wrote];
             }
 
-            if (config('typefinder.gitignore_generated', true)) {
+            if (! $useCheck && config('typefinder.gitignore_generated', true)) {
                 $this->ensureGitignored($outputPath, $useJson, $useDebug);
+            }
+
+            if ($useCheck) {
+                $drift = $this->collectDrift($outputPath, $realOutputPath);
+                File::deleteDirectory($outputPath);
+
+                $durationMs = (int) round((microtime(true) - $startedAt) * 1000);
+
+                if ($drift !== []) {
+                    if ($useJson) {
+                        $this->emitJson(false, $durationMs, $realOutputPath, $drift, []);
+                    } else {
+                        $this->warn('[typefinder] drift detected — the following files would change:');
+                        foreach ($drift as $path) {
+                            $this->warn('  '.$path);
+                        }
+                    }
+
+                    return self::FAILURE;
+                }
+
+                $this->debugLine('check passed — no drift', $useJson, $useDebug);
+                if ($useJson) {
+                    $this->emitJson(true, $durationMs, $realOutputPath, [], []);
+                } else {
+                    $this->info('TypeScript types are up to date.');
+                }
+
+                return self::SUCCESS;
             }
 
             $durationMs = (int) round((microtime(true) - $startedAt) * 1000);
@@ -515,6 +549,64 @@ class GenerateCommand extends Command
         }
 
         return substr($normalized, strlen($base) + 1);
+    }
+
+    /**
+     * Compare a freshly-generated tree against the on-disk tree.
+     * Returns a sorted list of relative paths that differ (either missing
+     * from disk or with different content). Extra files in $realPath that
+     * the generator did not produce are also reported.
+     *
+     * @return list<string>
+     */
+    protected function collectDrift(string $generatedPath, string $realPath): array
+    {
+        $generated = $this->listRelativeFiles($generatedPath);
+        $real = $this->listRelativeFiles($realPath);
+
+        $drift = [];
+
+        foreach ($generated as $rel) {
+            $generatedContents = File::get($generatedPath.'/'.$rel);
+            $realFile = $realPath.'/'.$rel;
+
+            if (! File::exists($realFile)) {
+                $drift[] = $rel.' (missing on disk)';
+
+                continue;
+            }
+
+            if (File::get($realFile) !== $generatedContents) {
+                $drift[] = $rel;
+            }
+        }
+
+        foreach ($real as $rel) {
+            if (! in_array($rel, $generated, true)) {
+                $drift[] = $rel.' (stale on disk)';
+            }
+        }
+
+        sort($drift);
+
+        return $drift;
+    }
+
+    /**
+     * @return list<string>
+     */
+    protected function listRelativeFiles(string $dir): array
+    {
+        if (! File::isDirectory($dir)) {
+            return [];
+        }
+
+        $results = [];
+        foreach (File::allFiles($dir) as $file) {
+            $results[] = ltrim(str_replace($dir, '', $file->getPathname()), '/');
+        }
+
+        return $results;
     }
 
     protected function writeIfChanged(string $path, string $content): bool

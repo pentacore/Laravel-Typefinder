@@ -377,4 +377,34 @@ PHP);
             File::deleteDirectory($collisionDir);
         }
     }
+
+    public function test_check_mode_passes_when_output_is_up_to_date(): void
+    {
+        // Generate once so the real output directory matches what the command would produce.
+        $this->artisan('typefinder:generate')->assertSuccessful();
+
+        $this->artisan('typefinder:generate', ['--check' => true])
+            ->expectsOutputToContain('TypeScript types are up to date.')
+            ->assertSuccessful();
+    }
+
+    public function test_check_mode_fails_when_file_is_missing(): void
+    {
+        $this->artisan('typefinder:generate')->assertSuccessful();
+        File::delete($this->outputPath.'/models/User.d.ts');
+
+        $this->artisan('typefinder:generate', ['--check' => true])
+            ->expectsOutputToContain('models/User.d.ts')
+            ->assertFailed();
+    }
+
+    public function test_check_mode_fails_when_file_is_stale(): void
+    {
+        $this->artisan('typefinder:generate')->assertSuccessful();
+        File::put($this->outputPath.'/models/User.d.ts', "// manually edited\n");
+
+        $this->artisan('typefinder:generate', ['--check' => true])
+            ->expectsOutputToContain('models/User.d.ts')
+            ->assertFailed();
+    }
 }
