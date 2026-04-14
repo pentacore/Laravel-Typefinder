@@ -5,21 +5,42 @@ declare(strict_types=1);
 namespace Pentacore\Typefinder\Attributes;
 
 use Attribute;
+use Pentacore\Typefinder\Facades\Typefinder;
+use Pentacore\Typefinder\Resolvers\CastTypeResolver;
 
 /**
- * Declare the TypeScript type produced by a custom cast class.
+ * Declare the TypeScript type produced by a custom Laravel cast class.
  *
- * Use on classes implementing Laravel's `CastsAttributes` to tell Typefinder
- * what shape the cast's return value has:
+ * Place on a class implementing `Illuminate\Contracts\Database\Eloquent\CastsAttributes`
+ * to tell Typefinder what shape the cast's `get()` method returns. The declared
+ * type becomes the TS type for any model column cast to this class.
  *
- *     #[TypefinderCast('{ theme: string; notifications: boolean }')]
- *     class SettingsCast implements CastsAttributes {}
+ * Example:
+ * ```php
+ * use Pentacore\Typefinder\Attributes\TypefinderCast;
+ * use Illuminate\Contracts\Database\Eloquent\CastsAttributes;
  *
- * For third-party casts you don't control, use the Typefinder facade's
- * `registerCast()` method from a service provider instead.
+ * #[TypefinderCast('{ theme: string; notifications: boolean }')]
+ * class SettingsCast implements CastsAttributes
+ * {
+ *     public function get($model, $key, $value, $attributes): mixed { … }
+ *     public function set($model, $key, $value, $attributes): mixed { … }
+ * }
+ * ```
+ *
+ * For cast classes you don't own (e.g. casts shipped by third-party packages),
+ * use the runtime registry instead — see
+ * {@see Typefinder::registerCast()}.
+ *
+ * Priority in {@see CastTypeResolver}: runtime
+ * registry > config overrides > this attribute > built-in name map >
+ * `BackedEnum` detection > `'unknown'`.
  */
 #[Attribute(Attribute::TARGET_CLASS)]
 final readonly class TypefinderCast
 {
+    /**
+     * @param  string  $type  The TypeScript type emitted for columns cast to this class.
+     */
     public function __construct(public string $type) {}
 }
