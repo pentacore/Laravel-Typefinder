@@ -1,0 +1,35 @@
+{
+  "branches": ["master"],
+  "plugins": [
+    ["@semantic-release/commit-analyzer", {
+      "preset": "conventionalcommits"
+    }],
+    ["@semantic-release/release-notes-generator", {
+      "preset": "conventionalcommits"
+    }],
+    ["@semantic-release/changelog", {
+      "changelogFile": "CHANGELOG.md"
+    }],
+    ["@semantic-release/exec", {
+      "prepareCmd": "node scripts/sync-php-version.mjs ${nextRelease.version}"
+    }],
+    ["@semantic-release/npm", {
+      "pkgRoot": "packages/vite-plugin-laravel-typefinder"
+    }],
+    ["@semantic-release/git", {
+      "assets": [
+        "CHANGELOG.md",
+        "package.json",
+        "packages/vite-plugin-laravel-typefinder/package.json",
+        "packages/laravel-typefinder/src/Version.php"
+      ],
+      "message": "chore(release): ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}"
+    }],
+    ["@semantic-release/github", {
+      "assets": [
+        { "path": "packages/vite-plugin-laravel-typefinder/dist/**", "label": "vite-plugin dist" },
+        { "path": "artifacts/generated-dts/**", "label": "Generated .d.ts (reference)" }
+      ]
+    }]
+  ]
+}
