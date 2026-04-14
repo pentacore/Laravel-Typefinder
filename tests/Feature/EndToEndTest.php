@@ -135,4 +135,41 @@ class EndToEndTest extends TestCase
         $this->assertDirectoryDoesNotExist($this->outputPath.'/enums');
         $this->assertDirectoryDoesNotExist($this->outputPath.'/requests');
     }
+
+    public function test_write_shapes_are_not_emitted_by_default(): void
+    {
+        $this->artisan('typefinder:generate')->assertSuccessful();
+
+        $this->assertFileDoesNotExist($this->outputPath.'/models/UserCreate.d.ts');
+        $this->assertFileDoesNotExist($this->outputPath.'/models/UserUpdate.d.ts');
+    }
+
+    public function test_write_shapes_are_emitted_when_enabled(): void
+    {
+        config(['typefinder.models.emit_write_shapes' => true]);
+
+        $this->artisan('typefinder:generate')->assertSuccessful();
+
+        $this->assertFileExists($this->outputPath.'/models/User.d.ts');
+        $this->assertFileExists($this->outputPath.'/models/UserCreate.d.ts');
+        $this->assertFileExists($this->outputPath.'/models/UserUpdate.d.ts');
+
+        $barrel = File::get($this->outputPath.'/models/index.d.ts');
+        $this->assertStringContainsString("export type { User } from './User';", $barrel);
+        $this->assertStringContainsString("export type { UserCreate } from './UserCreate';", $barrel);
+        $this->assertStringContainsString("export type { UserUpdate } from './UserUpdate';", $barrel);
+    }
+
+    public function test_write_shapes_respect_per_model_contract(): void
+    {
+        config(['typefinder.models.emit_write_shapes' => true]);
+
+        $this->artisan('typefinder:generate')->assertSuccessful();
+
+        $create = File::get($this->outputPath.'/models/InvoiceCreate.d.ts');
+        $this->assertStringNotContainsString('reference', $create);
+
+        $update = File::get($this->outputPath.'/models/InvoiceUpdate.d.ts');
+        $this->assertStringNotContainsString('customer_id', $update);
+    }
 }

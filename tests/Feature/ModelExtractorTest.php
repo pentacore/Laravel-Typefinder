@@ -3,8 +3,11 @@
 namespace Tests\Feature;
 
 use App\Enums\PostStatus;
+use App\Models\Article;
 use App\Models\Comment;
+use App\Models\Invoice;
 use App\Models\Post;
+use App\Models\Product;
 use App\Models\Role;
 use App\Models\Tag;
 use App\Models\User;
@@ -209,7 +212,7 @@ class ModelExtractorTest extends TestCase
 
     public function test_extract_honours_contract_server_filled_override(): void
     {
-        $result = $this->extractor->extract(\App\Models\Invoice::class);
+        $result = $this->extractor->extract(Invoice::class);
         $byName = collect($result['columns'])->keyBy('name');
 
         $this->assertTrue($byName['reference']['is_server_filled']);
@@ -217,7 +220,7 @@ class ModelExtractorTest extends TestCase
 
     public function test_extract_assignable_columns_respects_fillable(): void
     {
-        $result = $this->extractor->extract(\App\Models\Article::class);
+        $result = $this->extractor->extract(Article::class);
         $names = array_map(fn ($c) => $c['name'], $result['assignable_columns']);
 
         $this->assertContains('title', $names);
@@ -228,7 +231,7 @@ class ModelExtractorTest extends TestCase
 
     public function test_extract_assignable_columns_respects_guarded(): void
     {
-        $result = $this->extractor->extract(\App\Models\Product::class);
+        $result = $this->extractor->extract(Product::class);
         $names = array_map(fn ($c) => $c['name'], $result['assignable_columns']);
 
         $this->assertContains('name', $names);
@@ -237,7 +240,7 @@ class ModelExtractorTest extends TestCase
 
     public function test_extract_assignable_columns_ignores_mass_assignment_when_disabled(): void
     {
-        $result = $this->extractor->extract(\App\Models\Invoice::class);
+        $result = $this->extractor->extract(Invoice::class);
         $names = array_map(fn ($c) => $c['name'], $result['assignable_columns']);
 
         // Invoice opts out of respecting mass assignment → returns all visible cols
