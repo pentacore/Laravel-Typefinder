@@ -76,3 +76,29 @@ jobs:
       - name: Build
         working-directory: packages/vite-plugin-laravel-typefinder
         run: npm run build
+      - name: Upload vite-plugin dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: vite-plugin-dist
+          path: packages/vite-plugin-laravel-typefinder/dist
+          if-no-files-found: error
+
+  test-summary:
+    needs: [php]
+    if: always()
+    runs-on: ubuntu-latest
+    name: Test summary
+    steps:
+      - name: Download JUnit artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: junit
+          pattern: phpunit-*
+          merge-multiple: true
+      - name: Publish summary
+        uses: dorny/test-reporter@v1
+        with:
+          name: PHPUnit
+          path: junit/*.xml
+          reporter: java-junit
+          fail-on-error: false
