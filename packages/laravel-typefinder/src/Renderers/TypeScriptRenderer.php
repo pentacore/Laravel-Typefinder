@@ -415,6 +415,178 @@ class TypeScriptRenderer
      *
      * @param  list<string>  $typeNames
      */
+    /**
+     * Render a JSON resource (.d.ts) file content.
+     *
+     * @param  array{name: string, fqcn: string, shape: array}  $resource
+     * @param  list<array>  $allModels
+     * @param  list<array>  $allEnums
+     * @param  list<array>  $allResources
+     */
+    public function renderResource(array $resource, array $allModels, array $allEnums, array $allResources): string
+    {
+        $imports = [];
+        $name = $resource['name'];
+        $shape = $resource['shape'];
+
+        if ($shape['kind'] === 'shape') {
+            $lines = [];
+            foreach ($shape['fields'] as $fieldName => $type) {
+                $resolved = $this->resolveAnyTypeString((string) $type, $allModels, $allEnums, $allResources, $imports, $resource['fqcn']);
+                $lines[] = "  {$fieldName}: {$resolved};";
+            }
+
+            return $this->assembleResourceFile($imports, "export type {$name} = {\n".implode("\n", $lines)."\n};\n");
+        }
+
+        $modelShort = $this->resolveModelName($shape['model'], $allModels);
+        $imports[] = "import type { {$modelShort} } from '../models';";
+
+        $body = "export type {$name} = ";
+
+        $omit = $shape['omit'];
+        $extend = $shape['extend'];
+
+        if ($omit !== []) {
+            $omitUnion = implode(' | ', array_map(fn (string $field): string => "'{$field}'", $omit));
+            $body .= "Omit<{$modelShort}, {$omitUnion}>";
+        } else {
+            $body .= $modelShort;
+        }
+
+        if ($extend !== []) {
+            $parts = [];
+            foreach ($extend as $fieldName => $type) {
+                $resolved = $this->resolveAnyTypeString((string) $type, $allModels, $allEnums, $allResources, $imports, $resource['fqcn']);
+                $parts[] = "{$fieldName}: {$resolved}";
+            }
+            $body .= ' & { '.implode('; ', $parts).' }';
+        }
+
+        $body .= ";\n";
+
+        return $this->assembleResourceFile($imports, $body);
+    }
+
+    /**
+     * Render the generic response-wrapper helpers file.
+     */
+    public function renderHelpers(): string
+    {
+        return self::FILE_HEADER."\n".<<<'TS'
+export type Wrapped<T> = { data: T };
+
+export type WrappedCollection<T> = { data: T[] };
+
+export type PaginatedCollection<T> = WrappedCollection<T> & {
+  links: {
+    first: string | null;
+    last: string | null;
+    prev: string | null;
+    next: string | null;
+  };
+  meta: {
+    current_page: number;
+    from: number | null;
+    last_page: number;
+    path: string;
+    per_page: number;
+    to: number | null;
+    total: number;
+    links: Array<{ url: string | null; label: string; active: boolean }>;
+  };
+};
+
+export type CursorPaginatedCollection<T> = WrappedCollection<T> & {
+  meta: {
+    path: string;
+    per_page: number;
+    next_cursor: string | null;
+    prev_cursor: string | null;
+  };
+};
+
+export type SimplePaginatedCollection<T> = WrappedCollection<T> & {
+  meta: {
+    current_page: number;
+    from: number | null;
+    path: string;
+    per_page: number;
+    to: number | null;
+  };
+};
+
+export type ValidationErrorResponse = {
+  message: string;
+  errors: Record<string, string[]>;
+};
+
+export type ErrorResponse = { message: string };
+
+TS;
+    }
+
+    /**
+     * @param  list<string>  $imports
+     */
+    protected function assembleResourceFile(array $imports, string $body): string
+    {
+        $imports = array_values(array_unique($imports));
+        sort($imports);
+
+        $output = self::FILE_HEADER."\n";
+        if ($imports !== []) {
+            $output .= implode("\n", $imports)."\n\n";
+        }
+
+        return $output.$body;
+    }
+
+    /**
+     * Like `resolvePagePropType`, but also recognises JsonResource subclasses
+     * and emits sibling-import statements for them.
+     *
+     * @param  list<array>  $allModels
+     * @param  list<array>  $allEnums
+     * @param  list<array>  $allResources
+     * @param  list<string>  $imports
+     */
+    protected function resolveAnyTypeString(
+        string $type,
+        array $allModels,
+        array $allEnums,
+        array $allResources,
+        array &$imports,
+        ?string $selfFqcn = null,
+    ): string {
+        if (class_exists($type) && is_subclass_of($type, \Illuminate\Http\Resources\Json\JsonResource::class)) {
+            $short = $this->resolveResourceName($type, $allResources);
+            if ($type !== $selfFqcn) {
+                $imports[] = "import type { {$short} } from './{$short}';";
+            }
+
+            return $short;
+        }
+
+        return $this->resolvePagePropType($type, $allModels, $allEnums, $imports);
+    }
+
+    /**
+     * @param  list<array>  $allResources
+     */
+    protected function resolveResourceName(string $fqcn, array $allResources): string
+    {
+        foreach ($allResources as $resource) {
+            if ($resource['fqcn'] === $fqcn) {
+                return $resource['name'];
+            }
+        }
+
+        $parts = explode('\\', $fqcn);
+
+        return end($parts);
+    }
+
     public function renderBarrelIndex(array $typeNames): string
     {
         $lines = array_map(
