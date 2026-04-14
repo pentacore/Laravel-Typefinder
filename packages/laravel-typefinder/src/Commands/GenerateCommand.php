@@ -226,14 +226,25 @@ class GenerateCommand extends Command
         $dir = $outputPath.'/models';
         File::ensureDirectoryExists($dir);
 
+        $emitWriteShapes = (bool) config('typefinder.models.emit_write_shapes', false);
+        $globalImmutable = (array) config('typefinder.models.immutable_on_update', ['id', 'created_at', 'updated_at', 'deleted_at']);
+
         $names = [];
+
         foreach ($models as $model) {
-            $content = $renderer->renderModel($model, $allEnums, $models);
-            $relativePath = 'models/'.$model['name'].'.d.ts';
-            $wrote = $this->writeIfChanged("{$dir}/{$model['name']}.d.ts", $content);
-            $this->files[] = ['path' => $relativePath, 'written' => $wrote];
-            $this->debugLine('writing category=models path='.$relativePath.' changed='.($wrote ? 'true' : 'false'), $useJson, $useDebug);
+            $this->writeModelFile($dir, $model['name'], $renderer->renderModel($model, $allEnums, $models), $useJson, $useDebug);
             $names[] = $model['name'];
+
+            if (! $emitWriteShapes) {
+                continue;
+            }
+
+            $this->writeModelFile($dir, $model['name'].'Create', $renderer->renderModelCreate($model, $allEnums, $models), $useJson, $useDebug);
+            $names[] = $model['name'].'Create';
+
+            $immutable = array_values(array_unique([...$globalImmutable, ...$this->getContractImmutable($model['fqcn'])]));
+            $this->writeModelFile($dir, $model['name'].'Update', $renderer->renderModelUpdate($model, $allEnums, $models, $immutable), $useJson, $useDebug);
+            $names[] = $model['name'].'Update';
         }
 
         $this->pruneStaleFiles($dir, array_map(fn ($n) => "{$n}.d.ts", [...$names, 'index']));
@@ -242,6 +253,27 @@ class GenerateCommand extends Command
         $wrote = $this->writeIfChanged("{$dir}/index.d.ts", $renderer->renderBarrelIndex($names));
         $this->files[] = ['path' => $indexPath, 'written' => $wrote];
         $this->debugLine('writing category=models path='.$indexPath.' changed='.($wrote ? 'true' : 'false'), $useJson, $useDebug);
+    }
+
+    private function writeModelFile(string $dir, string $name, string $content, bool $useJson, bool $useDebug): void
+    {
+        $relativePath = 'models/'.$name.'.d.ts';
+        $wrote = $this->writeIfChanged("{$dir}/{$name}.d.ts", $content);
+        $this->files[] = ['path' => $relativePath, 'written' => $wrote];
+        $this->debugLine('writing category=models path='.$relativePath.' changed='.($wrote ? 'true' : 'false'), $useJson, $useDebug);
+    }
+
+    /**
+     * @param  class-string  $fqcn
+     * @return list<string>
+     */
+    private function getContractImmutable(string $fqcn): array
+    {
+        if (! method_exists($fqcn, 'typefinderImmutableOnUpdate')) {
+            return [];
+        }
+
+        return (array) $fqcn::typefinderImmutableOnUpdate();
     }
 
     protected function writeRequests(array $requests, array $allEnums, TypeScriptRenderer $renderer, string $outputPath, bool $extractNested, bool $useJson, bool $useDebug): void
