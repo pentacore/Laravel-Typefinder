@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Events\MessageSent;
+use App\Events\OrderShipped;
+use App\Events\PostPublished;
 use App\Models\Post;
 use App\Models\User;
 use Pentacore\Typefinder\Renderers\TypeScriptRenderer;
@@ -13,12 +16,12 @@ final class BroadcastRenderTest extends TestCase
 {
     public function test_emits_public_private_presence_and_events_maps(): void
     {
-        $renderer = new TypeScriptRenderer;
+        $typeScriptRenderer = new TypeScriptRenderer;
 
         $events = [
-            ['event_class' => 'App\\Events\\PostPublished', 'broadcast_name' => 'PostPublished', 'channels' => [['type' => 'public', 'name' => 'posts']], 'payload' => ['post' => Post::class]],
-            ['event_class' => 'App\\Events\\OrderShipped', 'broadcast_name' => 'OrderShipped', 'channels' => [['type' => 'private', 'name' => 'orders.{orderId}']], 'payload' => ['order' => Post::class, 'trackingNumber' => 'string']],
-            ['event_class' => 'App\\Events\\MessageSent', 'broadcast_name' => 'MessageSent', 'channels' => [['type' => 'presence', 'name' => 'chat.{roomId}']], 'payload' => ['user' => User::class, 'body' => 'string']],
+            ['event_class' => PostPublished::class, 'broadcast_name' => 'PostPublished', 'channels' => [['type' => 'public', 'name' => 'posts']], 'payload' => ['post' => Post::class]],
+            ['event_class' => OrderShipped::class, 'broadcast_name' => 'OrderShipped', 'channels' => [['type' => 'private', 'name' => 'orders.{orderId}']], 'payload' => ['order' => Post::class, 'trackingNumber' => 'string']],
+            ['event_class' => MessageSent::class, 'broadcast_name' => 'MessageSent', 'channels' => [['type' => 'presence', 'name' => 'chat.{roomId}']], 'payload' => ['user' => User::class, 'body' => 'string']],
         ];
 
         $allModels = [
@@ -26,7 +29,7 @@ final class BroadcastRenderTest extends TestCase
             ['name' => 'User', 'fqcn' => User::class],
         ];
 
-        $output = $renderer->renderBroadcasting($events, $allModels, []);
+        $output = $typeScriptRenderer->renderBroadcasting($events, $allModels, []);
 
         $this->assertStringContainsString("import type { Post } from './models';", $output);
         $this->assertStringContainsString("import type { User } from './models';", $output);
@@ -48,7 +51,7 @@ final class BroadcastRenderTest extends TestCase
 
     public function test_passes_through_unknown_payload_types(): void
     {
-        $renderer = new TypeScriptRenderer;
+        $typeScriptRenderer = new TypeScriptRenderer;
 
         $events = [[
             'event_class' => 'App\\Events\\X',
@@ -57,7 +60,7 @@ final class BroadcastRenderTest extends TestCase
             'payload' => ['raw' => 'Record<string, unknown>'],
         ]];
 
-        $output = $renderer->renderBroadcasting($events, [], []);
+        $output = $typeScriptRenderer->renderBroadcasting($events, [], []);
 
         $this->assertStringContainsString("'X': { raw: Record<string, unknown> };", $output);
     }

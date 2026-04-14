@@ -307,4 +307,74 @@ PHP);
             File::deleteDirectory($collisionDir);
         }
     }
+
+    public function test_broadcasting_is_skipped_by_default(): void
+    {
+        $this->artisan('typefinder:generate')->assertSuccessful();
+
+        $this->assertFileDoesNotExist($this->outputPath.'/broadcasting.d.ts');
+
+        $barrel = File::get($this->outputPath.'/index.d.ts');
+        $this->assertStringNotContainsString("export type * from './broadcasting';", $barrel);
+    }
+
+    public function test_broadcasting_events_are_generated_when_enabled(): void
+    {
+        config([
+            'typefinder.broadcasting.enabled' => true,
+            'typefinder.broadcasting.paths' => [workbench_path('app/Events')],
+        ]);
+
+        $this->artisan('typefinder:generate')->assertSuccessful();
+
+        $this->assertFileExists($this->outputPath.'/broadcasting.d.ts');
+        $content = File::get($this->outputPath.'/broadcasting.d.ts');
+        $this->assertStringContainsString('export type BroadcastPublicChannels = {', $content);
+        $this->assertStringContainsString('export type BroadcastPrivateChannels = {', $content);
+        $this->assertStringContainsString('export type BroadcastPresenceChannels = {', $content);
+        $this->assertStringContainsString('export type BroadcastEvents = {', $content);
+        $this->assertStringContainsString("'PostPublished':", $content);
+        $this->assertStringContainsString("'orders.{orderId}':", $content);
+        $this->assertStringContainsString("'chat.{roomId}':", $content);
+
+        $barrel = File::get($this->outputPath.'/index.d.ts');
+        $this->assertStringContainsString("export type * from './broadcasting';", $barrel);
+    }
+
+    public function test_broadcasting_collision_throws(): void
+    {
+        $collisionDir = workbench_path('app/CollisionEvents');
+        File::ensureDirectoryExists($collisionDir);
+        File::put($collisionDir.'/A.php', <<<'PHP'
+<?php
+namespace App\CollisionEvents;
+use Illuminate\Broadcasting\Channel;
+use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
+class A implements ShouldBroadcast {
+    public function broadcastOn(): Channel { return new Channel('shared'); }
+    public function broadcastAs(): string { return 'Dup'; }
+}
+PHP);
+        File::put($collisionDir.'/B.php', <<<'PHP'
+<?php
+namespace App\CollisionEvents;
+use Illuminate\Broadcasting\Channel;
+use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
+class B implements ShouldBroadcast {
+    public function broadcastOn(): Channel { return new Channel('shared'); }
+    public function broadcastAs(): string { return 'Dup'; }
+}
+PHP);
+
+        config([
+            'typefinder.broadcasting.enabled' => true,
+            'typefinder.broadcasting.paths' => [$collisionDir],
+        ]);
+
+        try {
+            $this->artisan('typefinder:generate')->assertFailed();
+        } finally {
+            File::deleteDirectory($collisionDir);
+        }
+    }
 }

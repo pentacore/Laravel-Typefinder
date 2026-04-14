@@ -270,10 +270,10 @@ class TypeScriptRenderer
 
         foreach ($events as $event) {
             $payloadStr = $this->renderPayloadRecord($event['payload'], $allModels, $allEnums, $imports);
-            $flatEvents[] = "  '{$event['broadcast_name']}': {$payloadStr};";
+            $flatEvents[] = sprintf("  '%s': %s;", $event['broadcast_name'], $payloadStr);
 
             foreach ($event['channels'] as $channel) {
-                $byType[$channel['type']][$channel['name']][] = "'{$event['broadcast_name']}': {$payloadStr}";
+                $byType[$channel['type']][$channel['name']][] = sprintf("'%s': %s", $event['broadcast_name'], $payloadStr);
             }
         }
 
@@ -287,12 +287,11 @@ class TypeScriptRenderer
         sort($imports);
 
         $output = self::FILE_HEADER."\n";
-        if (! empty($imports)) {
+        if ($imports !== []) {
             $output .= implode("\n", $imports)."\n\n";
         }
-        $output .= implode("\n", $sections);
 
-        return $output;
+        return $output.implode("\n", $sections);
     }
 
     /**
@@ -306,7 +305,7 @@ class TypeScriptRenderer
 
         $lines = [];
         foreach ($entries as $channelName => $eventBodies) {
-            $lines[] = "  '{$channelName}': { ".implode('; ', $eventBodies).' };';
+            $lines[] = sprintf("  '%s': { ", $channelName).implode('; ', $eventBodies).' };';
         }
 
         return "export type {$typeName} = {\n".implode("\n", $lines)."\n};\n";
@@ -327,7 +326,7 @@ class TypeScriptRenderer
         $parts = [];
         foreach ($payload as $name => $type) {
             $resolved = $this->resolvePagePropType((string) $type, $allModels, $allEnums, $imports);
-            $parts[] = "{$name}: {$resolved}";
+            $parts[] = sprintf('%s: %s', $name, $resolved);
         }
 
         return '{ '.implode('; ', $parts).' }';

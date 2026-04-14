@@ -176,7 +176,7 @@ class GenerateCommand extends Command
 
                 $onBroadcast = fn (string $cls) => $this->debugLine('parsing category=broadcasting class='.$cls, $useJson, $useDebug);
                 $onBroadcastWarn = function (string $cls, \Throwable $throwable) use ($useJson): void {
-                    $message = "skipped {$cls}: ".$throwable->getMessage();
+                    $message = sprintf('skipped %s: ', $cls).$throwable->getMessage();
                     $this->warnings[] = $message;
                     if (! $useJson) {
                         $this->warn('[typefinder] '.$message);
@@ -445,7 +445,7 @@ class GenerateCommand extends Command
         $byKey = [];
         foreach ($events as $event) {
             foreach ($event['channels'] as $channel) {
-                $key = "{$channel['type']}:{$channel['name']}:{$event['broadcast_name']}";
+                $key = sprintf('%s:%s:%s', $channel['type'], $channel['name'], $event['broadcast_name']);
                 $byKey[$key][] = $event['event_class'];
             }
         }

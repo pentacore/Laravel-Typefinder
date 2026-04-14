@@ -10,7 +10,6 @@ use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Pentacore\Typefinder\Attributes\TypefinderBroadcast;
 use Pentacore\Typefinder\Attributes\TypefinderIgnore;
-use Pentacore\Typefinder\Support\NullSafeProxy;
 use ReflectionAttribute;
 use ReflectionClass;
 use ReflectionNamedType;
@@ -25,35 +24,35 @@ class BroadcastExtractor
      */
     public function extract(string $eventClass): ?array
     {
-        $reflection = new ReflectionClass($eventClass);
+        $reflectionClass = new ReflectionClass($eventClass);
 
-        if (! $reflection->implementsInterface(ShouldBroadcast::class)) {
+        if (! $reflectionClass->implementsInterface(ShouldBroadcast::class)) {
             return null;
         }
 
-        if ($reflection->getAttributes(TypefinderIgnore::class, ReflectionAttribute::IS_INSTANCEOF) !== []) {
+        if ($reflectionClass->getAttributes(TypefinderIgnore::class, ReflectionAttribute::IS_INSTANCEOF) !== []) {
             return null;
         }
 
-        $attribute = $this->getAttribute($reflection);
-        $instance = $this->cheapInstance($reflection);
+        $attribute = $this->getAttribute($reflectionClass);
+        $instance = $this->cheapInstance($reflectionClass);
 
         $broadcastName = $attribute?->as
             ?? $this->tryCall($instance, 'broadcastAs')
-            ?? $reflection->getShortName();
+            ?? $reflectionClass->getShortName();
 
         if ($attribute?->channel !== null) {
             $channels = [['type' => $attribute->channelType ?? 'public', 'name' => $attribute->channel]];
         } else {
             $channels = $this->resolveChannels($instance);
             if ($channels === null) {
-                throw new \RuntimeException("Could not resolve channels for {$eventClass}");
+                throw new \RuntimeException('Could not resolve channels for '.$eventClass);
             }
         }
 
-        $payload = $attribute !== null && $attribute->payload !== []
+        $payload = $attribute instanceof TypefinderBroadcast && $attribute->payload !== []
             ? $attribute->payload
-            : $this->resolvePayload($instance, $reflection);
+            : $this->resolvePayload($instance, $reflectionClass);
 
         return [
             'event_class' => $eventClass,
@@ -77,7 +76,11 @@ class BroadcastExtractor
 
         foreach ($finder as $file) {
             $className = $this->resolveClassName($file->getRealPath());
-            if ($className === null || ! class_exists($className)) {
+            if ($className === null) {
+                continue;
+            }
+
+            if (! class_exists($className)) {
                 continue;
             }
 
@@ -109,9 +112,9 @@ class BroadcastExtractor
         return $results;
     }
 
-    protected function getAttribute(ReflectionClass $reflection): ?TypefinderBroadcast
+    protected function getAttribute(ReflectionClass $reflectionClass): ?TypefinderBroadcast
     {
-        $attrs = $reflection->getAttributes(TypefinderBroadcast::class, ReflectionAttribute::IS_INSTANCEOF);
+        $attrs = $reflectionClass->getAttributes(TypefinderBroadcast::class, ReflectionAttribute::IS_INSTANCEOF);
 
         return $attrs === [] ? null : $attrs[0]->newInstance();
     }
@@ -122,9 +125,9 @@ class BroadcastExtractor
      * which we can't fabricate; bypassing the ctor lets us still reflect
      * on broadcastOn()/broadcastWith()/public property types.
      */
-    protected function cheapInstance(ReflectionClass $reflection): object
+    protected function cheapInstance(ReflectionClass $reflectionClass): object
     {
-        return $reflection->newInstanceWithoutConstructor();
+        return $reflectionClass->newInstanceWithoutConstructor();
     }
 
     protected function tryCall(object $instance, string $method): ?string
@@ -183,7 +186,7 @@ class BroadcastExtractor
     /**
      * @return array<string, string>
      */
-    protected function resolvePayload(object $instance, ReflectionClass $reflection): array
+    protected function resolvePayload(object $instance, ReflectionClass $reflectionClass): array
     {
         if (method_exists($instance, 'broadcastWith')) {
             try {
@@ -200,28 +203,29 @@ class BroadcastExtractor
         }
 
         $payload = [];
-        foreach ($reflection->getProperties(ReflectionProperty::IS_PUBLIC) as $property) {
-            if ($property->isStatic()) {
+        foreach ($reflectionClass->getProperties(ReflectionProperty::IS_PUBLIC) as $reflectionProperty) {
+            if ($reflectionProperty->isStatic()) {
                 continue;
             }
-            $payload[$property->getName()] = $this->typeToTsHint($property->getType());
+
+            $payload[$reflectionProperty->getName()] = $this->typeToTsHint($reflectionProperty->getType());
         }
 
         return $payload;
     }
 
-    protected function typeToTsHint(?\ReflectionType $type): string
+    protected function typeToTsHint(?\ReflectionType $reflectionType): string
     {
-        if (! $type instanceof ReflectionNamedType) {
+        if (! $reflectionType instanceof ReflectionNamedType) {
             return 'unknown';
         }
 
-        return match ($type->getName()) {
+        return match ($reflectionType->getName()) {
             'int', 'float' => 'number',
             'string' => 'string',
             'bool' => 'boolean',
             'array' => 'unknown[]',
-            default => $type->getName(),
+            default => $reflectionType->getName(),
         };
     }
 

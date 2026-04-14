@@ -16,17 +16,17 @@ use function Orchestra\Testbench\workbench_path;
 
 final class BroadcastExtractorTest extends TestCase
 {
-    private BroadcastExtractor $extractor;
+    private BroadcastExtractor $broadcastExtractor;
 
     protected function setUp(): void
     {
         parent::setUp();
-        $this->extractor = new BroadcastExtractor;
+        $this->broadcastExtractor = new BroadcastExtractor;
     }
 
     public function test_extracts_public_channel_event(): void
     {
-        $results = $this->extractor->extractFromDirectory(workbench_path('app/Events'));
+        $results = $this->broadcastExtractor->extractFromDirectory(workbench_path('app/Events'));
         $byName = collect($results)->keyBy('broadcast_name');
 
         $this->assertArrayHasKey('PostPublished', $byName->toArray());
@@ -37,7 +37,7 @@ final class BroadcastExtractorTest extends TestCase
 
     public function test_extracts_private_channel_event_with_broadcast_with(): void
     {
-        $results = $this->extractor->extractFromDirectory(workbench_path('app/Events'));
+        $results = $this->broadcastExtractor->extractFromDirectory(workbench_path('app/Events'));
         $byName = collect($results)->keyBy('broadcast_name');
 
         $this->assertArrayHasKey('OrderShipped', $byName->toArray());
@@ -49,7 +49,7 @@ final class BroadcastExtractorTest extends TestCase
 
     public function test_extracts_presence_channel(): void
     {
-        $results = $this->extractor->extractFromDirectory(workbench_path('app/Events'));
+        $results = $this->broadcastExtractor->extractFromDirectory(workbench_path('app/Events'));
         $byName = collect($results)->keyBy('broadcast_name');
 
         $channels = $byName['MessageSent']['channels'];
@@ -58,7 +58,7 @@ final class BroadcastExtractorTest extends TestCase
 
     public function test_falls_back_to_public_properties_for_payload(): void
     {
-        $results = $this->extractor->extractFromDirectory(workbench_path('app/Events'));
+        $results = $this->broadcastExtractor->extractFromDirectory(workbench_path('app/Events'));
         $byName = collect($results)->keyBy('broadcast_name');
 
         $this->assertArrayHasKey('post', $byName['PostPublished']['payload']);
@@ -67,7 +67,7 @@ final class BroadcastExtractorTest extends TestCase
 
     public function test_skips_classes_tagged_with_typefinder_ignore(): void
     {
-        $results = $this->extractor->extractFromDirectory(workbench_path('app/Events'));
+        $results = $this->broadcastExtractor->extractFromDirectory(workbench_path('app/Events'));
         $classes = array_column($results, 'event_class');
 
         $this->assertNotContains(LegacyEvent::class, $classes);
@@ -76,7 +76,7 @@ final class BroadcastExtractorTest extends TestCase
     public function test_skips_unrecoverable_event_with_warning(): void
     {
         $warned = [];
-        $results = $this->extractor->extractFromDirectory(
+        $results = $this->broadcastExtractor->extractFromDirectory(
             workbench_path('app/Events'),
             onExtract: null,
             onWarn: function (string $cls, \Throwable $throwable) use (&$warned): void {
@@ -91,7 +91,7 @@ final class BroadcastExtractorTest extends TestCase
 
     public function test_attribute_override_provides_declarative_fallback(): void
     {
-        $results = $this->extractor->extractFromDirectory(workbench_path('app/Events'));
+        $results = $this->broadcastExtractor->extractFromDirectory(workbench_path('app/Events'));
         $byName = collect($results)->keyBy('broadcast_name');
 
         $this->assertArrayHasKey('AuditFired', $byName->toArray());

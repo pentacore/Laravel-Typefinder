@@ -8,6 +8,7 @@ use App\Enums\PostStatus;
 use App\Http\Requests\BrokenRequest;
 use App\Http\Requests\StoreInvoiceRequest;
 use App\Http\Requests\StorePostRequest;
+use App\Http\Requests\UnrecoverableRequest;
 use App\Http\Requests\UnrecoverableWithFallbackRequest;
 use App\Http\Requests\UpdatePostRequest;
 use Pentacore\Typefinder\Extractors\RequestExtractor;
@@ -167,7 +168,7 @@ final class RequestExtractorTest extends TestCase
             },
         );
 
-        $this->assertContains(\App\Http\Requests\UnrecoverableRequest::class, $warned);
+        $this->assertContains(UnrecoverableRequest::class, $warned);
         $this->assertNotContains('UnrecoverableRequest', array_column($results, 'name'));
     }
 
