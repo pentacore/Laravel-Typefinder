@@ -10,6 +10,7 @@ use Illuminate\Validation\Rules\Enum;
 use Illuminate\Validation\Rules\In;
 use Pentacore\Typefinder\Attributes\TypefinderIgnore;
 use Pentacore\Typefinder\Attributes\TypefinderOverrides;
+use Pentacore\Typefinder\Support\NullSafeProxy;
 use ReflectionAttribute;
 use ReflectionClass;
 use Symfony\Component\Finder\Finder;
@@ -87,7 +88,26 @@ class RequestExtractor
     {
         $reflectionClass = new ReflectionClass($requestClass);
         $formRequest = $this->createRequestInstance($requestClass);
-        $rules = $formRequest->rules();
+
+        try {
+            $rules = $formRequest->rules();
+        } catch (\Throwable) {
+            $this->applyNullSafeResolvers($formRequest);
+            try {
+                $rules = $formRequest->rules();
+            } catch (\Throwable $e2) {
+                $fallback = $this->synthesizeFieldsFromOverrides($reflectionClass);
+                if ($fallback === null) {
+                    throw $e2;
+                }
+
+                return [
+                    'name' => $reflectionClass->getShortName(),
+                    'fqcn' => $requestClass,
+                    'fields' => $fallback,
+                ];
+            }
+        }
 
         $fields = $this->parseRules($rules);
 
@@ -459,6 +479,44 @@ class RequestExtractor
     /**
      * Resolve the fully qualified class name from a PHP file.
      */
+    /**
+     * Stub route + user resolvers with a NullSafeProxy so rules() can
+     * reference `$this->route(...)` / `$this->user(...)` without a loaded
+     * route or auth context.
+     */
+    protected function applyNullSafeResolvers(FormRequest $formRequest): void
+    {
+        $formRequest->setRouteResolver(fn (): NullSafeProxy => new NullSafeProxy);
+        $formRequest->setUserResolver(fn ($guard = null): NullSafeProxy => new NullSafeProxy);
+    }
+
+    /**
+     * When both rules() calls fail, fall back to the class-level
+     * #[TypefinderOverrides(...)] attribute as the full field set.
+     * Returns null if the attribute is absent.
+     *
+     * @return ?list<array{name: string, type: string, required: bool, nullable: bool}>
+     */
+    protected function synthesizeFieldsFromOverrides(ReflectionClass $reflectionClass): ?array
+    {
+        $overrides = $this->getTypeOverrides($reflectionClass);
+        if ($overrides === []) {
+            return null;
+        }
+
+        $fields = [];
+        foreach ($overrides as $name => $type) {
+            $fields[] = [
+                'name' => $name,
+                'type' => $type,
+                'required' => true,
+                'nullable' => false,
+            ];
+        }
+
+        return $fields;
+    }
+
     /**
      * @return array<string, string>
      */

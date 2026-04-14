@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use App\Enums\PostStatus;
+use App\Http\Requests\BrokenRequest;
 use App\Http\Requests\StoreInvoiceRequest;
 use App\Http\Requests\StorePostRequest;
+use App\Http\Requests\UnrecoverableWithFallbackRequest;
 use App\Http\Requests\UpdatePostRequest;
 use Pentacore\Typefinder\Extractors\RequestExtractor;
 use Tests\TestCase;
@@ -123,31 +125,50 @@ final class RequestExtractorTest extends TestCase
     {
         $results = $this->requestExtractor->extractFromDirectory(workbench_path('app/Http/Requests'));
 
-        $this->assertCount(3, $results);
         $names = array_column($results, 'name');
         $this->assertContains('StorePostRequest', $names);
         $this->assertContains('UpdatePostRequest', $names);
         $this->assertContains('StoreInvoiceRequest', $names);
-        // BrokenRequest throws during rules() and must be skipped silently
-        // by extractFromDirectory (it's still counted as "discovered" but
-        // is excluded from the results).
-        $this->assertNotContains('BrokenRequest', $names);
+        // BrokenRequest references $this->route('user')->id — recovers via
+        // the null-safe proxy retry.
+        $this->assertContains('BrokenRequest', $names);
+        // UnrecoverableWithFallbackRequest rules() throws, but TypefinderOverrides
+        // supplies a declarative field set.
+        $this->assertContains('UnrecoverableWithFallbackRequest', $names);
+        // UnrecoverableRequest rules() throws and has no overrides → skipped.
+        $this->assertNotContains('UnrecoverableRequest', $names);
     }
 
-    public function test_broken_request_is_skipped_with_warning(): void
+    public function test_broken_request_recovers_via_null_safe_proxy(): void
+    {
+        $result = $this->requestExtractor->extract(BrokenRequest::class);
+
+        $email = $this->findField($result, 'email');
+        $this->assertNotNull($email);
+        $this->assertSame('string', $email['type']);
+    }
+
+    public function test_unrecoverable_request_falls_back_to_overrides(): void
+    {
+        $result = $this->requestExtractor->extract(UnrecoverableWithFallbackRequest::class);
+
+        $this->assertSame('string', $this->findField($result, 'name')['type']);
+        $this->assertSame('string', $this->findField($result, 'email')['type']);
+    }
+
+    public function test_unrecoverable_request_without_overrides_is_skipped_with_warning(): void
     {
         $warned = [];
         $results = $this->requestExtractor->extractFromDirectory(
             workbench_path('app/Http/Requests'),
             onExtract: null,
             onWarn: function (string $cls, \Throwable $throwable) use (&$warned): void {
-                $warned[] = [$cls, $throwable];
+                $warned[] = $cls;
             },
         );
 
-        $this->assertNotEmpty($warned, 'Expected a warning for BrokenRequest');
-        $this->assertStringContainsString('BrokenRequest', $warned[0][0]);
-        $this->assertNotContains('BrokenRequest', array_column($results, 'name'));
+        $this->assertContains(\App\Http\Requests\UnrecoverableRequest::class, $warned);
+        $this->assertNotContains('UnrecoverableRequest', array_column($results, 'name'));
     }
 
     public function test_typefinder_overrides_attribute_replaces_field_types(): void
