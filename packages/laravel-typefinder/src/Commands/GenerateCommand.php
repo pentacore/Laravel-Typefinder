@@ -7,6 +7,7 @@ namespace Pentacore\Typefinder\Commands;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
 use Pentacore\Typefinder\Attributes\TypefinderWriteShape;
+use Pentacore\Typefinder\Extractors\BroadcastExtractor;
 use Pentacore\Typefinder\Extractors\ControllerExtractor;
 use Pentacore\Typefinder\Extractors\EnumExtractor;
 use Pentacore\Typefinder\Extractors\ModelExtractor;
@@ -164,6 +165,38 @@ class GenerateCommand extends Command
                     $categories[] = 'pages';
                     $this->counts['pages'] = count($allPages);
                     $this->printInfo('Generated '.count($allPages).' page prop type(s)', $useJson);
+                }
+            }
+
+            if (config('typefinder.broadcasting.enabled', false)) {
+                $broadcastExtractor = new BroadcastExtractor;
+                $paths = config('typefinder.broadcasting.paths', []);
+
+                $this->debugLine('extracting category=broadcasting paths=['.implode(',', array_map(fn ($p): string => '"'.$p.'"', $paths)).']', $useJson, $useDebug);
+
+                $onBroadcast = fn (string $cls) => $this->debugLine('parsing category=broadcasting class='.$cls, $useJson, $useDebug);
+                $onBroadcastWarn = function (string $cls, \Throwable $throwable) use ($useJson): void {
+                    $message = "skipped {$cls}: ".$throwable->getMessage();
+                    $this->warnings[] = $message;
+                    if (! $useJson) {
+                        $this->warn('[typefinder] '.$message);
+                    }
+                };
+
+                $allBroadcasts = [];
+                foreach ($paths as $path) {
+                    $allBroadcasts = array_merge($allBroadcasts, $broadcastExtractor->extractFromDirectory($path, $onBroadcast, $onBroadcastWarn));
+                }
+
+                $this->assertNoBroadcastCollisions($allBroadcasts);
+
+                $this->debugLine('extracted category=broadcasting count='.count($allBroadcasts), $useJson, $useDebug);
+
+                if ($allBroadcasts !== []) {
+                    $this->writeBroadcasting($allBroadcasts, $allModels, $allEnums, $typeScriptRenderer, $outputPath, $useJson, $useDebug);
+                    $categories[] = 'broadcasting';
+                    $this->counts['broadcasting'] = count($allBroadcasts);
+                    $this->printInfo('Generated '.count($allBroadcasts).' broadcast event type(s)', $useJson);
                 }
             }
 
@@ -391,6 +424,43 @@ class GenerateCommand extends Command
         }
 
         throw new \RuntimeException("Duplicate TypefinderPage components:\n".implode("\n", $lines));
+    }
+
+    protected function writeBroadcasting(array $events, array $allModels, array $allEnums, TypeScriptRenderer $typeScriptRenderer, string $outputPath, bool $useJson, bool $useDebug): void
+    {
+        File::ensureDirectoryExists($outputPath);
+
+        $content = $typeScriptRenderer->renderBroadcasting($events, $allModels, $allEnums);
+        $relativePath = 'broadcasting.d.ts';
+        $wrote = $this->writeIfChanged($outputPath.'/broadcasting.d.ts', $content);
+        $this->files[] = ['path' => $relativePath, 'written' => $wrote];
+        $this->debugLine('writing category=broadcasting path='.$relativePath.' changed='.($wrote ? 'true' : 'false'), $useJson, $useDebug);
+    }
+
+    /**
+     * @param  list<array{event_class: string, broadcast_name: string, channels: list<array{type: string, name: string}>}>  $events
+     */
+    protected function assertNoBroadcastCollisions(array $events): void
+    {
+        $byKey = [];
+        foreach ($events as $event) {
+            foreach ($event['channels'] as $channel) {
+                $key = "{$channel['type']}:{$channel['name']}:{$event['broadcast_name']}";
+                $byKey[$key][] = $event['event_class'];
+            }
+        }
+
+        $conflicts = array_filter($byKey, fn ($classes): bool => count($classes) > 1);
+        if ($conflicts === []) {
+            return;
+        }
+
+        $lines = [];
+        foreach ($conflicts as $key => $classes) {
+            $lines[] = $key.': '.implode(', ', $classes);
+        }
+
+        throw new \RuntimeException("Duplicate broadcast event on channel:\n".implode("\n", $lines));
     }
 
     /**

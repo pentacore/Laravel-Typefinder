@@ -111,4 +111,20 @@ return [
         'enabled' => false,
         'paths' => [app_path('Http/Controllers')],
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Broadcasting (opt-in)
+    |--------------------------------------------------------------------------
+    |
+    | When enabled, classes implementing ShouldBroadcast in the configured
+    | paths are scanned and emitted into broadcasting.d.ts as a set of
+    | channel → event → payload maps.
+    |
+    */
+
+    'broadcasting' => [
+        'enabled' => false,
+        'paths' => [app_path('Events')],
+    ],
 ];
