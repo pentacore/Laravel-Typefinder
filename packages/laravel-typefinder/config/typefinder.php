@@ -28,7 +28,7 @@ return [
 
         // When enabled, each model emits {Model}Create and {Model}Update
         // companion types alongside the canonical read shape.
-        'emit_write_shapes' => false,
+        'emit_write_shapes' => true,
 
         // Respect $fillable/$guarded when building write shapes.
         // Override per-model via typefinderRespectMassAssignment().

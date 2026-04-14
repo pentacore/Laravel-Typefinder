@@ -226,7 +226,7 @@ class GenerateCommand extends Command
         $dir = $outputPath.'/models';
         File::ensureDirectoryExists($dir);
 
-        $emitWriteShapes = (bool) config('typefinder.models.emit_write_shapes', false);
+        $emitWriteShapes = (bool) config('typefinder.models.emit_write_shapes', true);
         $globalImmutable = (array) config('typefinder.models.immutable_on_update', ['id', 'created_at', 'updated_at', 'deleted_at']);
 
         $names = [];
