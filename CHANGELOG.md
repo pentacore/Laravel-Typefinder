@@ -1,3 +1,14 @@
+## [1.1.0](https://github.com/pentacore/Laravel-Typefinder/compare/v1.0.1...v1.1.0) (2026-04-14)
+
+### Features
+
+* drop support for PHP 8.2 ([0fa585f](https://github.com/pentacore/Laravel-Typefinder/commit/0fa585f4249361503e6b670eff093f812193afd3))
+* sync composer.json version from semantic-release ([8f98520](https://github.com/pentacore/Laravel-Typefinder/commit/8f985205c29e78c8b0c918c4a01162e0cb5fb2f0))
+
+### Bug Fixes
+
+* update url's to match github repo ([2cde0d1](https://github.com/pentacore/Laravel-Typefinder/commit/2cde0d13f3df42bb83105f16602fc61b7a3b5f4b))
+
 ## [1.0.1](https://github.com/pentacore/Laravel-Typefinder/compare/v1.0.0...v1.0.1) (2026-04-14)
 
 ### Bug Fixes
