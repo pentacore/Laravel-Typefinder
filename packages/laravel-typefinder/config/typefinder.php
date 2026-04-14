@@ -14,6 +14,19 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Auto .gitignore
+    |--------------------------------------------------------------------------
+    |
+    | When enabled, the generator appends the output path to the project
+    | root .gitignore (if present) on every run so generated .d.ts files
+    | stay out of version control. Idempotent — adds the line at most once.
+    |
+    */
+
+    'gitignore_generated' => true,
+
+    /*
+    |--------------------------------------------------------------------------
     | Models
     |--------------------------------------------------------------------------
     |
