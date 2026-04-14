@@ -1,0 +1,73 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Tests\Feature;
+
+use Pentacore\Typefinder\Extractors\ControllerExtractor;
+use Tests\TestCase;
+
+use function Orchestra\Testbench\workbench_path;
+
+final class ControllerExtractorTest extends TestCase
+{
+    private ControllerExtractor $extractor;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->extractor = new ControllerExtractor;
+    }
+
+    public function test_extracts_typefinder_page_attribute(): void
+    {
+        $results = $this->extractor->extractFromDirectory(workbench_path('app/Http/Controllers'));
+        $byComponent = collect($results)->keyBy('component');
+
+        $this->assertArrayHasKey('Users/Show', $byComponent->toArray());
+        $this->assertSame('App\\Models\\User', $byComponent['Users/Show']['props']['user']);
+        $this->assertSame('boolean', $byComponent['Users/Show']['props']['canEdit']);
+        $this->assertSame(
+            'App\\Http\\Controllers\\UserController::show',
+            $byComponent['Users/Show']['source'],
+        );
+    }
+
+    public function test_extracts_multiple_controllers(): void
+    {
+        $results = $this->extractor->extractFromDirectory(workbench_path('app/Http/Controllers'));
+        $components = array_column($results, 'component');
+
+        $this->assertContains('Users/Show', $components);
+        $this->assertContains('Dashboard', $components);
+    }
+
+    public function test_skips_controllers_without_attributes(): void
+    {
+        $results = $this->extractor->extractFromDirectory(workbench_path('app/Http/Controllers'));
+        $sources = array_column($results, 'source');
+
+        foreach ($sources as $src) {
+            $this->assertStringNotContainsString('PlainController', $src);
+        }
+    }
+
+    public function test_returns_empty_for_missing_directory(): void
+    {
+        $this->assertSame([], $this->extractor->extractFromDirectory('/nonexistent'));
+    }
+
+    public function test_invokes_progress_callback(): void
+    {
+        $seen = [];
+        $this->extractor->extractFromDirectory(
+            workbench_path('app/Http/Controllers'),
+            function (string $cls) use (&$seen): void {
+                $seen[] = $cls;
+            },
+        );
+
+        $this->assertContains('App\\Http\\Controllers\\UserController', $seen);
+        $this->assertContains('App\\Http\\Controllers\\DashboardController', $seen);
+    }
+}
