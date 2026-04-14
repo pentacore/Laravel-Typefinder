@@ -113,7 +113,7 @@ class RequestExtractor
      *
      * @return list<array{name: string, fqcn: class-string, fields: list<array>}>
      */
-    public function extractFromDirectory(string $path, ?callable $onExtract = null): array
+    public function extractFromDirectory(string $path, ?callable $onExtract = null, ?callable $onWarn = null): array
     {
         if (! is_dir($path)) {
             return [];
@@ -144,7 +144,15 @@ class RequestExtractor
                 $onExtract($className);
             }
 
-            $results[] = $this->extract($className);
+            try {
+                $results[] = $this->extract($className);
+            } catch (\Throwable $e) {
+                if ($onWarn !== null) {
+                    $onWarn($className, $e);
+                }
+
+                // Skip this request; generator continues with the others.
+            }
         }
 
         return $results;

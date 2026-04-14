@@ -128,6 +128,26 @@ final class RequestExtractorTest extends TestCase
         $this->assertContains('StorePostRequest', $names);
         $this->assertContains('UpdatePostRequest', $names);
         $this->assertContains('StoreInvoiceRequest', $names);
+        // BrokenRequest throws during rules() and must be skipped silently
+        // by extractFromDirectory (it's still counted as "discovered" but
+        // is excluded from the results).
+        $this->assertNotContains('BrokenRequest', $names);
+    }
+
+    public function test_broken_request_is_skipped_with_warning(): void
+    {
+        $warned = [];
+        $results = $this->requestExtractor->extractFromDirectory(
+            workbench_path('app/Http/Requests'),
+            onExtract: null,
+            onWarn: function (string $cls, \Throwable $throwable) use (&$warned): void {
+                $warned[] = [$cls, $throwable];
+            },
+        );
+
+        $this->assertNotEmpty($warned, 'Expected a warning for BrokenRequest');
+        $this->assertStringContainsString('BrokenRequest', $warned[0][0]);
+        $this->assertNotContains('BrokenRequest', array_column($results, 'name'));
     }
 
     public function test_typefinder_overrides_attribute_replaces_field_types(): void

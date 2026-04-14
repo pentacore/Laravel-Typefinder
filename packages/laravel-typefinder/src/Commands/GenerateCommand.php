@@ -121,8 +121,15 @@ class GenerateCommand extends Command
                 $this->debugLine('extracting category=requests paths=['.implode(',', array_map(fn ($p): string => '"'.$p.'"', $paths)).']', $useJson, $useDebug);
 
                 $onRequest = fn (string $cls) => $this->debugLine('parsing category=requests class='.$cls, $useJson, $useDebug);
+                $onRequestWarn = function (string $cls, \Throwable $throwable) use ($useJson): void {
+                    $message = sprintf('skipped %s: ', $cls).$throwable->getMessage();
+                    $this->warnings[] = $message;
+                    if (! $useJson) {
+                        $this->warn('[typefinder] '.$message);
+                    }
+                };
                 foreach ($paths as $path) {
-                    $allRequests = array_merge($allRequests, $requestExtractor->extractFromDirectory($path, $onRequest));
+                    $allRequests = array_merge($allRequests, $requestExtractor->extractFromDirectory($path, $onRequest, $onRequestWarn));
                 }
 
                 $this->debugLine('extracted category=requests count='.count($allRequests), $useJson, $useDebug);
