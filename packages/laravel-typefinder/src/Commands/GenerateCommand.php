@@ -4,6 +4,7 @@ namespace Pentacore\Typefinder\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
+use Pentacore\Typefinder\Attributes\TypefinderWriteShape;
 use Pentacore\Typefinder\Extractors\ControllerExtractor;
 use Pentacore\Typefinder\Extractors\EnumExtractor;
 use Pentacore\Typefinder\Extractors\ModelExtractor;
@@ -12,6 +13,8 @@ use Pentacore\Typefinder\Renderers\TypeScriptRenderer;
 use Pentacore\Typefinder\Resolvers\CastTypeResolver;
 use Pentacore\Typefinder\Resolvers\ColumnTypeResolver;
 use Pentacore\Typefinder\Resolvers\MorphToResolver;
+use ReflectionAttribute;
+use ReflectionClass;
 
 class GenerateCommand extends Command
 {
@@ -292,11 +295,13 @@ class GenerateCommand extends Command
      */
     private function getContractImmutable(string $fqcn): array
     {
-        if (! method_exists($fqcn, 'typefinderImmutableOnUpdate')) {
+        $attrs = (new ReflectionClass($fqcn))
+            ->getAttributes(TypefinderWriteShape::class, ReflectionAttribute::IS_INSTANCEOF);
+        if ($attrs === []) {
             return [];
         }
 
-        return (array) $fqcn::typefinderImmutableOnUpdate();
+        return $attrs[0]->newInstance()->immutableOnUpdate;
     }
 
     protected function writeRequests(array $requests, array $allEnums, TypeScriptRenderer $renderer, string $outputPath, bool $extractNested, bool $useJson, bool $useDebug): void
