@@ -7,5 +7,16 @@
         "build": "npm -w packages/vite-plugin-laravel-typefinder run build",
         "lint": "npm -w packages/vite-plugin-laravel-typefinder run lint",
         "bundle": "npm run build && rm -rf packages/laravel-typefinder/dist && cp -r packages/vite-plugin-laravel-typefinder/dist packages/laravel-typefinder/dist"
+    },
+    "devDependencies": {
+        "@semantic-release/changelog": "6.0.3",
+        "@semantic-release/commit-analyzer": "13.0.1",
+        "@semantic-release/exec": "6.0.3",
+        "@semantic-release/git": "10.0.1",
+        "@semantic-release/github": "11.0.6",
+        "@semantic-release/npm": "12.0.2",
+        "@semantic-release/release-notes-generator": "14.1.0",
+        "conventional-changelog-conventionalcommits": "8.0.0",
+        "semantic-release": "24.2.9"
     }
 }
