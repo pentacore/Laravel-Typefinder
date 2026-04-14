@@ -14,7 +14,7 @@ Laravel Typefinder introspects your database schema, `$casts` declarations, vali
 ## Installation
 
 ```bash
-composer require typefinder/laravel-typefinder
+composer require pentacore/laravel-typefinder
 ```
 
 The service provider is auto-discovered.

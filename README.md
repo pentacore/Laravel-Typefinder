@@ -6,7 +6,7 @@ Laravel Typefinder auto-generates TypeScript type definitions (`.d.ts` files) fr
 
 | Package | Install |
 |---|---|
-| [`typefinder/laravel-typefinder`](packages/laravel-typefinder/) | `composer require typefinder/laravel-typefinder` |
+| [`pentacore/laravel-typefinder`](packages/laravel-typefinder/) | `composer require pentacore/laravel-typefinder` |
 | [`@pentacore/vite-plugin-laravel-typefinder`](packages/vite-plugin-laravel-typefinder/) | `npm i -D @pentacore/vite-plugin-laravel-typefinder` |
 
 ## Quick start
@@ -14,7 +14,7 @@ Laravel Typefinder auto-generates TypeScript type definitions (`.d.ts` files) fr
 **1. Install the Composer package:**
 
 ```bash
-composer require typefinder/laravel-typefinder
+composer require pentacore/laravel-typefinder
 ```
 
 **2. Register the Vite plugin** (`vite.config.js`):

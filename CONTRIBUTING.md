@@ -56,7 +56,7 @@ CI enforces `vendor/bin/pint --test` (no auto-fix) so run Pint locally before pu
 
 ## Commit messages & releases
 
-This repo releases automatically from `master` using [Conventional Commits](https://www.conventionalcommits.org/). Both the Composer package (`typefinder/laravel-typefinder`) and the npm package (`@pentacore/vite-plugin-laravel-typefinder`) are versioned in lockstep.
+This repo releases automatically from `master` using [Conventional Commits](https://www.conventionalcommits.org/). Both the Composer package (`pentacore/laravel-typefinder`) and the npm package (`@pentacore/vite-plugin-laravel-typefinder`) are versioned in lockstep.
 
 **Bump rules:**
 

@@ -54,7 +54,7 @@ The plugin relies on Typefinder's selective-write behaviour: the PHP command re-
 If you prefer not to add an npm dependency, the Composer package bundles the built plugin in its `dist/` directory:
 
 ```ts
-import typefinder from '../../vendor/typefinder/laravel-typefinder/dist/index.mjs';
+import typefinder from '../../vendor/pentacore/laravel-typefinder/dist/index.mjs';
 ```
 
 Adjust the relative path to match your project structure. This approach means the plugin version is tied to your Composer lock file — which is often desirable.
