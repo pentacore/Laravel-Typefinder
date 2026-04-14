@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use App\Enums\PostStatus;
+use App\Http\Requests\StoreInvoiceRequest;
 use App\Http\Requests\StorePostRequest;
 use App\Http\Requests\UpdatePostRequest;
 use Pentacore\Typefinder\Extractors\RequestExtractor;
@@ -122,10 +123,21 @@ final class RequestExtractorTest extends TestCase
     {
         $results = $this->requestExtractor->extractFromDirectory(workbench_path('app/Http/Requests'));
 
-        $this->assertCount(2, $results);
+        $this->assertCount(3, $results);
         $names = array_column($results, 'name');
         $this->assertContains('StorePostRequest', $names);
         $this->assertContains('UpdatePostRequest', $names);
+        $this->assertContains('StoreInvoiceRequest', $names);
+    }
+
+    public function test_typefinder_overrides_attribute_replaces_field_types(): void
+    {
+        $result = $this->requestExtractor->extract(StoreInvoiceRequest::class);
+
+        $this->assertSame('File | null', $this->findField($result, 'attachment')['type']);
+        $this->assertSame('number', $this->findField($result, 'amount')['type']);
+        // Field without an override keeps its rule-inferred type.
+        $this->assertSame('string', $this->findField($result, 'reference')['type']);
     }
 
     /**

@@ -9,6 +9,8 @@ use Illuminate\Validation\Rules\AnyOf;
 use Illuminate\Validation\Rules\Enum;
 use Illuminate\Validation\Rules\In;
 use Pentacore\Typefinder\Attributes\TypefinderIgnore;
+use Pentacore\Typefinder\Attributes\TypefinderOverrides;
+use ReflectionAttribute;
 use ReflectionClass;
 use Symfony\Component\Finder\Finder;
 
@@ -89,6 +91,16 @@ class RequestExtractor
 
         $fields = $this->parseRules($rules);
 
+        $overrides = $this->getTypeOverrides($reflectionClass);
+        if ($overrides !== []) {
+            $fields = array_map(
+                fn (array $field): array => isset($overrides[$field['name']])
+                    ? ['type' => $overrides[$field['name']]] + $field
+                    : $field,
+                $fields,
+            );
+        }
+
         return [
             'name' => $reflectionClass->getShortName(),
             'fqcn' => $requestClass,
@@ -124,7 +136,7 @@ class RequestExtractor
                 continue;
             }
 
-            if ((new ReflectionClass($className))->getAttributes(TypefinderIgnore::class, \ReflectionAttribute::IS_INSTANCEOF) !== []) {
+            if ((new ReflectionClass($className))->getAttributes(TypefinderIgnore::class, ReflectionAttribute::IS_INSTANCEOF) !== []) {
                 continue;
             }
 
@@ -439,6 +451,19 @@ class RequestExtractor
     /**
      * Resolve the fully qualified class name from a PHP file.
      */
+    /**
+     * @return array<string, string>
+     */
+    protected function getTypeOverrides(ReflectionClass $reflectionClass): array
+    {
+        $attrs = $reflectionClass->getAttributes(TypefinderOverrides::class, ReflectionAttribute::IS_INSTANCEOF);
+        if ($attrs === []) {
+            return [];
+        }
+
+        return $attrs[0]->newInstance()->overrides;
+    }
+
     protected function resolveClassName(string $filePath): ?string
     {
         $contents = file_get_contents($filePath);
