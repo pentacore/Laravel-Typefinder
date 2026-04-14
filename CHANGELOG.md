@@ -1,3 +1,18 @@
+## [1.2.0](https://github.com/pentacore/Laravel-Typefinder/compare/v1.1.0...v1.2.0) (2026-04-14)
+
+### Features
+
+* add HasWriteShapeContract trait ([a14afb9](https://github.com/pentacore/Laravel-Typefinder/commit/a14afb931fd7d0e2a1633bdbaf59fa258cf822b1))
+* add write-shape config keys ([33b4258](https://github.com/pentacore/Laravel-Typefinder/commit/33b4258caa52ffbab764d3e2fa623d936691f59d))
+* emit Create/Update companion files when enabled ([7f339a5](https://github.com/pentacore/Laravel-Typefinder/commit/7f339a53d6264dc964a3f54026d9d8bc0436aff6))
+* extract is_primary, is_server_filled, assignable_columns metadata ([450a511](https://github.com/pentacore/Laravel-Typefinder/commit/450a5118f03f747936f9a6368f66b7205d57ec49))
+* render Create and Update companion types ([f261da1](https://github.com/pentacore/Laravel-Typefinder/commit/f261da123bdf94ff1764e42087146046d014a956))
+
+### Bug Fixes
+
+* fix docs ([e2dee63](https://github.com/pentacore/Laravel-Typefinder/commit/e2dee63c2600ac96b251ffdcbf4888e8606a5c7e))
+* make write models default on ([f0d4fde](https://github.com/pentacore/Laravel-Typefinder/commit/f0d4fdeb920cd80653d8bf40e557a9ce68e1113f))
+
 ## [1.1.0](https://github.com/pentacore/Laravel-Typefinder/compare/v1.0.1...v1.1.0) (2026-04-14)
 
 ### Features
