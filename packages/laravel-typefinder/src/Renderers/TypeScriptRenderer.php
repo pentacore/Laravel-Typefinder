@@ -79,6 +79,79 @@ class TypeScriptRenderer
     }
 
     /**
+     * Render the Create companion type (omits server-filled fields and relationships).
+     *
+     * @param  list<array>  $allEnums
+     * @param  list<array>  $allModels
+     */
+    public function renderModelCreate(array $model, array $allEnums, array $allModels): string
+    {
+        $imports = [];
+        $lines = [];
+
+        $eligible = array_values(array_filter(
+            $model['assignable_columns'] ?? [],
+            fn ($c) => empty($c['is_server_filled']),
+        ));
+
+        foreach ($eligible as $column) {
+            $typeStr = $this->resolveTypeString($column['type'], $column['nullable'], $allEnums, $imports);
+            $optional = $column['nullable'] ? '?' : '';
+            $nullUnion = $column['nullable'] ? ' | null' : '';
+            $lines[] = "  {$column['name']}{$optional}: {$typeStr}{$nullUnion};";
+        }
+
+        return $this->assembleType("{$model['name']}Create", $imports, $lines);
+    }
+
+    /**
+     * Render the Update companion type: every assignable field becomes optional,
+     * immutable-on-update fields are dropped. Relationships are excluded.
+     *
+     * @param  list<array>  $allEnums
+     * @param  list<array>  $allModels
+     * @param  list<string>  $immutable
+     */
+    public function renderModelUpdate(array $model, array $allEnums, array $allModels, array $immutable): string
+    {
+        $imports = [];
+        $lines = [];
+
+        $eligible = array_values(array_filter(
+            $model['assignable_columns'] ?? [],
+            fn ($c) => empty($c['is_server_filled']) && ! in_array($c['name'], $immutable, true),
+        ));
+
+        foreach ($eligible as $column) {
+            $typeStr = $this->resolveTypeString($column['type'], $column['nullable'], $allEnums, $imports);
+            $nullUnion = $column['nullable'] ? ' | null' : '';
+            $lines[] = "  {$column['name']}?: {$typeStr}{$nullUnion};";
+        }
+
+        return $this->assembleType("{$model['name']}Update", $imports, $lines);
+    }
+
+    /**
+     * @param  list<string>  $imports
+     * @param  list<string>  $lines
+     */
+    protected function assembleType(string $name, array $imports, array $lines): string
+    {
+        $imports = array_values(array_unique($imports));
+        sort($imports);
+
+        $output = '';
+        if (! empty($imports)) {
+            $output .= implode("\n", $imports)."\n\n";
+        }
+        $output .= "export type {$name} = {\n";
+        $output .= implode("\n", $lines)."\n";
+        $output .= "};\n";
+
+        return $output;
+    }
+
+    /**
      * Render a request to a .d.ts file content string.
      *
      * @param  list<array>  $allEnums
