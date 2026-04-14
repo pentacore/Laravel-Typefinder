@@ -17,6 +17,7 @@ permissions:
   issues: write
   pull-requests: write
   id-token: write
+  actions: read
 
 jobs:
   release:
@@ -75,6 +76,7 @@ jobs:
       - name: Run semantic-release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           DRY_RUN: ${{ inputs.dry_run }}
         run: |
