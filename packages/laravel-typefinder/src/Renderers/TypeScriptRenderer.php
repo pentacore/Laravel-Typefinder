@@ -34,6 +34,60 @@ class TypeScriptRenderer
      */
     public function renderModel(array $model, array $allEnums, array $allModels): string
     {
+        return $this->assembleFile([$this->buildModelBlock($model, $allEnums, $allModels)]);
+    }
+
+    /**
+     * Render the Create companion type (omits server-filled fields and relationships).
+     *
+     * @param  list<array>  $allEnums
+     * @param  list<array>  $allModels
+     */
+    public function renderModelCreate(array $model, array $allEnums, array $allModels): string
+    {
+        return $this->assembleFile([$this->buildModelCreateBlock($model, $allEnums, $allModels)]);
+    }
+
+    /**
+     * Render the Update companion type: every assignable field becomes optional,
+     * immutable-on-update fields are dropped. Relationships are excluded.
+     *
+     * @param  list<array>  $allEnums
+     * @param  list<array>  $allModels
+     * @param  list<string>  $immutable
+     */
+    public function renderModelUpdate(array $model, array $allEnums, array $allModels, array $immutable): string
+    {
+        return $this->assembleFile([$this->buildModelUpdateBlock($model, $allEnums, $allModels, $immutable)]);
+    }
+
+    /**
+     * Render a single-file .d.ts containing the read shape plus — if enabled —
+     * Create and Update companion types. Imports are unioned across all blocks.
+     *
+     * @param  list<array>  $allEnums
+     * @param  list<array>  $allModels
+     * @param  list<string>  $immutable
+     */
+    public function renderModelFile(array $model, array $allEnums, array $allModels, bool $emitWriteShapes, array $immutable): string
+    {
+        $blocks = [$this->buildModelBlock($model, $allEnums, $allModels)];
+
+        if ($emitWriteShapes) {
+            $blocks[] = $this->buildModelCreateBlock($model, $allEnums, $allModels);
+            $blocks[] = $this->buildModelUpdateBlock($model, $allEnums, $allModels, $immutable);
+        }
+
+        return $this->assembleFile($blocks);
+    }
+
+    /**
+     * @param  list<array>  $allEnums
+     * @param  list<array>  $allModels
+     * @return array{imports: list<string>, body: string}
+     */
+    protected function buildModelBlock(array $model, array $allEnums, array $allModels): array
+    {
         $imports = [];
         $lines = [];
 
@@ -64,27 +118,17 @@ class TypeScriptRenderer
             }
         }
 
-        $imports = array_values(array_unique($imports));
-        sort($imports);
+        $body = "export type {$model['name']}{$genericParam} = {\n".implode("\n", $lines)."\n};\n";
 
-        $output = '';
-        if (! empty($imports)) {
-            $output .= implode("\n", $imports)."\n\n";
-        }
-        $output .= "export type {$model['name']}{$genericParam} = {\n";
-        $output .= implode("\n", $lines)."\n";
-        $output .= "};\n";
-
-        return $output;
+        return ['imports' => $imports, 'body' => $body];
     }
 
     /**
-     * Render the Create companion type (omits server-filled fields and relationships).
-     *
      * @param  list<array>  $allEnums
      * @param  list<array>  $allModels
+     * @return array{imports: list<string>, body: string}
      */
-    public function renderModelCreate(array $model, array $allEnums, array $allModels): string
+    protected function buildModelCreateBlock(array $model, array $allEnums, array $allModels): array
     {
         $imports = [];
         $lines = [];
@@ -101,18 +145,18 @@ class TypeScriptRenderer
             $lines[] = "  {$column['name']}{$optional}: {$typeStr}{$nullUnion};";
         }
 
-        return $this->assembleType("{$model['name']}Create", $imports, $lines);
+        $body = "export type {$model['name']}Create = {\n".implode("\n", $lines)."\n};\n";
+
+        return ['imports' => $imports, 'body' => $body];
     }
 
     /**
-     * Render the Update companion type: every assignable field becomes optional,
-     * immutable-on-update fields are dropped. Relationships are excluded.
-     *
      * @param  list<array>  $allEnums
      * @param  list<array>  $allModels
      * @param  list<string>  $immutable
+     * @return array{imports: list<string>, body: string}
      */
-    public function renderModelUpdate(array $model, array $allEnums, array $allModels, array $immutable): string
+    protected function buildModelUpdateBlock(array $model, array $allEnums, array $allModels, array $immutable): array
     {
         $imports = [];
         $lines = [];
@@ -128,15 +172,25 @@ class TypeScriptRenderer
             $lines[] = "  {$column['name']}?: {$typeStr}{$nullUnion};";
         }
 
-        return $this->assembleType("{$model['name']}Update", $imports, $lines);
+        $body = "export type {$model['name']}Update = {\n".implode("\n", $lines)."\n};\n";
+
+        return ['imports' => $imports, 'body' => $body];
     }
 
     /**
-     * @param  list<string>  $imports
-     * @param  list<string>  $lines
+     * @param  list<array{imports: list<string>, body: string}>  $blocks
      */
-    protected function assembleType(string $name, array $imports, array $lines): string
+    protected function assembleFile(array $blocks): string
     {
+        $imports = [];
+        $bodies = [];
+        foreach ($blocks as $block) {
+            foreach ($block['imports'] as $imp) {
+                $imports[] = $imp;
+            }
+            $bodies[] = $block['body'];
+        }
+
         $imports = array_values(array_unique($imports));
         sort($imports);
 
@@ -144,9 +198,7 @@ class TypeScriptRenderer
         if (! empty($imports)) {
             $output .= implode("\n", $imports)."\n\n";
         }
-        $output .= "export type {$name} = {\n";
-        $output .= implode("\n", $lines)."\n";
-        $output .= "};\n";
+        $output .= implode("\n", $bodies);
 
         return $output;
     }

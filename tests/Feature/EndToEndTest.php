@@ -136,18 +136,18 @@ class EndToEndTest extends TestCase
         $this->assertDirectoryDoesNotExist($this->outputPath.'/requests');
     }
 
-    public function test_write_shapes_are_emitted_by_default(): void
+    public function test_write_shapes_are_emitted_in_the_same_file_by_default(): void
     {
         $this->artisan('typefinder:generate')->assertSuccessful();
 
         $this->assertFileExists($this->outputPath.'/models/User.d.ts');
-        $this->assertFileExists($this->outputPath.'/models/UserCreate.d.ts');
-        $this->assertFileExists($this->outputPath.'/models/UserUpdate.d.ts');
+        $this->assertFileDoesNotExist($this->outputPath.'/models/UserCreate.d.ts');
+        $this->assertFileDoesNotExist($this->outputPath.'/models/UserUpdate.d.ts');
 
-        $barrel = File::get($this->outputPath.'/models/index.d.ts');
-        $this->assertStringContainsString("export type { User } from './User';", $barrel);
-        $this->assertStringContainsString("export type { UserCreate } from './UserCreate';", $barrel);
-        $this->assertStringContainsString("export type { UserUpdate } from './UserUpdate';", $barrel);
+        $content = File::get($this->outputPath.'/models/User.d.ts');
+        $this->assertStringContainsString('export type User', $content);
+        $this->assertStringContainsString('export type UserCreate = {', $content);
+        $this->assertStringContainsString('export type UserUpdate = {', $content);
     }
 
     public function test_write_shapes_can_be_disabled(): void
@@ -156,19 +156,24 @@ class EndToEndTest extends TestCase
 
         $this->artisan('typefinder:generate')->assertSuccessful();
 
-        $this->assertFileExists($this->outputPath.'/models/User.d.ts');
-        $this->assertFileDoesNotExist($this->outputPath.'/models/UserCreate.d.ts');
-        $this->assertFileDoesNotExist($this->outputPath.'/models/UserUpdate.d.ts');
+        $content = File::get($this->outputPath.'/models/User.d.ts');
+        $this->assertStringContainsString('export type User', $content);
+        $this->assertStringNotContainsString('UserCreate', $content);
+        $this->assertStringNotContainsString('UserUpdate', $content);
     }
 
     public function test_write_shapes_respect_per_model_contract(): void
     {
         $this->artisan('typefinder:generate')->assertSuccessful();
 
-        $create = File::get($this->outputPath.'/models/InvoiceCreate.d.ts');
-        $this->assertStringNotContainsString('reference', $create);
+        $content = File::get($this->outputPath.'/models/Invoice.d.ts');
 
-        $update = File::get($this->outputPath.'/models/InvoiceUpdate.d.ts');
-        $this->assertStringNotContainsString('customer_id', $update);
+        preg_match('/export type InvoiceCreate = \{(.+?)\n\};/s', $content, $createMatch);
+        $this->assertNotEmpty($createMatch, 'InvoiceCreate block not found');
+        $this->assertStringNotContainsString('reference', $createMatch[1]);
+
+        preg_match('/export type InvoiceUpdate = \{(.+?)\n\};/s', $content, $updateMatch);
+        $this->assertNotEmpty($updateMatch, 'InvoiceUpdate block not found');
+        $this->assertStringNotContainsString('customer_id', $updateMatch[1]);
     }
 }

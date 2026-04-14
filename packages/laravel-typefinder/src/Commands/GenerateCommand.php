@@ -235,19 +235,10 @@ class GenerateCommand extends Command
         $names = [];
 
         foreach ($models as $model) {
-            $this->writeModelFile($dir, $model['name'], $renderer->renderModel($model, $allEnums, $models), $useJson, $useDebug);
-            $names[] = $model['name'];
-
-            if (! $emitWriteShapes) {
-                continue;
-            }
-
-            $this->writeModelFile($dir, $model['name'].'Create', $renderer->renderModelCreate($model, $allEnums, $models), $useJson, $useDebug);
-            $names[] = $model['name'].'Create';
-
             $immutable = array_values(array_unique([...$globalImmutable, ...$this->getContractImmutable($model['fqcn'])]));
-            $this->writeModelFile($dir, $model['name'].'Update', $renderer->renderModelUpdate($model, $allEnums, $models, $immutable), $useJson, $useDebug);
-            $names[] = $model['name'].'Update';
+            $content = $renderer->renderModelFile($model, $allEnums, $models, $emitWriteShapes, $immutable);
+            $this->writeModelFile($dir, $model['name'], $content, $useJson, $useDebug);
+            $names[] = $model['name'];
         }
 
         $this->pruneStaleFiles($dir, array_map(fn ($n) => "{$n}.d.ts", [...$names, 'index']));
