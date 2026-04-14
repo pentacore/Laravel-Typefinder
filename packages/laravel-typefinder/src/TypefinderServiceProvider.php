@@ -7,6 +7,7 @@ use Pentacore\Typefinder\Commands\GenerateCommand;
 
 class TypefinderServiceProvider extends ServiceProvider
 {
+    #[\Override]
     public function register(): void
     {
         $this->mergeConfigFrom(

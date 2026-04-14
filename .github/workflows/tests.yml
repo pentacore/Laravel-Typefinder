@@ -79,6 +79,21 @@ jobs:
       - name: Check style
         run: vendor/bin/pint --test
 
+  rector:
+    runs-on: ubuntu-latest
+    name: Rector
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+      - name: Install
+        run: composer install --prefer-dist --no-interaction --no-progress
+      - name: Check with Rector
+        run: vendor/bin/rector process --dry-run
+
   vite-plugin:
     runs-on: ubuntu-latest
     name: Vite plugin build & lint
