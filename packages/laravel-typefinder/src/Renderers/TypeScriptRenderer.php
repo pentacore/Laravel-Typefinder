@@ -322,8 +322,6 @@ class TypeScriptRenderer
 
     protected function generatePivotName(string $tableName): string
     {
-        return str_replace('_', ' ', $tableName)
-                |> ucwords(...)
-                |> (static fn($x) => str_replace(' ', '', $x) .'Pivot');
+        return str_replace(' ', '', ucwords(str_replace('_', ' ', $tableName))).'Pivot';
     }
 }
