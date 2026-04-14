@@ -21,6 +21,7 @@ final class EndToEndTest extends TestCase
         config(['typefinder.models.paths' => [workbench_path('app/Models')]]);
         config(['typefinder.enums.paths' => [workbench_path('app/Enums')]]);
         config(['typefinder.requests.paths' => [workbench_path('app/Http/Requests')]]);
+        config(['typefinder.resources.paths' => [workbench_path('app/Http/Resources')]]);
     }
 
     protected function tearDown(): void
@@ -406,5 +407,48 @@ PHP);
         $this->artisan('typefinder:generate', ['--check' => true])
             ->expectsOutputToContain('models/User.d.ts')
             ->assertFailed();
+    }
+
+    public function test_resources_generated_when_resources_directory_exists(): void
+    {
+        $this->artisan('typefinder:generate')->assertSuccessful();
+
+        $this->assertFileExists($this->outputPath.'/resources/UserResource.d.ts');
+        $this->assertFileExists($this->outputPath.'/resources/AdminUserResource.d.ts');
+        $this->assertFileExists($this->outputPath.'/resources/PostResource.d.ts');
+        $this->assertFileDoesNotExist($this->outputPath.'/resources/LegacyResource.d.ts');
+        $this->assertFileDoesNotExist($this->outputPath.'/resources/OrphanResource.d.ts');
+        $this->assertFileDoesNotExist($this->outputPath.'/resources/InvalidResource.d.ts');
+
+        $adminContent = File::get($this->outputPath.'/resources/AdminUserResource.d.ts');
+        $this->assertStringContainsString("export type AdminUserResource = Omit<User, 'password'> & { roles: string[] };", $adminContent);
+    }
+
+    public function test_helpers_file_is_always_emitted(): void
+    {
+        $this->artisan('typefinder:generate')->assertSuccessful();
+
+        $this->assertFileExists($this->outputPath.'/helpers.d.ts');
+        $content = File::get($this->outputPath.'/helpers.d.ts');
+        $this->assertStringContainsString('export type Wrapped<T>', $content);
+        $this->assertStringContainsString('export type PaginatedCollection<T>', $content);
+        $this->assertStringContainsString('export type ValidationErrorResponse', $content);
+    }
+
+    public function test_top_level_barrel_re_exports_helpers_and_resources(): void
+    {
+        $this->artisan('typefinder:generate')->assertSuccessful();
+
+        $barrel = File::get($this->outputPath.'/index.d.ts');
+        $this->assertStringContainsString("export type * from './helpers';", $barrel);
+        $this->assertStringContainsString("export type * from './resources';", $barrel);
+    }
+
+    public function test_resource_with_typefinder_ignore_is_skipped(): void
+    {
+        $this->artisan('typefinder:generate')->assertSuccessful();
+
+        $barrel = File::get($this->outputPath.'/resources/index.d.ts');
+        $this->assertStringNotContainsString('LegacyResource', $barrel);
     }
 }
