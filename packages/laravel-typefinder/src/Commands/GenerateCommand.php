@@ -54,8 +54,9 @@ class GenerateCommand extends Command
 
                 $this->debugLine('extracting category=enums paths=['.implode(',', array_map(fn ($p) => '"'.$p.'"', $paths)).']', $useJson, $useDebug);
 
+                $onEnum = fn (string $cls) => $this->debugLine('parsing category=enums class='.$cls, $useJson, $useDebug);
                 foreach ($paths as $path) {
-                    $allEnums = array_merge($allEnums, $enumExtractor->extractFromDirectory($path));
+                    $allEnums = array_merge($allEnums, $enumExtractor->extractFromDirectory($path, $onEnum));
                 }
 
                 $this->debugLine('extracted category=enums count='.count($allEnums), $useJson, $useDebug);
@@ -79,8 +80,9 @@ class GenerateCommand extends Command
 
                 $this->debugLine('extracting category=models paths=['.implode(',', array_map(fn ($p) => '"'.$p.'"', $paths)).']', $useJson, $useDebug);
 
+                $onModel = fn (string $cls) => $this->debugLine('parsing category=models class='.$cls, $useJson, $useDebug);
                 foreach ($paths as $path) {
-                    $allModels = array_merge($allModels, $modelExtractor->extractFromDirectory($path));
+                    $allModels = array_merge($allModels, $modelExtractor->extractFromDirectory($path, $onModel));
                 }
 
                 $morphResolver = new MorphToResolver;
@@ -112,8 +114,9 @@ class GenerateCommand extends Command
 
                 $this->debugLine('extracting category=requests paths=['.implode(',', array_map(fn ($p) => '"'.$p.'"', $paths)).']', $useJson, $useDebug);
 
+                $onRequest = fn (string $cls) => $this->debugLine('parsing category=requests class='.$cls, $useJson, $useDebug);
                 foreach ($paths as $path) {
-                    $allRequests = array_merge($allRequests, $requestExtractor->extractFromDirectory($path));
+                    $allRequests = array_merge($allRequests, $requestExtractor->extractFromDirectory($path, $onRequest));
                 }
 
                 $this->debugLine('extracted category=requests count='.count($allRequests), $useJson, $useDebug);

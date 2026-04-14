@@ -37,7 +37,7 @@ class EnumExtractor
      *
      * @return list<array{name: string, fqcn: class-string, backingType: string, values: list<string|int>}>
      */
-    public function extractFromDirectory(string $path): array
+    public function extractFromDirectory(string $path, ?callable $onExtract = null): array
     {
         if (! is_dir($path)) {
             return [];
@@ -57,6 +57,10 @@ class EnumExtractor
 
             if (! $reflection->isBacked()) {
                 continue;
+            }
+
+            if ($onExtract !== null) {
+                $onExtract($className);
             }
 
             $results[] = $this->extract($className);

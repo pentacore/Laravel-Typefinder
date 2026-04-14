@@ -98,7 +98,7 @@ class RequestExtractor
      *
      * @return list<array{name: string, fqcn: class-string, fields: list<array>}>
      */
-    public function extractFromDirectory(string $path): array
+    public function extractFromDirectory(string $path, ?callable $onExtract = null): array
     {
         if (! is_dir($path)) {
             return [];
@@ -116,6 +116,10 @@ class RequestExtractor
 
             if (! is_subclass_of($className, FormRequest::class)) {
                 continue;
+            }
+
+            if ($onExtract !== null) {
+                $onExtract($className);
             }
 
             $results[] = $this->extract($className);

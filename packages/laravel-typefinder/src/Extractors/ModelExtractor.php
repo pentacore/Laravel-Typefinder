@@ -61,7 +61,7 @@ class ModelExtractor
      *
      * @return list<array{name: string, fqcn: class-string, columns: list<array>, relationships: list<array>}>
      */
-    public function extractFromDirectory(string $path): array
+    public function extractFromDirectory(string $path, ?callable $onExtract = null): array
     {
         if (! is_dir($path)) {
             return [];
@@ -79,6 +79,10 @@ class ModelExtractor
 
             if (! is_subclass_of($className, Model::class)) {
                 continue;
+            }
+
+            if ($onExtract !== null) {
+                $onExtract($className);
             }
 
             $results[] = $this->extract($className);
