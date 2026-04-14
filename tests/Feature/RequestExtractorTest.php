@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Tests\Feature;
 
 use App\Enums\PostStatus;
@@ -10,19 +12,19 @@ use Tests\TestCase;
 
 use function Orchestra\Testbench\workbench_path;
 
-class RequestExtractorTest extends TestCase
+final class RequestExtractorTest extends TestCase
 {
-    private RequestExtractor $extractor;
+    private RequestExtractor $requestExtractor;
 
     protected function setUp(): void
     {
         parent::setUp();
-        $this->extractor = new RequestExtractor;
+        $this->requestExtractor = new RequestExtractor;
     }
 
     public function test_extracts_request_name(): void
     {
-        $result = $this->extractor->extract(StorePostRequest::class);
+        $result = $this->requestExtractor->extract(StorePostRequest::class);
 
         $this->assertSame('StorePostRequest', $result['name']);
         $this->assertSame(StorePostRequest::class, $result['fqcn']);
@@ -30,7 +32,7 @@ class RequestExtractorTest extends TestCase
 
     public function test_required_string_field(): void
     {
-        $result = $this->extractor->extract(StorePostRequest::class);
+        $result = $this->requestExtractor->extract(StorePostRequest::class);
         $field = $this->findField($result, 'title');
 
         $this->assertSame('string', $field['type']);
@@ -39,7 +41,7 @@ class RequestExtractorTest extends TestCase
 
     public function test_required_enum_field(): void
     {
-        $result = $this->extractor->extract(StorePostRequest::class);
+        $result = $this->requestExtractor->extract(StorePostRequest::class);
         $field = $this->findField($result, 'status');
 
         $this->assertSame(PostStatus::class, $field['type']['enum']);
@@ -48,7 +50,7 @@ class RequestExtractorTest extends TestCase
 
     public function test_nullable_array_field_with_typed_items(): void
     {
-        $result = $this->extractor->extract(StorePostRequest::class);
+        $result = $this->requestExtractor->extract(StorePostRequest::class);
         $field = $this->findField($result, 'tags');
 
         $this->assertSame('string[]', $field['type']);
@@ -58,7 +60,7 @@ class RequestExtractorTest extends TestCase
 
     public function test_nested_object_fields(): void
     {
-        $result = $this->extractor->extract(StorePostRequest::class);
+        $result = $this->requestExtractor->extract(StorePostRequest::class);
         $field = $this->findField($result, 'metadata');
 
         $this->assertSame('object', $field['type']);
@@ -72,7 +74,7 @@ class RequestExtractorTest extends TestCase
 
     public function test_sometimes_field_is_optional(): void
     {
-        $result = $this->extractor->extract(StorePostRequest::class);
+        $result = $this->requestExtractor->extract(StorePostRequest::class);
         $field = $this->findField($result, 'publish_now');
 
         $this->assertFalse($field['required']);
@@ -80,7 +82,7 @@ class RequestExtractorTest extends TestCase
 
     public function test_accepted_rule_maps_to_boolean(): void
     {
-        $result = $this->extractor->extract(StorePostRequest::class);
+        $result = $this->requestExtractor->extract(StorePostRequest::class);
         $field = $this->findField($result, 'publish_now');
 
         $this->assertSame('boolean', $field['type']);
@@ -88,7 +90,7 @@ class RequestExtractorTest extends TestCase
 
     public function test_in_rule_creates_literal_union(): void
     {
-        $result = $this->extractor->extract(StorePostRequest::class);
+        $result = $this->requestExtractor->extract(StorePostRequest::class);
         $field = $this->findField($result, 'category');
 
         $this->assertSame(['tech', 'science', 'art'], $field['type']['in']);
@@ -96,7 +98,7 @@ class RequestExtractorTest extends TestCase
 
     public function test_confirmed_generates_confirmation_field(): void
     {
-        $result = $this->extractor->extract(UpdatePostRequest::class);
+        $result = $this->requestExtractor->extract(UpdatePostRequest::class);
 
         $confirmField = $this->findField($result, 'password_confirmation');
 
@@ -107,7 +109,7 @@ class RequestExtractorTest extends TestCase
 
     public function test_sometimes_fields_are_optional(): void
     {
-        $result = $this->extractor->extract(UpdatePostRequest::class);
+        $result = $this->requestExtractor->extract(UpdatePostRequest::class);
 
         $titleField = $this->findField($result, 'title');
         $this->assertFalse($titleField['required']);
@@ -118,7 +120,7 @@ class RequestExtractorTest extends TestCase
 
     public function test_discovers_requests_from_directory(): void
     {
-        $results = $this->extractor->extractFromDirectory(workbench_path('app/Http/Requests'));
+        $results = $this->requestExtractor->extractFromDirectory(workbench_path('app/Http/Requests'));
 
         $this->assertCount(2, $results);
         $names = array_column($results, 'name');

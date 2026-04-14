@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Pentacore\Typefinder;
 
 use Illuminate\Support\ServiceProvider;

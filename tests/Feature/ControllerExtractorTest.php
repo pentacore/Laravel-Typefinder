@@ -14,31 +14,31 @@ use function Orchestra\Testbench\workbench_path;
 
 final class ControllerExtractorTest extends TestCase
 {
-    private ControllerExtractor $extractor;
+    private ControllerExtractor $controllerExtractor;
 
     protected function setUp(): void
     {
         parent::setUp();
-        $this->extractor = new ControllerExtractor;
+        $this->controllerExtractor = new ControllerExtractor;
     }
 
     public function test_extracts_typefinder_page_attribute(): void
     {
-        $results = $this->extractor->extractFromDirectory(workbench_path('app/Http/Controllers'));
+        $results = $this->controllerExtractor->extractFromDirectory(workbench_path('app/Http/Controllers'));
         $byComponent = collect($results)->keyBy('component');
 
         $this->assertArrayHasKey('Users/Show', $byComponent->toArray());
         $this->assertSame(User::class, $byComponent['Users/Show']['props']['user']);
         $this->assertSame('boolean', $byComponent['Users/Show']['props']['canEdit']);
         $this->assertSame(
-            'App\\Http\\Controllers\\UserController::show',
+            UserController::class.'::show',
             $byComponent['Users/Show']['source'],
         );
     }
 
     public function test_extracts_multiple_controllers(): void
     {
-        $results = $this->extractor->extractFromDirectory(workbench_path('app/Http/Controllers'));
+        $results = $this->controllerExtractor->extractFromDirectory(workbench_path('app/Http/Controllers'));
         $components = array_column($results, 'component');
 
         $this->assertContains('Users/Show', $components);
@@ -47,23 +47,23 @@ final class ControllerExtractorTest extends TestCase
 
     public function test_skips_controllers_without_attributes(): void
     {
-        $results = $this->extractor->extractFromDirectory(workbench_path('app/Http/Controllers'));
+        $results = $this->controllerExtractor->extractFromDirectory(workbench_path('app/Http/Controllers'));
         $sources = array_column($results, 'source');
 
-        foreach ($sources as $src) {
-            $this->assertStringNotContainsString('PlainController', $src);
+        foreach ($sources as $source) {
+            $this->assertStringNotContainsString('PlainController', $source);
         }
     }
 
     public function test_returns_empty_for_missing_directory(): void
     {
-        $this->assertSame([], $this->extractor->extractFromDirectory('/nonexistent'));
+        $this->assertSame([], $this->controllerExtractor->extractFromDirectory('/nonexistent'));
     }
 
     public function test_invokes_progress_callback(): void
     {
         $seen = [];
-        $this->extractor->extractFromDirectory(
+        $this->controllerExtractor->extractFromDirectory(
             workbench_path('app/Http/Controllers'),
             function (string $cls) use (&$seen): void {
                 $seen[] = $cls;

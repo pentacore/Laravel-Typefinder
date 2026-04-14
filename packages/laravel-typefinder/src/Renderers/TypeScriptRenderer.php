@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Pentacore\Typefinder\Renderers;
 
 use Illuminate\Database\Eloquent\Model;
@@ -24,12 +26,12 @@ class TypeScriptRenderer
         $values = $enum['values'];
         $backingType = $enum['backingType'];
 
-        $valueStrings = array_map(function ($value) use ($backingType) {
+        $valueStrings = array_map(function (string $value) use ($backingType): string {
             if ($backingType === 'string') {
-                return "'{$value}'";
+                return sprintf("'%s'", $value);
             }
 
-            return (string) $value;
+            return $value;
         }, $values);
 
         $union = implode(' | ', $valueStrings);
@@ -108,18 +110,18 @@ class TypeScriptRenderer
         if ($morphToRel && ! empty($morphToRel['morphTargets'])) {
             $targetNames = $this->resolveModelNames($morphToRel['morphTargets'], $allModels);
             $union = implode(' | ', $targetNames);
-            $genericParam = "<T extends {$union} = {$union}>";
+            $genericParam = sprintf('<T extends %s = %s>', $union, $union);
 
             foreach ($morphToRel['morphTargets'] as $target) {
                 $targetName = $this->resolveModelName($target, $allModels);
-                $imports[] = "import type { {$targetName} } from './{$targetName}';";
+                $imports[] = sprintf("import type { %s } from './%s';", $targetName, $targetName);
             }
         }
 
         foreach ($model['columns'] as $column) {
             $typeStr = $this->resolveTypeString($column['type'], $column['nullable'], $allEnums, $imports);
             $nullUnion = $column['nullable'] ? ' | null' : '';
-            $lines[] = "  {$column['name']}: {$typeStr}{$nullUnion};";
+            $lines[] = sprintf('  %s: %s%s;', $column['name'], $typeStr, $nullUnion);
         }
 
         foreach ($model['relationships'] ?? [] as $rel) {
@@ -146,14 +148,14 @@ class TypeScriptRenderer
 
         $eligible = array_values(array_filter(
             $model['assignable_columns'] ?? [],
-            fn ($c) => empty($c['is_server_filled']),
+            fn (array $c): bool => empty($c['is_server_filled']),
         ));
 
         foreach ($eligible as $column) {
             $typeStr = $this->resolveTypeString($column['type'], $column['nullable'], $allEnums, $imports);
             $optional = $column['nullable'] ? '?' : '';
             $nullUnion = $column['nullable'] ? ' | null' : '';
-            $lines[] = "  {$column['name']}{$optional}: {$typeStr}{$nullUnion};";
+            $lines[] = sprintf('  %s%s: %s%s;', $column['name'], $optional, $typeStr, $nullUnion);
         }
 
         $body = "export type {$model['name']}Create = {\n".implode("\n", $lines)."\n};\n";
@@ -174,13 +176,13 @@ class TypeScriptRenderer
 
         $eligible = array_values(array_filter(
             $model['assignable_columns'] ?? [],
-            fn ($c) => empty($c['is_server_filled']) && ! in_array($c['name'], $immutable, true),
+            fn (array $c): bool => empty($c['is_server_filled']) && ! in_array($c['name'], $immutable, true),
         ));
 
         foreach ($eligible as $column) {
             $typeStr = $this->resolveTypeString($column['type'], $column['nullable'], $allEnums, $imports);
             $nullUnion = $column['nullable'] ? ' | null' : '';
-            $lines[] = "  {$column['name']}?: {$typeStr}{$nullUnion};";
+            $lines[] = sprintf('  %s?: %s%s;', $column['name'], $typeStr, $nullUnion);
         }
 
         $body = "export type {$model['name']}Update = {\n".implode("\n", $lines)."\n};\n";
@@ -199,6 +201,7 @@ class TypeScriptRenderer
             foreach ($block['imports'] as $imp) {
                 $imports[] = $imp;
             }
+
             $bodies[] = $block['body'];
         }
 
@@ -206,12 +209,11 @@ class TypeScriptRenderer
         sort($imports);
 
         $output = self::FILE_HEADER."\n";
-        if (! empty($imports)) {
+        if ($imports !== []) {
             $output .= implode("\n", $imports)."\n\n";
         }
-        $output .= implode("\n", $bodies);
 
-        return $output;
+        return $output.implode("\n", $bodies);
     }
 
     /**
@@ -231,25 +233,25 @@ class TypeScriptRenderer
             foreach ($page['props'] as $name => $type) {
                 $resolved = $this->resolvePagePropType((string) $type, $allModels, $allEnums, $imports);
                 $optional = in_array($name, $page['optional'], true) ? '?' : '';
-                $propLines[] = "{$name}{$optional}: {$resolved}";
+                $propLines[] = sprintf('%s%s: %s', $name, $optional, $resolved);
             }
 
-            $entries[] = "  '{$page['component']}': { ".implode('; ', $propLines).' };';
+            $entries[] = sprintf("  '%s': { ", $page['component']).implode('; ', $propLines).' };';
         }
 
         $imports = array_values(array_unique($imports));
         sort($imports);
 
         $output = self::FILE_HEADER."\n";
-        if (! empty($imports)) {
+        if ($imports !== []) {
             $output .= implode("\n", $imports)."\n\n";
         }
+
         $output .= "export type PageProps = {\n";
         $output .= implode("\n", $entries)."\n";
         $output .= "};\n\n";
-        $output .= "export type PageName = keyof PageProps;\n";
 
-        return $output;
+        return $output."export type PageName = keyof PageProps;\n";
     }
 
     /**
@@ -261,14 +263,14 @@ class TypeScriptRenderer
     {
         if (class_exists($type) && is_subclass_of($type, Model::class)) {
             $short = $this->resolveModelName($type, $allModels);
-            $imports[] = "import type { {$short} } from './models';";
+            $imports[] = sprintf("import type { %s } from './models';", $short);
 
             return $short;
         }
 
         if (enum_exists($type)) {
             $short = $this->resolveEnumName($type, $allEnums);
-            $imports[] = "import type { {$short} } from './enums';";
+            $imports[] = sprintf("import type { %s } from './enums';", $short);
 
             return $short;
         }
@@ -295,19 +297,18 @@ class TypeScriptRenderer
         sort($imports);
 
         $output = self::FILE_HEADER."\n";
-        if (! empty($imports)) {
+        if ($imports !== []) {
             $output .= implode("\n", $imports)."\n\n";
         }
 
-        foreach ($extractedTypes as $extracted) {
-            $output .= $extracted."\n\n";
+        foreach ($extractedTypes as $extractedType) {
+            $output .= $extractedType."\n\n";
         }
 
         $output .= "export type {$request['name']} = {\n";
         $output .= implode("\n", $lines)."\n";
-        $output .= "};\n";
 
-        return $output;
+        return $output."};\n";
     }
 
     /**
@@ -320,7 +321,7 @@ class TypeScriptRenderer
         foreach ($pivot['columns'] as $column) {
             $nullable = $column['nullable'] ?? false;
             $nullUnion = $nullable ? ' | null' : '';
-            $lines[] = "  {$column['name']}: {$column['type']}{$nullUnion};";
+            $lines[] = sprintf('  %s: %s%s;', $column['name'], $column['type'], $nullUnion);
         }
 
         if ($pivot['withTimestamps'] ?? false) {
@@ -339,7 +340,7 @@ class TypeScriptRenderer
     public function renderBarrelIndex(array $typeNames): string
     {
         $lines = array_map(
-            fn (string $name) => "export type { {$name} } from './{$name}';",
+            fn (string $name): string => sprintf("export type { %s } from './%s';", $name, $name),
             $typeNames
         );
 
@@ -354,7 +355,7 @@ class TypeScriptRenderer
     public function renderTopLevelBarrel(array $categories): string
     {
         $lines = array_map(
-            fn (string $cat) => "export type * from './{$cat}';",
+            fn (string $cat): string => sprintf("export type * from './%s';", $cat),
             $categories
         );
 
@@ -376,20 +377,20 @@ class TypeScriptRenderer
         if (is_array($type)) {
             if (isset($type['enum'])) {
                 $enumName = $this->resolveEnumName($type['enum'], $allEnums);
-                $imports[] = "import type { {$enumName} } from '../enums';";
+                $imports[] = sprintf("import type { %s } from '../enums';", $enumName);
 
                 return $enumName;
             }
 
             if (isset($type['enumCollection'])) {
                 $enumName = $this->resolveEnumName($type['enumCollection'], $allEnums);
-                $imports[] = "import type { {$enumName} } from '../enums';";
+                $imports[] = sprintf("import type { %s } from '../enums';", $enumName);
 
                 return $enumName.'[]';
             }
 
             if (isset($type['in'])) {
-                $values = array_map(fn ($v) => "'{$v}'", $type['in']);
+                $values = array_map(fn (string $v): string => sprintf("'%s'", $v), $type['in']);
 
                 return implode(' | ', $values);
             }
@@ -413,26 +414,26 @@ class TypeScriptRenderer
             case 'one':
             case 'belongsTo':
                 $relatedName = $this->resolveModelName($rel['related'], $allModels);
-                $imports[] = "import type { {$relatedName} } from './{$relatedName}';";
+                $imports[] = sprintf("import type { %s } from './%s';", $relatedName, $relatedName);
 
-                return "  {$name}?: {$relatedName} | null;";
+                return sprintf('  %s?: %s | null;', $name, $relatedName);
 
             case 'many':
                 $relatedName = $this->resolveModelName($rel['related'], $allModels);
-                $imports[] = "import type { {$relatedName} } from './{$relatedName}';";
+                $imports[] = sprintf("import type { %s } from './%s';", $relatedName, $relatedName);
 
-                return "  {$name}?: {$relatedName}[];";
+                return sprintf('  %s?: %s[];', $name, $relatedName);
 
             case 'manyWithPivot':
                 $relatedName = $this->resolveModelName($rel['related'], $allModels);
-                $imports[] = "import type { {$relatedName} } from './{$relatedName}';";
+                $imports[] = sprintf("import type { %s } from './%s';", $relatedName, $relatedName);
                 $pivotName = $this->generatePivotName($rel['pivot']['table'] ?? $name);
-                $imports[] = "import type { {$pivotName} } from '../pivots';";
+                $imports[] = sprintf("import type { %s } from '../pivots';", $pivotName);
 
-                return "  {$name}?: ({$relatedName} & { pivot: {$pivotName} })[];";
+                return sprintf('  %s?: (%s & { pivot: %s })[];', $name, $relatedName, $pivotName);
 
             case 'morphTo':
-                return "  {$name}?: T | null;";
+                return sprintf('  %s?: T | null;', $name);
 
             default:
                 return null;
@@ -464,31 +465,33 @@ class TypeScriptRenderer
                     $childOptional = $child['required'] ? '' : '?';
                     $childNull = $child['nullable'] ? ' | null' : '';
                     $childType = $this->resolveTypeString($child['type'], $child['nullable'], $allEnums, $imports);
-                    $nestedLines[] = "  {$child['name']}{$childOptional}: {$childType}{$childNull};";
+                    $nestedLines[] = sprintf('  %s%s: %s%s;', $child['name'], $childOptional, $childType, $childNull);
                 }
+
                 $extractedTypes[] = "export type {$nestedName} = {\n".implode("\n", $nestedLines)."\n};";
-                $lines[] = "{$prefix}{$field['name']}{$optional}: {$nestedName}{$nullUnion};";
+                $lines[] = sprintf('%s%s%s: %s%s;', $prefix, $field['name'], $optional, $nestedName, $nullUnion);
             } else {
-                $lines[] = "{$prefix}{$field['name']}{$optional}: {";
+                $lines[] = sprintf('%s%s%s: {', $prefix, $field['name'], $optional);
                 foreach ($field['children'] as $child) {
                     $childOptional = $child['required'] ? '' : '?';
                     $childNull = $child['nullable'] ? ' | null' : '';
                     $childType = $this->resolveTypeString($child['type'], $child['nullable'], $allEnums, $imports);
-                    $lines[] = "{$prefix}  {$child['name']}{$childOptional}: {$childType}{$childNull};";
+                    $lines[] = sprintf('%s  %s%s: %s%s;', $prefix, $child['name'], $childOptional, $childType, $childNull);
                 }
-                $lines[] = "{$prefix}}{$nullUnion};";
+
+                $lines[] = sprintf('%s}%s;', $prefix, $nullUnion);
             }
         } else {
             $typeStr = $this->resolveTypeString($field['type'], $field['nullable'], $allEnums, $imports);
-            $lines[] = "{$prefix}{$field['name']}{$optional}: {$typeStr}{$nullUnion};";
+            $lines[] = sprintf('%s%s%s: %s%s;', $prefix, $field['name'], $optional, $typeStr, $nullUnion);
         }
     }
 
     protected function resolveEnumName(string $fqcn, array $allEnums): string
     {
-        foreach ($allEnums as $enum) {
-            if ($enum['fqcn'] === $fqcn) {
-                return $enum['name'];
+        foreach ($allEnums as $allEnum) {
+            if ($allEnum['fqcn'] === $fqcn) {
+                return $allEnum['name'];
             }
         }
 
@@ -499,9 +502,9 @@ class TypeScriptRenderer
 
     protected function resolveModelName(string $fqcn, array $allModels): string
     {
-        foreach ($allModels as $model) {
-            if ($model['fqcn'] === $fqcn) {
-                return $model['name'];
+        foreach ($allModels as $allModel) {
+            if ($allModel['fqcn'] === $fqcn) {
+                return $allModel['name'];
             }
         }
 
@@ -515,7 +518,7 @@ class TypeScriptRenderer
      */
     protected function resolveModelNames(array $fqcns, array $allModels): array
     {
-        return array_map(fn (string $fqcn) => $this->resolveModelName($fqcn, $allModels), $fqcns);
+        return array_map(fn (string $fqcn): string => $this->resolveModelName($fqcn, $allModels), $fqcns);
     }
 
     protected function generatePivotName(string $tableName): string

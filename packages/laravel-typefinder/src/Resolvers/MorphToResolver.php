@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Pentacore\Typefinder\Resolvers;
 
 use Illuminate\Database\Eloquent\Relations\MorphMany;
@@ -41,11 +43,12 @@ class MorphToResolver
                 // Also check the morph map for any registered aliases
                 foreach ($morphMap as $class) {
                     if (! in_array($class, $targets, true)) {
-                        foreach ($allModels as $otherModel) {
-                            if ($otherModel['fqcn'] !== $class) {
+                        foreach ($allModels as $allModel) {
+                            if ($allModel['fqcn'] !== $class) {
                                 continue;
                             }
-                            foreach ($otherModel['relationships'] as $otherRel) {
+
+                            foreach ($allModel['relationships'] as $otherRel) {
                                 if ($this->isMorphRelationPointingTo($otherRel, $model['fqcn'])) {
                                     $targets[] = $class;
                                 }
@@ -56,8 +59,10 @@ class MorphToResolver
 
                 $relationship['morphTargets'] = array_values(array_unique($targets));
             }
+
             unset($relationship);
         }
+
         unset($model);
 
         return $allModels;
@@ -73,8 +78,8 @@ class MorphToResolver
     {
         $map = [];
 
-        foreach ($allModels as $model) {
-            foreach ($model['relationships'] as $rel) {
+        foreach ($allModels as $allModel) {
+            foreach ($allModel['relationships'] as $rel) {
                 $relationType = $rel['relationType'] ?? '';
 
                 if ($relationType !== MorphMany::class && $relationType !== MorphOne::class) {
@@ -86,7 +91,7 @@ class MorphToResolver
 
                 if ($morphName !== null) {
                     $key = $relatedFqcn.'.'.$morphName;
-                    $map[$key][] = $model['fqcn'];
+                    $map[$key][] = $allModel['fqcn'];
                 }
             }
         }
@@ -99,12 +104,12 @@ class MorphToResolver
      */
     protected function findMorphNameForRelated(array $allModels, string $relatedFqcn): ?string
     {
-        foreach ($allModels as $model) {
-            if ($model['fqcn'] !== $relatedFqcn) {
+        foreach ($allModels as $allModel) {
+            if ($allModel['fqcn'] !== $relatedFqcn) {
                 continue;
             }
 
-            foreach ($model['relationships'] as $rel) {
+            foreach ($allModel['relationships'] as $rel) {
                 if ($rel['type'] === 'morphTo') {
                     return $rel['name'];
                 }

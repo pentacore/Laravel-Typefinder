@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Pentacore\Typefinder\Extractors;
 
 use Illuminate\Database\Eloquent\Model;
@@ -17,6 +19,7 @@ use Illuminate\Database\Eloquent\Relations\MorphToMany;
 use Illuminate\Database\Eloquent\Relations\Pivot;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Support\Facades\Schema;
+use Pentacore\Typefinder\Attributes\TypefinderIgnore;
 use Pentacore\Typefinder\Attributes\TypefinderOverrides;
 use Pentacore\Typefinder\Attributes\TypefinderWriteShape;
 use Pentacore\Typefinder\Resolvers\CastTypeResolver;
@@ -43,14 +46,14 @@ class ModelExtractor
     public function extract(string $modelClass): array
     {
         $model = new $modelClass;
-        $reflection = new ReflectionClass($model);
+        $reflectionClass = new ReflectionClass($model);
         $table = $model->getTable();
 
         $columns = $this->extractColumns($model, $table);
-        $relationships = $this->extractRelationships($model, $reflection);
+        $relationships = $this->extractRelationships($model, $reflectionClass);
 
         return [
-            'name' => $reflection->getShortName(),
+            'name' => $reflectionClass->getShortName(),
             'fqcn' => $modelClass,
             'columns' => $columns,
             'relationships' => $relationships,
@@ -74,12 +77,19 @@ class ModelExtractor
 
         foreach ($finder as $file) {
             $className = $this->resolveClassName($file->getRealPath());
+            if ($className === null) {
+                continue;
+            }
 
-            if ($className === null || ! class_exists($className)) {
+            if (! class_exists($className)) {
                 continue;
             }
 
             if (! is_subclass_of($className, Model::class)) {
+                continue;
+            }
+
+            if ($this->isIgnored($className)) {
                 continue;
             }
 
@@ -112,14 +122,15 @@ class ModelExtractor
         $contractServerFilled = $this->getContractServerFilled($model);
         $columns = [];
 
-        foreach ($schemaColumns as $column) {
-            $name = $column['name'];
-            $nullable = $column['nullable'];
+        foreach ($schemaColumns as $schemaColumn) {
+            $name = $schemaColumn['name'];
+            $nullable = $schemaColumn['nullable'];
 
             // Visibility filtering
             if (in_array($name, $hidden, true)) {
                 continue;
             }
+
             if (! empty($visible) && ! in_array($name, $visible, true)) {
                 continue;
             }
@@ -153,7 +164,7 @@ class ModelExtractor
             }
 
             // Priority 3: DB column type
-            $columns[] = ['type' => $this->columnTypeResolver->resolve($column['type_name'], false)] + $base;
+            $columns[] = ['type' => $this->columnTypeResolver->resolve($schemaColumn['type_name'], false)] + $base;
         }
 
         return $columns;
@@ -196,7 +207,7 @@ class ModelExtractor
 
         $fillable = $model->getFillable();
         if (! empty($fillable)) {
-            return array_values(array_filter($columns, fn ($c) => in_array($c['name'], $fillable, true)));
+            return array_values(array_filter($columns, fn (array $c): bool => in_array($c['name'], $fillable, true)));
         }
 
         $guarded = $model->getGuarded();
@@ -204,7 +215,7 @@ class ModelExtractor
             return [];
         }
 
-        return array_values(array_filter($columns, fn ($c) => ! in_array($c['name'], $guarded, true)));
+        return array_values(array_filter($columns, fn (array $c): bool => ! in_array($c['name'], $guarded, true)));
     }
 
     /**
@@ -226,32 +237,35 @@ class ModelExtractor
      *
      * @return list<array{name: string, type: string, related: class-string, relationType: string, pivot?: array}>
      */
-    protected function extractRelationships(Model $model, ReflectionClass $reflection): array
+    protected function extractRelationships(Model $model, ReflectionClass $reflectionClass): array
     {
         $relationships = [];
 
-        foreach ($reflection->getMethods(ReflectionMethod::IS_PUBLIC) as $method) {
-            if ($method->class !== $reflection->getName()) {
+        foreach ($reflectionClass->getMethods(ReflectionMethod::IS_PUBLIC) as $reflectionMethod) {
+            if ($reflectionMethod->class !== $reflectionClass->getName()) {
                 continue;
             }
 
-            if ($method->getNumberOfParameters() > 0) {
+            if ($reflectionMethod->getNumberOfParameters() > 0) {
                 continue;
             }
 
-            $returnType = $method->getReturnType();
+            $returnType = $reflectionMethod->getReturnType();
 
             if ($returnType === null) {
                 continue;
             }
 
             $returnTypeName = $returnType instanceof ReflectionNamedType ? $returnType->getName() : null;
-
-            if ($returnTypeName === null || ! is_subclass_of($returnTypeName, Relation::class)) {
+            if ($returnTypeName === null) {
                 continue;
             }
 
-            $relationship = $this->extractRelationship($model, $method, $returnTypeName);
+            if (! is_subclass_of($returnTypeName, Relation::class)) {
+                continue;
+            }
+
+            $relationship = $this->extractRelationship($model, $reflectionMethod, $returnTypeName);
 
             if ($relationship !== null) {
                 $relationships[] = $relationship;
@@ -264,10 +278,10 @@ class ModelExtractor
     /**
      * Extract a single relationship's information.
      */
-    protected function extractRelationship(Model $model, ReflectionMethod $method, string $returnTypeName): ?array
+    protected function extractRelationship(Model $model, ReflectionMethod $reflectionMethod, string $returnTypeName): ?array
     {
         try {
-            $relation = $method->invoke($model);
+            $relation = $reflectionMethod->invoke($model);
         } catch (\Throwable) {
             return null;
         }
@@ -277,7 +291,7 @@ class ModelExtractor
         }
 
         $relatedClass = $relation->getRelated()::class;
-        $methodName = $method->getName();
+        $methodName = $reflectionMethod->getName();
 
         $result = [
             'name' => $methodName,
@@ -334,6 +348,12 @@ class ModelExtractor
     /**
      * Resolve the fully qualified class name from a PHP file.
      */
+    protected function isIgnored(string $className): bool
+    {
+        return (new ReflectionClass($className))
+            ->getAttributes(TypefinderIgnore::class, ReflectionAttribute::IS_INSTANCEOF) !== [];
+    }
+
     protected function resolveClassName(string $filePath): ?string
     {
         $contents = file_get_contents($filePath);

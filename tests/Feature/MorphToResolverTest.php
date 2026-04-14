@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Tests\Feature;
 
 use App\Models\Comment;
@@ -12,19 +14,19 @@ use Tests\TestCase;
 
 use function Orchestra\Testbench\workbench_path;
 
-class MorphToResolverTest extends TestCase
+final class MorphToResolverTest extends TestCase
 {
     public function test_resolves_morph_to_targets(): void
     {
-        $extractor = new ModelExtractor(
+        $modelExtractor = new ModelExtractor(
             new ColumnTypeResolver,
             new CastTypeResolver,
         );
 
-        $allModels = $extractor->extractFromDirectory(workbench_path('app/Models'));
-        $resolver = new MorphToResolver;
+        $allModels = $modelExtractor->extractFromDirectory(workbench_path('app/Models'));
+        $morphToResolver = new MorphToResolver;
 
-        $resolved = $resolver->resolve($allModels);
+        $resolved = $morphToResolver->resolve($allModels);
 
         // Comment has morphTo 'commentable'
         // Post has morphMany comments (commentable)
@@ -37,15 +39,15 @@ class MorphToResolverTest extends TestCase
 
     public function test_morph_many_side_unchanged(): void
     {
-        $extractor = new ModelExtractor(
+        $modelExtractor = new ModelExtractor(
             new ColumnTypeResolver,
             new CastTypeResolver,
         );
 
-        $allModels = $extractor->extractFromDirectory(workbench_path('app/Models'));
-        $resolver = new MorphToResolver;
+        $allModels = $modelExtractor->extractFromDirectory(workbench_path('app/Models'));
+        $morphToResolver = new MorphToResolver;
 
-        $resolved = $resolver->resolve($allModels);
+        $resolved = $morphToResolver->resolve($allModels);
 
         // Post should still have comments as 'many' with Comment as related
         $postModel = collect($resolved)->firstWhere('fqcn', Post::class);

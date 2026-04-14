@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Tests\Feature;
 
 use App\Enums\PostStatus;
@@ -9,19 +11,19 @@ use Tests\TestCase;
 
 use function Orchestra\Testbench\workbench_path;
 
-class EnumExtractorTest extends TestCase
+final class EnumExtractorTest extends TestCase
 {
-    private EnumExtractor $extractor;
+    private EnumExtractor $enumExtractor;
 
     protected function setUp(): void
     {
         parent::setUp();
-        $this->extractor = new EnumExtractor;
+        $this->enumExtractor = new EnumExtractor;
     }
 
     public function test_extracts_string_backed_enum(): void
     {
-        $result = $this->extractor->extract(PostStatus::class);
+        $result = $this->enumExtractor->extract(PostStatus::class);
 
         $this->assertSame('PostStatus', $result['name']);
         $this->assertSame(PostStatus::class, $result['fqcn']);
@@ -31,7 +33,7 @@ class EnumExtractorTest extends TestCase
 
     public function test_extracts_another_string_enum(): void
     {
-        $result = $this->extractor->extract(PostTag::class);
+        $result = $this->enumExtractor->extract(PostTag::class);
 
         $this->assertSame('PostTag', $result['name']);
         $this->assertSame('string', $result['backingType']);
@@ -40,7 +42,7 @@ class EnumExtractorTest extends TestCase
 
     public function test_discovers_enums_from_directory(): void
     {
-        $results = $this->extractor->extractFromDirectory(workbench_path('app/Enums'));
+        $results = $this->enumExtractor->extractFromDirectory(workbench_path('app/Enums'));
 
         $this->assertCount(2, $results);
 
@@ -51,11 +53,11 @@ class EnumExtractorTest extends TestCase
 
     public function test_only_backed_enums_are_returned(): void
     {
-        $results = $this->extractor->extractFromDirectory(workbench_path('app/Enums'));
+        $results = $this->enumExtractor->extractFromDirectory(workbench_path('app/Enums'));
 
-        foreach ($results as $enum) {
-            $this->assertNotNull($enum['backingType']);
-            $this->assertContains($enum['backingType'], ['string', 'int']);
+        foreach ($results as $result) {
+            $this->assertNotNull($result['backingType']);
+            $this->assertContains($result['backingType'], ['string', 'int']);
         }
     }
 }

@@ -1,8 +1,11 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Pentacore\Typefinder\Extractors;
 
 use BackedEnum;
+use Pentacore\Typefinder\Attributes\TypefinderIgnore;
 use ReflectionEnum;
 use Symfony\Component\Finder\Finder;
 
@@ -16,16 +19,16 @@ class EnumExtractor
      */
     public function extract(string $enumClass): array
     {
-        $reflection = new ReflectionEnum($enumClass);
-        $backingType = $reflection->getBackingType();
+        $reflectionEnum = new ReflectionEnum($enumClass);
+        $backingType = $reflectionEnum->getBackingType();
 
         $values = array_map(
-            fn (BackedEnum $case) => $case->value,
+            fn (BackedEnum $backedEnum): int|string => $backedEnum->value,
             $enumClass::cases()
         );
 
         return [
-            'name' => $reflection->getShortName(),
+            'name' => $reflectionEnum->getShortName(),
             'fqcn' => $enumClass,
             'backingType' => (string) $backingType,
             'values' => $values,
@@ -48,14 +51,21 @@ class EnumExtractor
 
         foreach ($finder as $file) {
             $className = $this->resolveClassName($file->getRealPath());
+            if ($className === null) {
+                continue;
+            }
 
-            if ($className === null || ! enum_exists($className)) {
+            if (! enum_exists($className)) {
                 continue;
             }
 
             $reflection = new ReflectionEnum($className);
 
             if (! $reflection->isBacked()) {
+                continue;
+            }
+
+            if ($reflection->getAttributes(TypefinderIgnore::class, \ReflectionAttribute::IS_INSTANCEOF) !== []) {
                 continue;
             }
 

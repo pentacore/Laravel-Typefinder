@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Tests\Feature;
 
 use App\Enums\PostStatus;
@@ -18,14 +20,14 @@ use Tests\TestCase;
 
 use function Orchestra\Testbench\workbench_path;
 
-class ModelExtractorTest extends TestCase
+final class ModelExtractorTest extends TestCase
 {
-    private ModelExtractor $extractor;
+    private ModelExtractor $modelExtractor;
 
     protected function setUp(): void
     {
         parent::setUp();
-        $this->extractor = new ModelExtractor(
+        $this->modelExtractor = new ModelExtractor(
             new ColumnTypeResolver,
             new CastTypeResolver,
         );
@@ -33,7 +35,7 @@ class ModelExtractorTest extends TestCase
 
     public function test_extracts_model_name(): void
     {
-        $result = $this->extractor->extract(User::class);
+        $result = $this->modelExtractor->extract(User::class);
 
         $this->assertSame('User', $result['name']);
         $this->assertSame(User::class, $result['fqcn']);
@@ -41,7 +43,7 @@ class ModelExtractorTest extends TestCase
 
     public function test_extracts_columns_with_types(): void
     {
-        $result = $this->extractor->extract(User::class);
+        $result = $this->modelExtractor->extract(User::class);
 
         $idCol = $this->findColumn($result, 'id');
         $this->assertSame('number', $idCol['type']);
@@ -59,7 +61,7 @@ class ModelExtractorTest extends TestCase
 
     public function test_nullable_columns_include_null(): void
     {
-        $result = $this->extractor->extract(User::class);
+        $result = $this->modelExtractor->extract(User::class);
 
         $settingsCol = $this->findColumn($result, 'settings');
         $this->assertTrue($settingsCol['nullable']);
@@ -67,7 +69,7 @@ class ModelExtractorTest extends TestCase
 
     public function test_cast_overrides_column_type(): void
     {
-        $result = $this->extractor->extract(User::class);
+        $result = $this->modelExtractor->extract(User::class);
 
         $settingsCol = $this->findColumn($result, 'settings');
         $this->assertSame('{ theme: string; notifications: boolean }', $settingsCol['type']);
@@ -75,7 +77,7 @@ class ModelExtractorTest extends TestCase
 
     public function test_enum_cast_detected(): void
     {
-        $result = $this->extractor->extract(Post::class);
+        $result = $this->modelExtractor->extract(Post::class);
 
         $statusCol = $this->findColumn($result, 'status');
         $this->assertSame(PostStatus::class, $statusCol['type']['enum']);
@@ -83,7 +85,7 @@ class ModelExtractorTest extends TestCase
 
     public function test_type_overrides_take_priority(): void
     {
-        $result = $this->extractor->extract(Post::class);
+        $result = $this->modelExtractor->extract(Post::class);
 
         $metadataCol = $this->findColumn($result, 'metadata');
         $this->assertSame('Record<string, string>', $metadataCol['type']);
@@ -91,7 +93,7 @@ class ModelExtractorTest extends TestCase
 
     public function test_datetime_cast_maps_to_string(): void
     {
-        $result = $this->extractor->extract(Post::class);
+        $result = $this->modelExtractor->extract(Post::class);
 
         $publishedCol = $this->findColumn($result, 'published_at');
         $this->assertSame('string', $publishedCol['type']);
@@ -99,7 +101,7 @@ class ModelExtractorTest extends TestCase
 
     public function test_timestamps_included(): void
     {
-        $result = $this->extractor->extract(Post::class);
+        $result = $this->modelExtractor->extract(Post::class);
 
         $this->assertNotNull($this->findColumn($result, 'created_at'));
         $this->assertNotNull($this->findColumn($result, 'updated_at'));
@@ -108,7 +110,7 @@ class ModelExtractorTest extends TestCase
     public function test_hidden_attributes_excluded(): void
     {
         // User has $hidden = ['password']
-        $result = $this->extractor->extract(User::class);
+        $result = $this->modelExtractor->extract(User::class);
 
         $this->assertNull($this->findColumn($result, 'password'), 'password should be excluded via $hidden');
         // Non-hidden columns still present
@@ -117,7 +119,7 @@ class ModelExtractorTest extends TestCase
 
     public function test_discovers_models_from_directory(): void
     {
-        $results = $this->extractor->extractFromDirectory(workbench_path('app/Models'));
+        $results = $this->modelExtractor->extractFromDirectory(workbench_path('app/Models'));
 
         $names = array_column($results, 'name');
         $this->assertContains('User', $names);
@@ -128,12 +130,13 @@ class ModelExtractorTest extends TestCase
         $this->assertContains('Article', $names);
         $this->assertContains('Product', $names);
         $this->assertContains('Invoice', $names);
+        $this->assertNotContains('LegacyModel', $names);
         $this->assertCount(8, $results);
     }
 
     public function test_extracts_has_many_relationship(): void
     {
-        $result = $this->extractor->extract(User::class);
+        $result = $this->modelExtractor->extract(User::class);
         $rel = $this->findRelationship($result, 'posts');
 
         $this->assertSame('many', $rel['type']);
@@ -142,7 +145,7 @@ class ModelExtractorTest extends TestCase
 
     public function test_extracts_belongs_to_relationship(): void
     {
-        $result = $this->extractor->extract(Post::class);
+        $result = $this->modelExtractor->extract(Post::class);
         $rel = $this->findRelationship($result, 'user');
 
         $this->assertSame('belongsTo', $rel['type']);
@@ -151,7 +154,7 @@ class ModelExtractorTest extends TestCase
 
     public function test_extracts_morph_many_relationship(): void
     {
-        $result = $this->extractor->extract(Post::class);
+        $result = $this->modelExtractor->extract(Post::class);
         $rel = $this->findRelationship($result, 'comments');
 
         $this->assertSame('many', $rel['type']);
@@ -160,7 +163,7 @@ class ModelExtractorTest extends TestCase
 
     public function test_extracts_morph_to_relationship(): void
     {
-        $result = $this->extractor->extract(Comment::class);
+        $result = $this->modelExtractor->extract(Comment::class);
         $rel = $this->findRelationship($result, 'commentable');
 
         $this->assertSame('morphTo', $rel['type']);
@@ -168,7 +171,7 @@ class ModelExtractorTest extends TestCase
 
     public function test_extracts_belongs_to_many_with_pivot(): void
     {
-        $result = $this->extractor->extract(User::class);
+        $result = $this->modelExtractor->extract(User::class);
         $rel = $this->findRelationship($result, 'roles');
 
         $this->assertSame('manyWithPivot', $rel['type']);
@@ -180,7 +183,7 @@ class ModelExtractorTest extends TestCase
 
     public function test_extracts_morph_to_many_with_pivot(): void
     {
-        $result = $this->extractor->extract(Post::class);
+        $result = $this->modelExtractor->extract(Post::class);
         $rel = $this->findRelationship($result, 'tags');
 
         $this->assertSame('manyWithPivot', $rel['type']);
@@ -190,7 +193,7 @@ class ModelExtractorTest extends TestCase
 
     public function test_extracts_morphed_by_many(): void
     {
-        $result = $this->extractor->extract(Tag::class);
+        $result = $this->modelExtractor->extract(Tag::class);
         $rel = $this->findRelationship($result, 'posts');
 
         $this->assertSame('manyWithPivot', $rel['type']);
@@ -199,7 +202,7 @@ class ModelExtractorTest extends TestCase
 
     public function test_extract_flags_primary_key_and_timestamps_as_server_filled(): void
     {
-        $result = $this->extractor->extract(User::class);
+        $result = $this->modelExtractor->extract(User::class);
         $byName = collect($result['columns'])->keyBy('name');
 
         $this->assertTrue($byName['id']['is_primary']);
@@ -212,7 +215,7 @@ class ModelExtractorTest extends TestCase
 
     public function test_extract_honours_contract_server_filled_override(): void
     {
-        $result = $this->extractor->extract(Invoice::class);
+        $result = $this->modelExtractor->extract(Invoice::class);
         $byName = collect($result['columns'])->keyBy('name');
 
         $this->assertTrue($byName['reference']['is_server_filled']);
@@ -220,8 +223,8 @@ class ModelExtractorTest extends TestCase
 
     public function test_extract_assignable_columns_respects_fillable(): void
     {
-        $result = $this->extractor->extract(Article::class);
-        $names = array_map(fn ($c) => $c['name'], $result['assignable_columns']);
+        $result = $this->modelExtractor->extract(Article::class);
+        $names = array_map(fn (array $c) => $c['name'], $result['assignable_columns']);
 
         $this->assertContains('title', $names);
         $this->assertContains('body', $names);
@@ -231,8 +234,8 @@ class ModelExtractorTest extends TestCase
 
     public function test_extract_assignable_columns_respects_guarded(): void
     {
-        $result = $this->extractor->extract(Product::class);
-        $names = array_map(fn ($c) => $c['name'], $result['assignable_columns']);
+        $result = $this->modelExtractor->extract(Product::class);
+        $names = array_map(fn (array $c) => $c['name'], $result['assignable_columns']);
 
         $this->assertContains('name', $names);
         $this->assertNotContains('owner_id', $names);
@@ -240,8 +243,8 @@ class ModelExtractorTest extends TestCase
 
     public function test_extract_assignable_columns_ignores_mass_assignment_when_disabled(): void
     {
-        $result = $this->extractor->extract(Invoice::class);
-        $names = array_map(fn ($c) => $c['name'], $result['assignable_columns']);
+        $result = $this->modelExtractor->extract(Invoice::class);
+        $names = array_map(fn (array $c) => $c['name'], $result['assignable_columns']);
 
         // Invoice opts out of respecting mass assignment → returns all visible cols
         $this->assertContains('internal_note', $names);

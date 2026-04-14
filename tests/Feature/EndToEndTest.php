@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Tests\Feature;
 
 use Illuminate\Support\Facades\File;
@@ -7,7 +9,7 @@ use Tests\TestCase;
 
 use function Orchestra\Testbench\workbench_path;
 
-class EndToEndTest extends TestCase
+final class EndToEndTest extends TestCase
 {
     private string $outputPath;
 
@@ -26,6 +28,7 @@ class EndToEndTest extends TestCase
         if (File::isDirectory($this->outputPath)) {
             File::deleteDirectory($this->outputPath);
         }
+
         parent::tearDown();
     }
 

@@ -13,7 +13,7 @@ final class WriteShapeTest extends TestCase
 {
     public function test_render_model_create_omits_server_filled_and_relationships(): void
     {
-        $renderer = new TypeScriptRenderer;
+        $typeScriptRenderer = new TypeScriptRenderer;
 
         $model = [
             'name' => 'User',
@@ -31,7 +31,7 @@ final class WriteShapeTest extends TestCase
             ],
         ];
 
-        $output = $renderer->renderModelCreate($model, [], []);
+        $output = $typeScriptRenderer->renderModelCreate($model, [], []);
 
         $this->assertStringContainsString('export type UserCreate = {', $output);
         $this->assertStringContainsString('  name: string;', $output);
@@ -43,7 +43,7 @@ final class WriteShapeTest extends TestCase
 
     public function test_render_model_update_omits_immutable_and_makes_all_optional(): void
     {
-        $renderer = new TypeScriptRenderer;
+        $typeScriptRenderer = new TypeScriptRenderer;
 
         $model = [
             'name' => 'User',
@@ -59,7 +59,7 @@ final class WriteShapeTest extends TestCase
             ],
         ];
 
-        $output = $renderer->renderModelUpdate($model, [], [], ['id', 'created_at', 'updated_at']);
+        $output = $typeScriptRenderer->renderModelUpdate($model, [], [], ['id', 'created_at', 'updated_at']);
 
         $this->assertStringContainsString('export type UserUpdate = {', $output);
         $this->assertStringContainsString('  name?: string;', $output);

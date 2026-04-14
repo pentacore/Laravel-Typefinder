@@ -1,11 +1,14 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Pentacore\Typefinder\Extractors;
 
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rules\AnyOf;
 use Illuminate\Validation\Rules\Enum;
 use Illuminate\Validation\Rules\In;
+use Pentacore\Typefinder\Attributes\TypefinderIgnore;
 use ReflectionClass;
 use Symfony\Component\Finder\Finder;
 
@@ -80,14 +83,14 @@ class RequestExtractor
      */
     public function extract(string $requestClass): array
     {
-        $reflection = new ReflectionClass($requestClass);
-        $instance = $this->createRequestInstance($requestClass);
-        $rules = $instance->rules();
+        $reflectionClass = new ReflectionClass($requestClass);
+        $formRequest = $this->createRequestInstance($requestClass);
+        $rules = $formRequest->rules();
 
         $fields = $this->parseRules($rules);
 
         return [
-            'name' => $reflection->getShortName(),
+            'name' => $reflectionClass->getShortName(),
             'fqcn' => $requestClass,
             'fields' => $fields,
         ];
@@ -109,12 +112,19 @@ class RequestExtractor
 
         foreach ($finder as $file) {
             $className = $this->resolveClassName($file->getRealPath());
+            if ($className === null) {
+                continue;
+            }
 
-            if ($className === null || ! class_exists($className)) {
+            if (! class_exists($className)) {
                 continue;
             }
 
             if (! is_subclass_of($className, FormRequest::class)) {
+                continue;
+            }
+
+            if ((new ReflectionClass($className))->getAttributes(TypefinderIgnore::class, \ReflectionAttribute::IS_INSTANCEOF) !== []) {
                 continue;
             }
 
@@ -227,10 +237,10 @@ class RequestExtractor
     {
         $children = [];
 
-        foreach ($nestedRules as $nested) {
-            $rules = $nested['rules'];
+        foreach ($nestedRules as $nestedRule) {
+            $rules = $nestedRule['rules'];
             $children[] = [
-                'name' => $nested['path'],
+                'name' => $nestedRule['path'],
                 'type' => $this->resolveType($rules),
                 'required' => $this->isRequired($rules),
                 'nullable' => $this->isNullable($rules),
@@ -250,8 +260,8 @@ class RequestExtractor
         foreach ($rules as $rule) {
             // Handle Rule::enum(SomeEnum::class)
             if ($rule instanceof Enum) {
-                $reflection = new ReflectionClass($rule);
-                $typeProperty = $reflection->getProperty('type');
+                $reflectionClass = new ReflectionClass($rule);
+                $typeProperty = $reflectionClass->getProperty('type');
                 $enumClass = $typeProperty->getValue($rule);
 
                 return ['enum' => $enumClass];
@@ -268,7 +278,7 @@ class RequestExtractor
             if (class_exists(AnyOf::class) && $rule instanceof AnyOf) {
                 $types = $this->resolveAnyOfTypes($rule);
 
-                if (! empty($types)) {
+                if ($types !== []) {
                     return count($types) === 1 ? $types[0] : ['anyOf' => $types];
                 }
             }
@@ -373,11 +383,11 @@ class RequestExtractor
      *
      * @return list<string>
      */
-    protected function resolveAnyOfTypes(AnyOf $rule): array
+    protected function resolveAnyOfTypes(AnyOf $anyOf): array
     {
-        $reflection = new ReflectionClass($rule);
-        $rulesProperty = $reflection->getProperty('rules');
-        $ruleSets = $rulesProperty->getValue($rule);
+        $reflectionClass = new ReflectionClass($anyOf);
+        $reflectionProperty = $reflectionClass->getProperty('rules');
+        $ruleSets = $reflectionProperty->getValue($anyOf);
 
         $types = [];
 
@@ -398,14 +408,14 @@ class RequestExtractor
      *
      * @return list<string>
      */
-    protected function extractInValues(In $rule): array
+    protected function extractInValues(In $in): array
     {
         // The In rule's __toString method returns 'in:"val1","val2",...'
-        $string = (string) $rule;
+        $string = (string) $in;
         $valuesString = substr($string, 3); // Remove 'in:'
 
         return array_map(
-            fn (string $v) => trim($v, '"'),
+            fn (string $v): string => trim($v, '"'),
             explode(',', $valuesString)
         );
     }

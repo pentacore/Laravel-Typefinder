@@ -1,12 +1,14 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Tests\Feature;
 
 use App\Casts\SettingsCast;
 use Pentacore\Typefinder\Contracts\HasTypeDefinition;
 use Tests\TestCase;
 
-class HasTypeDefinitionTest extends TestCase
+final class HasTypeDefinitionTest extends TestCase
 {
     public function test_settings_cast_implements_has_type_definition(): void
     {

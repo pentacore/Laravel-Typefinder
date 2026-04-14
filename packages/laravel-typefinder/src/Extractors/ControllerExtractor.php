@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Pentacore\Typefinder\Extractors;
 
+use Pentacore\Typefinder\Attributes\TypefinderIgnore;
 use Pentacore\Typefinder\Attributes\TypefinderPage;
 use ReflectionAttribute;
 use ReflectionClass;
@@ -19,30 +20,30 @@ class ControllerExtractor
     public function extract(string $controllerClass): array
     {
         try {
-            $reflection = new ReflectionClass($controllerClass);
+            $reflectionClass = new ReflectionClass($controllerClass);
         } catch (Throwable) {
             return [];
         }
 
         $results = [];
 
-        foreach ($reflection->getMethods(ReflectionMethod::IS_PUBLIC) as $method) {
-            if ($method->isStatic()) {
+        foreach ($reflectionClass->getMethods(ReflectionMethod::IS_PUBLIC) as $reflectionMethod) {
+            if ($reflectionMethod->isStatic()) {
                 continue;
             }
 
-            if ($method->class !== $reflection->getName()) {
+            if ($reflectionMethod->class !== $reflectionClass->getName()) {
                 continue;
             }
 
-            foreach ($method->getAttributes(TypefinderPage::class, ReflectionAttribute::IS_INSTANCEOF) as $attr) {
+            foreach ($reflectionMethod->getAttributes(TypefinderPage::class, ReflectionAttribute::IS_INSTANCEOF) as $attr) {
                 /** @var TypefinderPage $instance */
                 $instance = $attr->newInstance();
                 $results[] = [
                     'component' => $instance->component,
                     'props' => $instance->props,
                     'optional' => $instance->optional,
-                    'source' => $controllerClass.'::'.$method->getName(),
+                    'source' => $controllerClass.'::'.$reflectionMethod->getName(),
                 ];
             }
         }
@@ -64,8 +65,15 @@ class ControllerExtractor
 
         foreach ($finder as $file) {
             $className = $this->resolveClassName($file->getRealPath());
+            if ($className === null) {
+                continue;
+            }
 
-            if ($className === null || ! class_exists($className)) {
+            if (! class_exists($className)) {
+                continue;
+            }
+
+            if ((new ReflectionClass($className))->getAttributes(TypefinderIgnore::class, ReflectionAttribute::IS_INSTANCEOF) !== []) {
                 continue;
             }
 

@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Tests\Feature;
 
 use Illuminate\Support\Facades\Artisan;
@@ -8,7 +10,7 @@ use Tests\TestCase;
 
 use function Orchestra\Testbench\workbench_path;
 
-class GenerateCommandTest extends TestCase
+final class GenerateCommandTest extends TestCase
 {
     private string $outputPath;
 
@@ -29,6 +31,7 @@ class GenerateCommandTest extends TestCase
         if (File::isDirectory($this->outputPath)) {
             File::deleteDirectory($this->outputPath);
         }
+
         parent::tearDown();
     }
 
@@ -192,7 +195,7 @@ class GenerateCommandTest extends TestCase
 
         // All files on first run should have written=true
         foreach ($first['files'] as $entry) {
-            $this->assertTrue($entry['written'], "Expected first-run write for {$entry['path']}");
+            $this->assertTrue($entry['written'], 'Expected first-run write for '.$entry['path']);
         }
 
         // Second run — nothing changed, so all writes should be false
@@ -200,7 +203,7 @@ class GenerateCommandTest extends TestCase
         $second = json_decode(Artisan::output(), true);
 
         foreach ($second['files'] as $entry) {
-            $this->assertFalse($entry['written'], "Expected no-op write for {$entry['path']}");
+            $this->assertFalse($entry['written'], 'Expected no-op write for '.$entry['path']);
         }
     }
 }

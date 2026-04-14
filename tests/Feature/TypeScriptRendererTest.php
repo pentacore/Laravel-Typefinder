@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Tests\Feature;
 
 use App\Enums\PostStatus;
@@ -12,14 +14,14 @@ use Illuminate\Database\Eloquent\Model;
 use Pentacore\Typefinder\Renderers\TypeScriptRenderer;
 use Tests\TestCase;
 
-class TypeScriptRendererTest extends TestCase
+final class TypeScriptRendererTest extends TestCase
 {
-    private TypeScriptRenderer $renderer;
+    private TypeScriptRenderer $typeScriptRenderer;
 
     protected function setUp(): void
     {
         parent::setUp();
-        $this->renderer = new TypeScriptRenderer;
+        $this->typeScriptRenderer = new TypeScriptRenderer;
     }
 
     public function test_renders_enum_type(): void
@@ -31,7 +33,7 @@ class TypeScriptRendererTest extends TestCase
             'values' => ['draft', 'published', 'archived'],
         ];
 
-        $output = $this->renderer->renderEnum($enum);
+        $output = $this->typeScriptRenderer->renderEnum($enum);
 
         $this->assertStringContainsString("export type PostStatus = 'draft' | 'published' | 'archived';", $output);
     }
@@ -45,7 +47,7 @@ class TypeScriptRendererTest extends TestCase
             'values' => [1, 2, 3],
         ];
 
-        $output = $this->renderer->renderEnum($enum);
+        $output = $this->typeScriptRenderer->renderEnum($enum);
 
         $this->assertStringContainsString('export type Priority = 1 | 2 | 3;', $output);
     }
@@ -64,7 +66,7 @@ class TypeScriptRendererTest extends TestCase
             'relationships' => [],
         ];
 
-        $output = $this->renderer->renderModel($model, [], []);
+        $output = $this->typeScriptRenderer->renderModel($model, [], []);
 
         $this->assertStringContainsString('export type Role = {', $output);
         $this->assertStringContainsString('id: number;', $output);
@@ -88,7 +90,7 @@ class TypeScriptRendererTest extends TestCase
             ['name' => 'PostStatus', 'fqcn' => PostStatus::class, 'backingType' => 'string', 'values' => ['draft', 'published', 'archived']],
         ];
 
-        $output = $this->renderer->renderModel($model, $enums, []);
+        $output = $this->typeScriptRenderer->renderModel($model, $enums, []);
 
         $this->assertStringContainsString("import type { PostStatus } from '../enums';", $output);
         $this->assertStringContainsString('status: PostStatus;', $output);
@@ -119,7 +121,7 @@ class TypeScriptRendererTest extends TestCase
             ['name' => 'Role', 'fqcn' => Role::class],
         ];
 
-        $output = $this->renderer->renderModel($model, [], $allModels);
+        $output = $this->typeScriptRenderer->renderModel($model, [], $allModels);
 
         $this->assertStringContainsString("import type { Post } from './Post';", $output);
         $this->assertStringContainsString("import type { Role } from './Role';", $output);
@@ -147,7 +149,7 @@ class TypeScriptRendererTest extends TestCase
             ['name' => 'Post', 'fqcn' => Post::class],
         ];
 
-        $output = $this->renderer->renderModel($model, [], $allModels);
+        $output = $this->typeScriptRenderer->renderModel($model, [], $allModels);
 
         $this->assertStringContainsString('export type Comment<T extends Post = Post> = {', $output);
         $this->assertStringContainsString('commentable?: T | null;', $output);
@@ -171,7 +173,7 @@ class TypeScriptRendererTest extends TestCase
             ['name' => 'PostStatus', 'fqcn' => PostStatus::class, 'backingType' => 'string', 'values' => ['draft']],
         ];
 
-        $output = $this->renderer->renderRequest($request, $enums);
+        $output = $this->typeScriptRenderer->renderRequest($request, $enums);
 
         $this->assertStringContainsString('export type StorePostRequest = {', $output);
         $this->assertStringContainsString('title: string;', $output);
@@ -195,7 +197,7 @@ class TypeScriptRendererTest extends TestCase
             ],
         ];
 
-        $output = $this->renderer->renderRequest($request, [], false);
+        $output = $this->typeScriptRenderer->renderRequest($request, [], false);
 
         $this->assertStringContainsString('address: {', $output);
         $this->assertStringContainsString('street: string;', $output);
@@ -215,7 +217,7 @@ class TypeScriptRendererTest extends TestCase
             ],
         ];
 
-        $output = $this->renderer->renderRequest($request, [], true);
+        $output = $this->typeScriptRenderer->renderRequest($request, [], true);
 
         $this->assertStringContainsString('export type StoreUserRequestAddress = {', $output);
         $this->assertStringContainsString('address: StoreUserRequestAddress;', $output);
@@ -233,7 +235,7 @@ class TypeScriptRendererTest extends TestCase
             'withTimestamps' => true,
         ];
 
-        $output = $this->renderer->renderPivot($pivot);
+        $output = $this->typeScriptRenderer->renderPivot($pivot);
 
         $this->assertStringContainsString('export type RoleUserPivot = {', $output);
         $this->assertStringContainsString('user_id: number;', $output);
@@ -247,7 +249,7 @@ class TypeScriptRendererTest extends TestCase
     {
         $files = ['Post', 'User', 'Comment'];
 
-        $output = $this->renderer->renderBarrelIndex($files);
+        $output = $this->typeScriptRenderer->renderBarrelIndex($files);
 
         $this->assertStringContainsString("export type { Post } from './Post';", $output);
         $this->assertStringContainsString("export type { User } from './User';", $output);
@@ -258,7 +260,7 @@ class TypeScriptRendererTest extends TestCase
     {
         $categories = ['models', 'enums', 'requests', 'pivots'];
 
-        $output = $this->renderer->renderTopLevelBarrel($categories);
+        $output = $this->typeScriptRenderer->renderTopLevelBarrel($categories);
 
         $this->assertStringContainsString("export type * from './models';", $output);
         $this->assertStringContainsString("export type * from './enums';", $output);
