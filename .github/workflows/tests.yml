@@ -28,6 +28,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Compute matrix slug
+        env:
+          LARAVEL_VERSION: ${{ matrix.laravel }}
+        run: echo "LARAVEL_SLUG=${LARAVEL_VERSION%%.*}" >> "$GITHUB_ENV"
+
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
@@ -43,7 +48,7 @@ jobs:
           composer update --prefer-dist --no-interaction --no-progress
 
       - name: Run tests
-        run: vendor/bin/phpunit --log-junit phpunit-P${{ matrix.php }}-L${{ matrix.laravel }}.xml
+        run: vendor/bin/phpunit --log-junit "phpunit-P${{ matrix.php }}-L${LARAVEL_SLUG}.xml"
 
       - name: Generate .d.ts against workbench
         run: vendor/bin/testbench typefinder:generate || true
@@ -52,15 +57,15 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: phpunit-P${{ matrix.php }}-L${{ matrix.laravel }}
-          path: phpunit-P${{ matrix.php }}-L${{ matrix.laravel }}.xml
+          name: phpunit-P${{ matrix.php }}-L${{ env.LARAVEL_SLUG }}
+          path: phpunit-P${{ matrix.php }}-L${{ env.LARAVEL_SLUG }}.xml
           if-no-files-found: warn
 
       - name: Upload generated .d.ts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: generated-dts-P${{ matrix.php }}-L${{ matrix.laravel }}
+          name: generated-dts-P${{ matrix.php }}-L${{ env.LARAVEL_SLUG }}
           path: workbench/resources/js/**
           if-no-files-found: warn
 

@@ -65,7 +65,7 @@ jobs:
         if: github.event_name == 'workflow_run'
         uses: actions/download-artifact@v4
         with:
-          pattern: generated-dts-P8.4-L12.*
+          pattern: generated-dts-P8.5-L13
           path: artifacts/generated-dts
           merge-multiple: true
           github-token: ${{ secrets.GITHUB_TOKEN }}
