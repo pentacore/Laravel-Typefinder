@@ -17,8 +17,10 @@ use Illuminate\Database\Eloquent\Relations\MorphToMany;
 use Illuminate\Database\Eloquent\Relations\Pivot;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Support\Facades\Schema;
-use Pentacore\Typefinder\Concerns\HasTypeOverrides;
+use Pentacore\Typefinder\Attributes\TypefinderOverrides;
+use Pentacore\Typefinder\Attributes\TypefinderWriteShape;
 use Pentacore\Typefinder\Resolvers\CastTypeResolver;
+use ReflectionAttribute;
 use Pentacore\Typefinder\Resolvers\ColumnTypeResolver;
 use ReflectionClass;
 use ReflectionMethod;
@@ -136,7 +138,7 @@ class ModelExtractor
                 'is_server_filled' => $isServerFilled,
             ];
 
-            // Priority 1: HasTypeOverrides
+            // Priority 1: TypefinderOverrides
             if (isset($overrides[$name])) {
                 $columns[] = ['type' => $overrides[$name]] + $base;
 
@@ -162,11 +164,13 @@ class ModelExtractor
      */
     protected function getContractServerFilled(Model $model): array
     {
-        if (! method_exists($model, 'typefinderServerFilled')) {
+        $attrs = (new ReflectionClass($model))
+            ->getAttributes(TypefinderWriteShape::class, ReflectionAttribute::IS_INSTANCEOF);
+        if ($attrs === []) {
             return [];
         }
 
-        return (array) $model::typefinderServerFilled();
+        return $attrs[0]->newInstance()->serverFilled;
     }
 
     /**
@@ -176,8 +180,11 @@ class ModelExtractor
     protected function filterAssignable(Model $model, array $columns): array
     {
         $respect = (bool) config('typefinder.models.respect_mass_assignment', true);
-        if (method_exists($model, 'typefinderRespectMassAssignment')) {
-            $override = $model::typefinderRespectMassAssignment();
+
+        $attrs = (new ReflectionClass($model))
+            ->getAttributes(TypefinderWriteShape::class, ReflectionAttribute::IS_INSTANCEOF);
+        if ($attrs !== []) {
+            $override = $attrs[0]->newInstance()->respectMassAssignment;
             if ($override !== null) {
                 $respect = $override;
             }
@@ -201,17 +208,17 @@ class ModelExtractor
     }
 
     /**
-     * Get type overrides from the model if it uses the HasTypeOverrides trait.
-     *
      * @return array<string, string>
      */
     protected function getTypeOverrides(Model $model): array
     {
-        if (in_array(HasTypeOverrides::class, class_uses_recursive($model), true)) {
-            return $model->typeOverrides();
+        $attrs = (new ReflectionClass($model))
+            ->getAttributes(TypefinderOverrides::class, ReflectionAttribute::IS_INSTANCEOF);
+        if ($attrs === []) {
+            return [];
         }
 
-        return [];
+        return $attrs[0]->newInstance()->overrides;
     }
 
     /**
