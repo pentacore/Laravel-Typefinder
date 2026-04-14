@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\UserController;
+use App\Models\User;
 use Pentacore\Typefinder\Extractors\ControllerExtractor;
 use Tests\TestCase;
 
@@ -25,7 +28,7 @@ final class ControllerExtractorTest extends TestCase
         $byComponent = collect($results)->keyBy('component');
 
         $this->assertArrayHasKey('Users/Show', $byComponent->toArray());
-        $this->assertSame('App\\Models\\User', $byComponent['Users/Show']['props']['user']);
+        $this->assertSame(User::class, $byComponent['Users/Show']['props']['user']);
         $this->assertSame('boolean', $byComponent['Users/Show']['props']['canEdit']);
         $this->assertSame(
             'App\\Http\\Controllers\\UserController::show',
@@ -67,7 +70,7 @@ final class ControllerExtractorTest extends TestCase
             },
         );
 
-        $this->assertContains('App\\Http\\Controllers\\UserController', $seen);
-        $this->assertContains('App\\Http\\Controllers\\DashboardController', $seen);
+        $this->assertContains(UserController::class, $seen);
+        $this->assertContains(DashboardController::class, $seen);
     }
 }

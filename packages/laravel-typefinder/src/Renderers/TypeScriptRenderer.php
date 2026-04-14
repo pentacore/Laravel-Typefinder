@@ -2,6 +2,8 @@
 
 namespace Pentacore\Typefinder\Renderers;
 
+use Illuminate\Database\Eloquent\Model;
+
 class TypeScriptRenderer
 {
     protected const FILE_HEADER = <<<'TS'
@@ -257,7 +259,7 @@ class TypeScriptRenderer
      */
     protected function resolvePagePropType(string $type, array $allModels, array $allEnums, array &$imports): string
     {
-        if (class_exists($type) && is_subclass_of($type, \Illuminate\Database\Eloquent\Model::class)) {
+        if (class_exists($type) && is_subclass_of($type, Model::class)) {
             $short = $this->resolveModelName($type, $allModels);
             $imports[] = "import type { {$short} } from './models';";
 

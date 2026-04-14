@@ -82,7 +82,7 @@ class CastTypeResolver
         }
 
         // Check if it's a class
-        if (!class_exists($cast) && !enum_exists($cast)) {
+        if (! class_exists($cast) && ! enum_exists($cast)) {
             return 'unknown';
         }
 

@@ -245,4 +245,63 @@ class EndToEndTest extends TestCase
         $this->assertNotEmpty($updateMatch, 'InvoiceUpdate block not found');
         $this->assertStringNotContainsString('customer_id', $updateMatch[1]);
     }
+
+    public function test_inertia_is_skipped_by_default(): void
+    {
+        $this->artisan('typefinder:generate')->assertSuccessful();
+
+        $this->assertFileDoesNotExist($this->outputPath.'/pages.d.ts');
+
+        $barrel = File::get($this->outputPath.'/index.d.ts');
+        $this->assertStringNotContainsString("export type * from './pages';", $barrel);
+    }
+
+    public function test_inertia_pages_are_generated_when_enabled(): void
+    {
+        config([
+            'typefinder.inertia.enabled' => true,
+            'typefinder.inertia.paths' => [workbench_path('app/Http/Controllers')],
+        ]);
+
+        $this->artisan('typefinder:generate')->assertSuccessful();
+
+        $this->assertFileExists($this->outputPath.'/pages.d.ts');
+        $content = File::get($this->outputPath.'/pages.d.ts');
+        $this->assertStringContainsString('export type PageProps = {', $content);
+        $this->assertStringContainsString("'Users/Show':", $content);
+        $this->assertStringContainsString("'Dashboard':", $content);
+        $this->assertStringContainsString('export type PageName = keyof PageProps;', $content);
+
+        $barrel = File::get($this->outputPath.'/index.d.ts');
+        $this->assertStringContainsString("export type * from './pages';", $barrel);
+    }
+
+    public function test_inertia_collision_throws(): void
+    {
+        $collisionDir = workbench_path('app/Http/CollisionControllers');
+        File::ensureDirectoryExists($collisionDir);
+        File::put($collisionDir.'/A.php', <<<'PHP'
+<?php
+namespace App\Http\CollisionControllers;
+use Pentacore\Typefinder\Attributes\TypefinderPage;
+class A { #[TypefinderPage('Shared')] public function a(): void {} }
+PHP);
+        File::put($collisionDir.'/B.php', <<<'PHP'
+<?php
+namespace App\Http\CollisionControllers;
+use Pentacore\Typefinder\Attributes\TypefinderPage;
+class B { #[TypefinderPage('Shared')] public function b(): void {} }
+PHP);
+
+        config([
+            'typefinder.inertia.enabled' => true,
+            'typefinder.inertia.paths' => [$collisionDir],
+        ]);
+
+        try {
+            $this->artisan('typefinder:generate')->assertFailed();
+        } finally {
+            File::deleteDirectory($collisionDir);
+        }
+    }
 }
