@@ -1,10 +1,17 @@
 {
     "name": "pentacore/laravel-typefinder",
     "description": "Auto-generate TypeScript type definitions from Laravel Models, Enums, Casts, and Requests.",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "type": "library",
     "license": "MIT",
-    "keywords": ["php", "laravel", "typescript", "types", "models", "enums"],
+    "keywords": [
+        "php",
+        "laravel",
+        "typescript",
+        "types",
+        "models",
+        "enums"
+    ],
     "homepage": "https://github.com/pentacore/laravel-typefinder",
     "authors": [
         {
@@ -55,7 +62,10 @@
     "minimum-stability": "stable",
     "prefer-stable": true,
     "scripts": {
-        "post-autoload-dump": ["@clear", "@prepare"],
+        "post-autoload-dump": [
+            "@clear",
+            "@prepare"
+        ],
         "clear": "@php vendor/bin/testbench package:purge-skeleton --ansi",
         "prepare": "@php vendor/bin/testbench package:discover --ansi",
         "build": "@php vendor/bin/testbench workbench:build --ansi",
