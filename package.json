@@ -1,0 +1,11 @@
+{
+    "private": true,
+    "workspaces": [
+        "packages/vite-plugin-laravel-typefinder"
+    ],
+    "scripts": {
+        "build": "npm -w packages/vite-plugin-laravel-typefinder run build",
+        "lint": "npm -w packages/vite-plugin-laravel-typefinder run lint",
+        "bundle": "npm run build && rm -rf packages/laravel-typefinder/dist && cp -r packages/vite-plugin-laravel-typefinder/dist packages/laravel-typefinder/dist"
+    }
+}
