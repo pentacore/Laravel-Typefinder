@@ -77,7 +77,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_PAT }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           DRY_RUN: ${{ inputs.dry_run }}
         run: |
           if [ "$DRY_RUN" = "true" ]; then
@@ -85,6 +84,11 @@ jobs:
           else
             npx semantic-release
           fi
+
+      - name: Publish npm package (trusted publisher via OIDC)
+        if: ${{ !inputs.dry_run }}
+        working-directory: packages/vite-plugin-laravel-typefinder
+        run: npm publish --provenance --access public
 
       - name: Ping Packagist
         if: ${{ !inputs.dry_run }}

@@ -14,7 +14,8 @@
       "prepareCmd": "node scripts/sync-php-version.mjs ${nextRelease.version}"
     }],
     ["@semantic-release/npm", {
-      "pkgRoot": "packages/vite-plugin-laravel-typefinder"
+      "pkgRoot": "packages/vite-plugin-laravel-typefinder",
+      "npmPublish": false
     }],
     ["@semantic-release/git", {
       "assets": [
