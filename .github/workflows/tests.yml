@@ -40,7 +40,26 @@ jobs:
           composer update --prefer-dist --no-interaction --no-progress
 
       - name: Run tests
-        run: vendor/bin/phpunit
+        run: vendor/bin/phpunit --log-junit phpunit-P${{ matrix.php }}-L${{ matrix.laravel }}.xml
+
+      - name: Generate .d.ts against workbench
+        run: vendor/bin/testbench typefinder:generate || true
+
+      - name: Upload JUnit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phpunit-P${{ matrix.php }}-L${{ matrix.laravel }}
+          path: phpunit-P${{ matrix.php }}-L${{ matrix.laravel }}.xml
+          if-no-files-found: warn
+
+      - name: Upload generated .d.ts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: generated-dts-P${{ matrix.php }}-L${{ matrix.laravel }}
+          path: workbench/resources/js/**
+          if-no-files-found: warn
 
   pint:
     runs-on: ubuntu-latest
