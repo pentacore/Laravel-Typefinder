@@ -1,3 +1,21 @@
+## [3.0.0](https://github.com/pentacore/Laravel-Typefinder/compare/v2.0.0...v3.0.0) (2026-04-14)
+
+### ⚠ BREAKING CHANGES
+
+* replace HasTypeDefinition contract with TypefinderCast attribute + facade registry
+
+### Features
+
+* add --check flag to typefinder:generate ([9598bad](https://github.com/pentacore/Laravel-Typefinder/commit/9598baddd43cd0d262475dd67f0029844f766f22))
+* add ResourceExtractor with three declaration tiers ([64aa65a](https://github.com/pentacore/Laravel-Typefinder/commit/64aa65affdf91412727c22daa0959c57b36c78c3))
+* add TypefinderResource attribute ([4c32c60](https://github.com/pentacore/Laravel-Typefinder/commit/4c32c60cce5bcd5b4eecd5842f494b2399bf3462))
+* render JSON resources and response-helper types ([018d1fd](https://github.com/pentacore/Laravel-Typefinder/commit/018d1fd6b4ac76411c77f77c5c684c1b9f6dee26))
+* wire resource extraction and always-on helpers emission ([2ced7d2](https://github.com/pentacore/Laravel-Typefinder/commit/2ced7d2d192ccefe7c5baebd7ffd6b9f7a68e280))
+
+### Code Refactoring
+
+* replace HasTypeDefinition contract with TypefinderCast attribute + facade registry ([b7283e5](https://github.com/pentacore/Laravel-Typefinder/commit/b7283e5439f4d3c782ebf0d23b1229d92a84567d))
+
 ## [2.0.0](https://github.com/pentacore/Laravel-Typefinder/compare/v1.3.0...v2.0.0) (2026-04-14)
 
 ### ⚠ BREAKING CHANGES
