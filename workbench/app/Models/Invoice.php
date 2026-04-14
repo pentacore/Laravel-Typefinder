@@ -3,24 +3,11 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use Pentacore\Typefinder\Concerns\HasWriteShapeContract;
+use Pentacore\Typefinder\Attributes\TypefinderWriteShape;
 
-class Invoice extends Model
-{
-    use HasWriteShapeContract;
-
-    public static function typefinderServerFilled(): array
-    {
-        return ['reference'];
-    }
-
-    public static function typefinderRespectMassAssignment(): ?bool
-    {
-        return false;
-    }
-
-    public static function typefinderImmutableOnUpdate(): array
-    {
-        return ['customer_id'];
-    }
-}
+#[TypefinderWriteShape(
+    serverFilled: ['reference'],
+    respectMassAssignment: false,
+    immutableOnUpdate: ['customer_id'],
+)]
+class Invoice extends Model {}

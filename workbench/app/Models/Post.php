@@ -7,24 +7,16 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\Relations\MorphToMany;
-use Pentacore\Typefinder\Concerns\HasTypeOverrides;
+use Pentacore\Typefinder\Attributes\TypefinderOverrides;
 
+#[TypefinderOverrides(['metadata' => 'Record<string, string>'])]
 class Post extends Model
 {
-    use HasTypeOverrides;
-
     protected $casts = [
         'status' => PostStatus::class,
         'metadata' => 'array',
         'published_at' => 'datetime',
     ];
-
-    public function typeOverrides(): array
-    {
-        return [
-            'metadata' => 'Record<string, string>',
-        ];
-    }
 
     public function user(): BelongsTo
     {
