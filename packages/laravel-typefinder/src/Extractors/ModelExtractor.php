@@ -52,6 +52,7 @@ class ModelExtractor
             'fqcn' => $modelClass,
             'columns' => $columns,
             'relationships' => $relationships,
+            'assignable_columns' => $this->filterAssignable($model, $columns),
         ];
     }
 
@@ -102,6 +103,7 @@ class ModelExtractor
         $hidden = $model->getHidden();
         $visible = $model->getVisible();
 
+        $contractServerFilled = $this->getContractServerFilled($model);
         $columns = [];
 
         foreach ($schemaColumns as $column) {
@@ -116,39 +118,82 @@ class ModelExtractor
                 continue;
             }
 
+            $isPrimary = $name === $model->getKeyName();
+            $isServerFilled = $isPrimary
+                || $name === $model->getCreatedAtColumn()
+                || $name === $model->getUpdatedAtColumn()
+                || (method_exists($model, 'getDeletedAtColumn') && $name === $model->getDeletedAtColumn())
+                || in_array($name, $contractServerFilled, true);
+
+            $base = [
+                'name' => $name,
+                'nullable' => $nullable,
+                'is_primary' => $isPrimary,
+                'is_server_filled' => $isServerFilled,
+            ];
+
             // Priority 1: HasTypeOverrides
             if (isset($overrides[$name])) {
-                $columns[] = [
-                    'name' => $name,
-                    'type' => $overrides[$name],
-                    'nullable' => $nullable,
-                ];
+                $columns[] = ['type' => $overrides[$name]] + $base;
 
                 continue;
             }
 
             // Priority 2: Cast resolution
             if (isset($casts[$name])) {
-                $castType = $this->castTypeResolver->resolve($casts[$name]);
-                $columns[] = [
-                    'name' => $name,
-                    'type' => $castType,
-                    'nullable' => $nullable,
-                ];
+                $columns[] = ['type' => $this->castTypeResolver->resolve($casts[$name])] + $base;
 
                 continue;
             }
 
             // Priority 3: DB column type
-            $tsType = $this->columnTypeResolver->resolve($column['type_name'], false);
-            $columns[] = [
-                'name' => $name,
-                'type' => $tsType,
-                'nullable' => $nullable,
-            ];
+            $columns[] = ['type' => $this->columnTypeResolver->resolve($column['type_name'], false)] + $base;
         }
 
         return $columns;
+    }
+
+    /**
+     * @return list<string>
+     */
+    protected function getContractServerFilled(Model $model): array
+    {
+        if (! method_exists($model, 'typefinderServerFilled')) {
+            return [];
+        }
+
+        return (array) $model::typefinderServerFilled();
+    }
+
+    /**
+     * @param  list<array>  $columns
+     * @return list<array>
+     */
+    protected function filterAssignable(Model $model, array $columns): array
+    {
+        $respect = (bool) config('typefinder.models.respect_mass_assignment', true);
+        if (method_exists($model, 'typefinderRespectMassAssignment')) {
+            $override = $model::typefinderRespectMassAssignment();
+            if ($override !== null) {
+                $respect = $override;
+            }
+        }
+
+        if (! $respect) {
+            return $columns;
+        }
+
+        $fillable = $model->getFillable();
+        if (! empty($fillable)) {
+            return array_values(array_filter($columns, fn ($c) => in_array($c['name'], $fillable, true)));
+        }
+
+        $guarded = $model->getGuarded();
+        if ($guarded === ['*']) {
+            return [];
+        }
+
+        return array_values(array_filter($columns, fn ($c) => ! in_array($c['name'], $guarded, true)));
     }
 
     /**

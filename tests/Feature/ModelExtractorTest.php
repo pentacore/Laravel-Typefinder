@@ -122,7 +122,10 @@ class ModelExtractorTest extends TestCase
         $this->assertContains('Comment', $names);
         $this->assertContains('Tag', $names);
         $this->assertContains('Role', $names);
-        $this->assertCount(5, $results);
+        $this->assertContains('Article', $names);
+        $this->assertContains('Product', $names);
+        $this->assertContains('Invoice', $names);
+        $this->assertCount(8, $results);
     }
 
     public function test_extracts_has_many_relationship(): void
@@ -189,6 +192,56 @@ class ModelExtractorTest extends TestCase
 
         $this->assertSame('manyWithPivot', $rel['type']);
         $this->assertSame(Post::class, $rel['related']);
+    }
+
+    public function test_extract_flags_primary_key_and_timestamps_as_server_filled(): void
+    {
+        $result = $this->extractor->extract(User::class);
+        $byName = collect($result['columns'])->keyBy('name');
+
+        $this->assertTrue($byName['id']['is_primary']);
+        $this->assertTrue($byName['id']['is_server_filled']);
+        $this->assertTrue($byName['created_at']['is_server_filled']);
+        $this->assertTrue($byName['updated_at']['is_server_filled']);
+        $this->assertFalse($byName['name']['is_server_filled']);
+        $this->assertFalse($byName['name']['is_primary']);
+    }
+
+    public function test_extract_honours_contract_server_filled_override(): void
+    {
+        $result = $this->extractor->extract(\App\Models\Invoice::class);
+        $byName = collect($result['columns'])->keyBy('name');
+
+        $this->assertTrue($byName['reference']['is_server_filled']);
+    }
+
+    public function test_extract_assignable_columns_respects_fillable(): void
+    {
+        $result = $this->extractor->extract(\App\Models\Article::class);
+        $names = array_map(fn ($c) => $c['name'], $result['assignable_columns']);
+
+        $this->assertContains('title', $names);
+        $this->assertContains('body', $names);
+        $this->assertNotContains('id', $names);
+        $this->assertNotContains('created_at', $names);
+    }
+
+    public function test_extract_assignable_columns_respects_guarded(): void
+    {
+        $result = $this->extractor->extract(\App\Models\Product::class);
+        $names = array_map(fn ($c) => $c['name'], $result['assignable_columns']);
+
+        $this->assertContains('name', $names);
+        $this->assertNotContains('owner_id', $names);
+    }
+
+    public function test_extract_assignable_columns_ignores_mass_assignment_when_disabled(): void
+    {
+        $result = $this->extractor->extract(\App\Models\Invoice::class);
+        $names = array_map(fn ($c) => $c['name'], $result['assignable_columns']);
+
+        // Invoice opts out of respecting mass assignment → returns all visible cols
+        $this->assertContains('internal_note', $names);
     }
 
     private function findColumn(array $result, string $name): ?array
