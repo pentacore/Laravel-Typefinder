@@ -58,7 +58,17 @@ Re-stage any files modified by these tools before committing. CI runs `--test` /
 
 ## Feature gating discipline
 
-New user-facing features ship disabled-by-default. Existing users must see zero change until they opt in via config. Precedent set by write-shape emission (`config('typefinder.models.emit_write_shapes', false)`). The same rule applies to the upcoming Inertia and broadcasting integrations — each will get its own `enabled` flag so users who don't use those features never pay for their scanning or emission cost.
+Gate behind an opt-in config flag **only** when the feature:
+
+1. Depends on an optional third-party package or stack the user may not have installed (e.g. Inertia, Laravel Echo / broadcasting), **or**
+2. Requires a newer Laravel version than the package's current minimum (so users on older Laravel don't regress).
+
+Features that work for every supported Laravel version and don't need extra dependencies should just ship on. Adding a flag "just in case" is clutter — default-on is the right call when the feature is universally applicable.
+
+Examples:
+- Write-shape emission — pure Eloquent, works on every supported Laravel. Would not have needed a flag if added today (the existing `emit_write_shapes: false` is historical; leave it but don't treat it as precedent).
+- Inertia page prop typing — gated, because users without Inertia shouldn't pay the AST-walk cost or get irrelevant config noise.
+- Broadcasting / Echo events — gated, same reason.
 
 ## Per-model contracts
 
