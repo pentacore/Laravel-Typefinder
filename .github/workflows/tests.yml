@@ -60,7 +60,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: generated-dts-P${{ matrix.php }}-L${{ env.LARAVEL_SLUG }}
-          path: workbench/resources/js/types/**
+          path: workbench/resources/js/typefinder/**
           if-no-files-found: error
 
   pint:

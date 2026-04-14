@@ -5,7 +5,7 @@ namespace Pentacore\Typefinder\Resolvers;
 class ColumnTypeResolver
 {
     /** @var array<string, string> */
-    protected const TYPE_MAP = [
+    protected const array TYPE_MAP = [
         'bigint' => 'number',
         'integer' => 'number',
         'smallint' => 'number',

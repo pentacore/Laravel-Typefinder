@@ -10,7 +10,7 @@ return [
     |
     */
 
-    'output_path' => resource_path('js/types'),
+    'output_path' => resource_path('js/typefinder'),
 
     /*
     |--------------------------------------------------------------------------

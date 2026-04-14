@@ -12,7 +12,7 @@ use Pentacore\Typefinder\Contracts\HasTypeDefinition;
 class CastTypeResolver
 {
     /** @var array<string, string> */
-    protected const BUILT_IN_MAP = [
+    protected const array BUILT_IN_MAP = [
         'string' => 'string',
         'boolean' => 'boolean',
         'integer' => 'number',
@@ -38,7 +38,7 @@ class CastTypeResolver
     ];
 
     /** @var array<string, string> */
-    protected const CLASS_MAP = [
+    protected const array CLASS_MAP = [
         AsArrayObject::class => 'Record<string, unknown>',
         AsCollection::class => 'unknown[]',
         AsStringable::class => 'string',
@@ -82,7 +82,7 @@ class CastTypeResolver
         }
 
         // Check if it's a class
-        if (! class_exists($cast) && ! enum_exists($cast)) {
+        if (!class_exists($cast) && !enum_exists($cast)) {
             return 'unknown';
         }
 

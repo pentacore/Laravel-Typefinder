@@ -21,7 +21,7 @@ final class GenerateReferenceOutputTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->outputPath = workbench_path('resources/js/types');
+        $this->outputPath = workbench_path('resources/js/typefinder');
 
         if (File::isDirectory($this->outputPath)) {
             File::deleteDirectory($this->outputPath);
