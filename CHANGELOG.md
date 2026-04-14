@@ -1,3 +1,12 @@
+## [1.3.0](https://github.com/pentacore/Laravel-Typefinder/compare/v1.2.0...v1.3.0) (2026-04-14)
+
+### Features
+
+* auto-append output path to .gitignore ([6c1003e](https://github.com/pentacore/Laravel-Typefinder/commit/6c1003e642fc2ff046e0f6e3d65121aa9a36c373))
+* emit model Create/Update types in the same file as the read shape ([c6b5ebc](https://github.com/pentacore/Laravel-Typefinder/commit/c6b5ebc22b932bf4e4d713105a338876efc9b478))
+* log class being parsed in debug mode for all extractors ([35a65b3](https://github.com/pentacore/Laravel-Typefinder/commit/35a65b3c95d3d877aebb86620b841e61223944f0))
+* prepend auto-generated header to every emitted .d.ts file ([422c920](https://github.com/pentacore/Laravel-Typefinder/commit/422c92029e22021c77b4923c5f3b944ca900b0a5))
+
 ## [1.2.0](https://github.com/pentacore/Laravel-Typefinder/compare/v1.1.0...v1.2.0) (2026-04-14)
 
 ### Features
