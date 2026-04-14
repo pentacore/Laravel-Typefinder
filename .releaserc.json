@@ -28,8 +28,7 @@
     }],
     ["@semantic-release/github", {
       "assets": [
-        { "path": "packages/vite-plugin-laravel-typefinder/dist/**", "label": "vite-plugin dist" },
-        { "path": "artifacts/generated-dts/**", "label": "Generated .d.ts (reference)" }
+        { "path": "packages/vite-plugin-laravel-typefinder/dist/**", "label": "vite-plugin dist" }
       ]
     }]
   ]

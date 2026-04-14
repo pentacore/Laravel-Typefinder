@@ -25,6 +25,18 @@ return [
         'enabled' => true,
         'paths' => [app_path('Models')],
         'include_relationships' => true,
+
+        // When enabled, each model emits {Model}Create and {Model}Update
+        // companion types alongside the canonical read shape.
+        'emit_write_shapes' => false,
+
+        // Respect $fillable/$guarded when building write shapes.
+        // Override per-model via typefinderRespectMassAssignment().
+        'respect_mass_assignment' => true,
+
+        // Columns excluded from the Update shape. Merged with each model's
+        // typefinderImmutableOnUpdate() list.
+        'immutable_on_update' => ['id', 'created_at', 'updated_at', 'deleted_at'],
     ],
 
     /*
