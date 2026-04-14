@@ -4,6 +4,7 @@ namespace Pentacore\Typefinder\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
+use Pentacore\Typefinder\Extractors\ControllerExtractor;
 use Pentacore\Typefinder\Extractors\EnumExtractor;
 use Pentacore\Typefinder\Extractors\ModelExtractor;
 use Pentacore\Typefinder\Extractors\RequestExtractor;
@@ -127,6 +128,30 @@ class GenerateCommand extends Command
                     $categories[] = 'requests';
                     $this->counts['requests'] = count($allRequests);
                     $this->printInfo('Generated '.count($allRequests).' request type(s)', $useJson);
+                }
+            }
+
+            if (config('typefinder.inertia.enabled', false)) {
+                $controllerExtractor = new ControllerExtractor;
+                $paths = config('typefinder.inertia.paths', []);
+
+                $this->debugLine('extracting category=inertia paths=['.implode(',', array_map(fn ($p) => '"'.$p.'"', $paths)).']', $useJson, $useDebug);
+
+                $onPage = fn (string $cls) => $this->debugLine('parsing category=inertia class='.$cls, $useJson, $useDebug);
+                $allPages = [];
+                foreach ($paths as $path) {
+                    $allPages = array_merge($allPages, $controllerExtractor->extractFromDirectory($path, $onPage));
+                }
+
+                $this->assertNoPageCollisions($allPages);
+
+                $this->debugLine('extracted category=inertia count='.count($allPages), $useJson, $useDebug);
+
+                if (! empty($allPages)) {
+                    $this->writePages($allPages, $allModels, $allEnums, $renderer, $outputPath, $useJson, $useDebug);
+                    $categories[] = 'pages';
+                    $this->counts['pages'] = count($allPages);
+                    $this->printInfo('Generated '.count($allPages).' page prop type(s)', $useJson);
                 }
             }
 
@@ -318,6 +343,40 @@ class GenerateCommand extends Command
         $wrote = $this->writeIfChanged("{$dir}/index.d.ts", $renderer->renderBarrelIndex($names));
         $this->files[] = ['path' => $indexPath, 'written' => $wrote];
         $this->debugLine('writing category=pivots path='.$indexPath.' changed='.($wrote ? 'true' : 'false'), $useJson, $useDebug);
+    }
+
+    protected function writePages(array $pages, array $allModels, array $allEnums, TypeScriptRenderer $renderer, string $outputPath, bool $useJson, bool $useDebug): void
+    {
+        File::ensureDirectoryExists($outputPath);
+
+        $content = $renderer->renderPages($pages, $allModels, $allEnums);
+        $relativePath = 'pages.d.ts';
+        $wrote = $this->writeIfChanged($outputPath.'/pages.d.ts', $content);
+        $this->files[] = ['path' => $relativePath, 'written' => $wrote];
+        $this->debugLine('writing category=pages path='.$relativePath.' changed='.($wrote ? 'true' : 'false'), $useJson, $useDebug);
+    }
+
+    /**
+     * @param  list<array{component: string, source: string}>  $pages
+     */
+    protected function assertNoPageCollisions(array $pages): void
+    {
+        $byComponent = [];
+        foreach ($pages as $page) {
+            $byComponent[$page['component']][] = $page['source'];
+        }
+
+        $conflicts = array_filter($byComponent, fn ($sources) => count($sources) > 1);
+        if (empty($conflicts)) {
+            return;
+        }
+
+        $lines = [];
+        foreach ($conflicts as $component => $sources) {
+            $lines[] = "{$component}: ".implode(', ', $sources);
+        }
+
+        throw new \RuntimeException("Duplicate TypefinderPage components:\n".implode("\n", $lines));
     }
 
     /**

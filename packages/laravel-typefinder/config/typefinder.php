@@ -95,4 +95,20 @@ return [
             // 'datetime' => 'Date',
         ],
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Inertia (opt-in)
+    |--------------------------------------------------------------------------
+    |
+    | When enabled, the generator scans controller methods for
+    | #[Pentacore\Typefinder\Attributes\TypefinderPage] attributes and emits a
+    | consolidated pages.d.ts describing the PageProps map.
+    |
+    */
+
+    'inertia' => [
+        'enabled' => false,
+        'paths' => [app_path('Http/Controllers')],
+    ],
 ];
