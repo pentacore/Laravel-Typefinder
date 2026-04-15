@@ -43,6 +43,7 @@ final class GenerateReferenceOutputTest extends TestCase
         $this->assertFileExists($this->outputPath.'/models/index.d.ts');
         $this->assertFileExists($this->outputPath.'/enums/index.d.ts');
         $this->assertFileExists($this->outputPath.'/requests/index.d.ts');
-        $this->assertFileExists($this->outputPath.'/pivots/index.d.ts');
+        // Pivots now live alongside models in the same directory.
+        $this->assertFileExists($this->outputPath.'/models/RoleUserPivot.d.ts');
     }
 }

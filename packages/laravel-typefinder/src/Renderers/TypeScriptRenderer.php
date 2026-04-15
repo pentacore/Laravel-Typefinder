@@ -680,7 +680,7 @@ TS;
                 $relatedName = $this->resolveModelName($rel['related'], $allModels);
                 $imports[] = sprintf("import type { %s } from './%s';", $relatedName, $relatedName);
                 $pivotName = $this->generatePivotName($rel['pivot']['table'] ?? $name);
-                $imports[] = sprintf("import type { %s } from '../pivots';", $pivotName);
+                $imports[] = sprintf("import type { %s } from './%s';", $pivotName, $pivotName);
 
                 return sprintf('  %s?: (%s & { pivot: %s })[];', $name, $relatedName, $pivotName);
 

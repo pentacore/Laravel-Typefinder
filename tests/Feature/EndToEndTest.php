@@ -89,8 +89,8 @@ final class EndToEndTest extends TestCase
         $updatePostContent = File::get($this->outputPath.'/requests/UpdatePostRequest.d.ts');
         $this->assertStringContainsString('password_confirmation', $updatePostContent);
 
-        // Verify pivot output
-        $this->assertDirectoryExists($this->outputPath.'/pivots');
+        // Verify pivot output (pivots now live alongside models)
+        $this->assertFileExists($this->outputPath.'/models/RoleUserPivot.d.ts');
 
         // Verify barrel files
         $topBarrel = File::get($this->outputPath.'/index.d.ts');

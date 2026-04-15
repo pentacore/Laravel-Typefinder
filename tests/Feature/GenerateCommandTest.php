@@ -89,8 +89,9 @@ final class GenerateCommandTest extends TestCase
     {
         $this->artisan('typefinder:generate');
 
-        $this->assertDirectoryExists($this->outputPath.'/pivots');
-        $this->assertFileExists($this->outputPath.'/pivots/index.d.ts');
+        // Pivots fold into the models directory — they appear as siblings of
+        // the model types they pivot between, with one import per pivot file.
+        $this->assertFileExists($this->outputPath.'/models/RoleUserPivot.d.ts');
     }
 
     public function test_command_generates_top_level_barrel(): void

@@ -106,19 +106,16 @@ class GenerateCommand extends Command
 
                 $this->debugLine('extracted category=models count='.count($allModels), $useJson, $useDebug);
 
-                if ($allModels !== []) {
-                    $this->writeModels($allModels, $allEnums, $typeScriptRenderer, $outputPath, $useJson, $useDebug);
+                if ($allModels !== [] || $allPivots !== []) {
+                    $this->writeModels($allModels, $allPivots, $allEnums, $typeScriptRenderer, $outputPath, $useJson, $useDebug);
                     $categories[] = 'models';
                     $this->counts['models'] = count($allModels);
-                    $this->printInfo('Generated '.count($allModels).' model type(s)', $useJson);
-                    $this->debugLine('generated category=models count='.count($allModels), $useJson, $useDebug);
-                }
+                    if ($allPivots !== []) {
+                        $this->counts['pivots'] = count($allPivots);
+                    }
 
-                if ($allPivots !== []) {
-                    $this->writePivots($allPivots, $typeScriptRenderer, $outputPath, $useJson, $useDebug);
-                    $categories[] = 'pivots';
-                    $this->counts['pivots'] = count($allPivots);
-                    $this->printInfo('Generated '.count($allPivots).' pivot type(s)', $useJson);
+                    $this->printInfo('Generated '.count($allModels).' model type(s)'.($allPivots === [] ? '' : ' and '.count($allPivots).' pivot type(s)'), $useJson);
+                    $this->debugLine('generated category=models count='.count($allModels).' pivots='.count($allPivots), $useJson, $useDebug);
                 }
             }
 
@@ -371,7 +368,7 @@ class GenerateCommand extends Command
         $this->debugLine('writing category=enums path='.$indexPath.' changed='.($wrote ? 'true' : 'false'), $useJson, $useDebug);
     }
 
-    protected function writeModels(array $models, array $allEnums, TypeScriptRenderer $typeScriptRenderer, string $outputPath, bool $useJson, bool $useDebug): void
+    protected function writeModels(array $models, array $pivots, array $allEnums, TypeScriptRenderer $typeScriptRenderer, string $outputPath, bool $useJson, bool $useDebug): void
     {
         $dir = $outputPath.'/models';
         File::ensureDirectoryExists($dir);
@@ -386,6 +383,14 @@ class GenerateCommand extends Command
             $content = $typeScriptRenderer->renderModelFile($model, $allEnums, $models, $emitWriteShapes, $immutable);
             $this->writeModelFile($dir, $model['name'], $content, $useJson, $useDebug);
             $names[] = $model['name'];
+        }
+
+        // Pivots live alongside models — relationship fields on models import
+        // them as siblings (`import type { UserRolePivot } from './UserRolePivot'`).
+        foreach ($pivots as $pivot) {
+            $content = $typeScriptRenderer->renderPivot($pivot);
+            $this->writeModelFile($dir, $pivot['name'], $content, $useJson, $useDebug);
+            $names[] = $pivot['name'];
         }
 
         $this->pruneStaleFiles($dir, array_map(fn ($n): string => $n.'.d.ts', [...$names, 'index']));
@@ -473,29 +478,6 @@ class GenerateCommand extends Command
         $wrote = $this->writeIfChanged($outputPath.'/helpers.d.ts', $content);
         $this->files[] = ['path' => 'helpers.d.ts', 'written' => $wrote];
         $this->debugLine('writing category=helpers path=helpers.d.ts changed='.($wrote ? 'true' : 'false'), $useJson, $useDebug);
-    }
-
-    protected function writePivots(array $pivots, TypeScriptRenderer $typeScriptRenderer, string $outputPath, bool $useJson, bool $useDebug): void
-    {
-        $dir = $outputPath.'/pivots';
-        File::ensureDirectoryExists($dir);
-
-        $names = [];
-        foreach ($pivots as $pivot) {
-            $content = $typeScriptRenderer->renderPivot($pivot);
-            $relativePath = 'pivots/'.$pivot['name'].'.d.ts';
-            $wrote = $this->writeIfChanged(sprintf('%s/%s.d.ts', $dir, $pivot['name']), $content);
-            $this->files[] = ['path' => $relativePath, 'written' => $wrote];
-            $this->debugLine('writing category=pivots path='.$relativePath.' changed='.($wrote ? 'true' : 'false'), $useJson, $useDebug);
-            $names[] = $pivot['name'];
-        }
-
-        $this->pruneStaleFiles($dir, array_map(fn ($n): string => $n.'.d.ts', [...$names, 'index']));
-
-        $indexPath = 'pivots/index.d.ts';
-        $wrote = $this->writeIfChanged($dir.'/index.d.ts', $typeScriptRenderer->renderBarrelIndex($names));
-        $this->files[] = ['path' => $indexPath, 'written' => $wrote];
-        $this->debugLine('writing category=pivots path='.$indexPath.' changed='.($wrote ? 'true' : 'false'), $useJson, $useDebug);
     }
 
     protected function writePages(array $pages, array $allModels, array $allEnums, TypeScriptRenderer $typeScriptRenderer, string $outputPath, bool $useJson, bool $useDebug): void

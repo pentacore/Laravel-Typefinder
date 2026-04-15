@@ -125,7 +125,7 @@ final class TypeScriptRendererTest extends TestCase
 
         $this->assertStringContainsString("import type { Post } from './Post';", $output);
         $this->assertStringContainsString("import type { Role } from './Role';", $output);
-        $this->assertStringContainsString("import type { RoleUserPivot } from '../pivots';", $output);
+        $this->assertStringContainsString("import type { RoleUserPivot } from './RoleUserPivot';", $output);
         $this->assertStringContainsString('posts?: Post[];', $output);
         $this->assertStringContainsString('roles?: (Role & { pivot: RoleUserPivot })[];', $output);
     }
