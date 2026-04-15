@@ -1,3 +1,23 @@
+## [4.0.0](https://github.com/pentacore/Laravel-Typefinder/compare/v3.0.1...v4.0.0) (2026-04-15)
+
+### ⚠ BREAKING CHANGES
+
+* ship vite plugin as ESM-only (drop CJS)
+* fold pivots into models/ directory, drop pivots category
+
+### Features
+
+* opt-in as-const enum emission via typefinder.enums.emit_values ([b8d64f8](https://github.com/pentacore/Laravel-Typefinder/commit/b8d64f88ef52f26077fb257afbf885ffef42e00a))
+
+### Bug Fixes
+
+* harden NullSafeProxy, reset cast registry between tests, finally-clean check temp dir, cache resource model lookup ([4eb2ff1](https://github.com/pentacore/Laravel-Typefinder/commit/4eb2ff1003af3b6a9d51841bdfb15f1d8fd257a0))
+
+### Code Refactoring
+
+* fold pivots into models/ directory, drop pivots category ([ec43a72](https://github.com/pentacore/Laravel-Typefinder/commit/ec43a7262d7a9b3c8e3328e2891ef44b7c189735))
+* ship vite plugin as ESM-only (drop CJS) ([f423c8d](https://github.com/pentacore/Laravel-Typefinder/commit/f423c8d1e531f333f8c6e05b10ce0a89fb510741))
+
 ## [3.0.1](https://github.com/pentacore/Laravel-Typefinder/compare/v3.0.0...v3.0.1) (2026-04-14)
 
 ### Bug Fixes
