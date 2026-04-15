@@ -64,6 +64,18 @@ return [
     'enums' => [
         'enabled' => true,
         'paths' => [app_path('Enums')],
+
+        /*
+         | When true, enums emit to `.ts` files containing an `as const`
+         | object paired with the derived union type:
+         |
+         |   export const PostStatus = { Draft: 'draft', ... } as const;
+         |   export type PostStatus = typeof PostStatus[keyof typeof PostStatus];
+         |
+         | This gives consumers a runtime value for iteration plus the union
+         | type. When false (default), enums emit to `.d.ts` as a bare union.
+         */
+        'emit_values' => false,
     ],
 
     /*

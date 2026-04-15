@@ -350,22 +350,45 @@ class GenerateCommand extends Command
         $dir = $outputPath.'/enums';
         File::ensureDirectoryExists($dir);
 
+        $emitValues = (bool) config('typefinder.enums.emit_values', false);
+        $ext = $emitValues ? 'ts' : 'd.ts';
+
         $names = [];
         foreach ($enums as $enum) {
-            $content = $typeScriptRenderer->renderEnum($enum);
-            $relativePath = 'enums/'.$enum['name'].'.d.ts';
-            $wrote = $this->writeIfChanged(sprintf('%s/%s.d.ts', $dir, $enum['name']), $content);
+            $content = $typeScriptRenderer->renderEnum($enum, $emitValues);
+            $relativePath = 'enums/'.$enum['name'].'.'.$ext;
+            $wrote = $this->writeIfChanged(sprintf('%s/%s.%s', $dir, $enum['name'], $ext), $content);
             $this->files[] = ['path' => $relativePath, 'written' => $wrote];
             $this->debugLine('writing category=enums path='.$relativePath.' changed='.($wrote ? 'true' : 'false'), $useJson, $useDebug);
             $names[] = $enum['name'];
         }
 
-        $this->pruneStaleFiles($dir, array_map(fn ($n): string => $n.'.d.ts', [...$names, 'index']));
+        $this->pruneStaleFiles($dir, array_map(fn ($n): string => $n.'.'.$ext, [...$names, 'index']));
 
-        $indexPath = 'enums/index.d.ts';
-        $wrote = $this->writeIfChanged($dir.'/index.d.ts', $typeScriptRenderer->renderBarrelIndex($names));
+        // When emitting `as const` values, the barrel must also be a `.ts`
+        // file and use a runtime `export *` so the const values aren't
+        // stripped by the type-only re-export.
+        $barrelContent = $emitValues
+            ? self::renderValueBarrel($typeScriptRenderer, $names)
+            : $typeScriptRenderer->renderBarrelIndex($names);
+
+        $indexPath = 'enums/index.'.$ext;
+        $wrote = $this->writeIfChanged($dir.'/index.'.$ext, $barrelContent);
         $this->files[] = ['path' => $indexPath, 'written' => $wrote];
         $this->debugLine('writing category=enums path='.$indexPath.' changed='.($wrote ? 'true' : 'false'), $useJson, $useDebug);
+    }
+
+    /**
+     * @param  list<string>  $names
+     */
+    protected static function renderValueBarrel(TypeScriptRenderer $typeScriptRenderer, array $names): string
+    {
+        $lines = array_map(
+            fn (string $n): string => sprintf("export * from './%s';", $n),
+            $names,
+        );
+
+        return TypeScriptRenderer::FILE_HEADER."\n".implode("\n", $lines)."\n";
     }
 
     protected function writeModels(array $models, array $pivots, array $allEnums, TypeScriptRenderer $typeScriptRenderer, string $outputPath, bool $useJson, bool $useDebug): void

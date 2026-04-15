@@ -15,15 +15,15 @@ class EnumExtractor
      * Extract type information from a single backed enum class.
      *
      * @param  class-string<BackedEnum>  $enumClass
-     * @return array{name: string, fqcn: class-string, backingType: string, values: list<string|int>}
+     * @return array{name: string, fqcn: class-string, backingType: string, values: list<string|int>, cases: list<array{name: string, value: string|int}>}
      */
     public function extract(string $enumClass): array
     {
         $reflectionEnum = new ReflectionEnum($enumClass);
         $backingType = $reflectionEnum->getBackingType();
 
-        $values = array_map(
-            fn (BackedEnum $backedEnum): int|string => $backedEnum->value,
+        $cases = array_map(
+            fn (BackedEnum $backedEnum): array => ['name' => $backedEnum->name, 'value' => $backedEnum->value],
             $enumClass::cases()
         );
 
@@ -31,7 +31,8 @@ class EnumExtractor
             'name' => $reflectionEnum->getShortName(),
             'fqcn' => $enumClass,
             'backingType' => (string) $backingType,
-            'values' => $values,
+            'values' => array_column($cases, 'value'),
+            'cases' => $cases,
         ];
     }
 

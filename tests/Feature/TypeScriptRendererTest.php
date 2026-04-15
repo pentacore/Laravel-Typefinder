@@ -52,6 +52,50 @@ final class TypeScriptRendererTest extends TestCase
         $this->assertStringContainsString('export type Priority = 1 | 2 | 3;', $output);
     }
 
+    public function test_renders_enum_as_const_when_emit_values_on(): void
+    {
+        $enum = [
+            'name' => 'PostStatus',
+            'fqcn' => PostStatus::class,
+            'backingType' => 'string',
+            'values' => ['draft', 'published', 'archived'],
+            'cases' => [
+                ['name' => 'Draft', 'value' => 'draft'],
+                ['name' => 'Published', 'value' => 'published'],
+                ['name' => 'Archived', 'value' => 'archived'],
+            ],
+        ];
+
+        $output = $this->typeScriptRenderer->renderEnum($enum, emitValues: true);
+
+        $this->assertStringContainsString('export const PostStatus = {', $output);
+        $this->assertStringContainsString("Draft: 'draft',", $output);
+        $this->assertStringContainsString("Published: 'published',", $output);
+        $this->assertStringContainsString('} as const;', $output);
+        $this->assertStringContainsString('export type PostStatus = typeof PostStatus[keyof typeof PostStatus];', $output);
+    }
+
+    public function test_renders_integer_enum_as_const(): void
+    {
+        $enum = [
+            'name' => 'Priority',
+            'fqcn' => 'App\\Enums\\Priority',
+            'backingType' => 'int',
+            'values' => [1, 2, 3],
+            'cases' => [
+                ['name' => 'Low', 'value' => 1],
+                ['name' => 'Medium', 'value' => 2],
+                ['name' => 'High', 'value' => 3],
+            ],
+        ];
+
+        $output = $this->typeScriptRenderer->renderEnum($enum, emitValues: true);
+
+        $this->assertStringContainsString('Low: 1,', $output);
+        $this->assertStringContainsString('Medium: 2,', $output);
+        $this->assertStringContainsString('High: 3,', $output);
+    }
+
     public function test_renders_simple_model_type(): void
     {
         $model = [
