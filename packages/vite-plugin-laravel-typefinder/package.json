@@ -1,6 +1,6 @@
 {
     "name": "@pentacore/vite-plugin-laravel-typefinder",
-    "version": "3.0.0",
+    "version": "3.0.1",
     "description": "Vite plugin for Laravel Typefinder — auto-generate TypeScript types from Models, Enums, Casts, and Requests.",
     "keywords": [
         "vite",
