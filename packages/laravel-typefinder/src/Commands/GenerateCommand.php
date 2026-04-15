@@ -298,6 +298,13 @@ class GenerateCommand extends Command
             }
 
             return self::FAILURE;
+        } finally {
+            // In --check mode, always clean up the temp directory — even if
+            // an exception escaped the pipeline. Without this, failed runs
+            // leak `/tmp/typefinder-check-*` directories.
+            if ($useCheck && $outputPath !== $realOutputPath && File::isDirectory($outputPath)) {
+                File::deleteDirectory($outputPath);
+            }
         }
     }
 

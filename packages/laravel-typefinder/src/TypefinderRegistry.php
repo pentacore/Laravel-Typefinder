@@ -81,4 +81,13 @@ class TypefinderRegistry
 
         return $value instanceof Closure ? (string) $value() : $value;
     }
+
+    /**
+     * Clear every registered cast. Primarily useful in tests to reset the
+     * singleton between cases when directly mutating the registry.
+     */
+    public function clearCasts(): void
+    {
+        $this->casts = [];
+    }
 }

@@ -149,23 +149,30 @@ class ResourceExtractor
         return $attrs === [] ? null : $attrs[0]->newInstance();
     }
 
+    /** @var ?array<string, class-string> */
+    protected ?array $modelShortNameMap = null;
+
     /**
-     * Best-effort lookup of a Model FQCN by short name. Walks declared classes
-     * for a Model subclass whose short name matches. Returns null if no match.
+     * Best-effort lookup of a Model FQCN by short name.
+     *
+     * Walks `get_declared_classes()` once per extractor instance and caches
+     * the short-name → FQCN map, so subsequent orphan resources resolve in
+     * O(1) instead of scanning every declared class.
      */
     protected function resolveModelFqcn(string $shortName): ?string
     {
-        foreach (get_declared_classes() as $class) {
-            if (! is_subclass_of($class, Model::class)) {
-                continue;
-            }
+        if ($this->modelShortNameMap === null) {
+            $this->modelShortNameMap = [];
+            foreach (get_declared_classes() as $class) {
+                if (! is_subclass_of($class, Model::class)) {
+                    continue;
+                }
 
-            if ((new ReflectionClass($class))->getShortName() === $shortName) {
-                return $class;
+                $this->modelShortNameMap[(new ReflectionClass($class))->getShortName()] = $class;
             }
         }
 
-        return null;
+        return $this->modelShortNameMap[$shortName] ?? null;
     }
 
     protected function resolveClassName(string $filePath): ?string
