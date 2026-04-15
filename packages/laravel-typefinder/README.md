@@ -53,17 +53,15 @@ Every run produces a single tree under `output_path` (default `resources/js/type
 resources/js/typefinder/
 ├── index.d.ts                  top-level barrel — re-exports every category
 ├── helpers.d.ts                generic response wrappers (always emitted)
-├── models/                     Eloquent models
+├── models/                     Eloquent models + derived pivots
 │   ├── User.d.ts               contains User, UserCreate, UserUpdate
+│   ├── UserRolePivot.d.ts      pivots live alongside their models
 │   └── index.d.ts
-├── enums/                      backed PHP enums
+├── enums/                      backed PHP enums (`.ts` when emit_values is on)
 │   ├── PostStatus.d.ts
 │   └── index.d.ts
 ├── requests/                   FormRequest classes
 │   ├── StorePostRequest.d.ts
-│   └── index.d.ts
-├── pivots/                     derived from belongsToMany / morphToMany
-│   ├── UserRolePivot.d.ts
 │   └── index.d.ts
 ├── resources/                  JsonResource subclasses
 │   ├── UserResource.d.ts
@@ -112,6 +110,20 @@ export type PostStatus = 'draft' | 'published' | 'archived';
 export type Priority = 1 | 2 | 3;
 ```
 
+Set `enums.emit_values: true` to emit `.ts` files with both an `as const` object (for runtime iteration) and the matching union type:
+
+```typescript
+export const PostStatus = {
+  Draft: 'draft',
+  Published: 'published',
+  Archived: 'archived',
+} as const;
+
+export type PostStatus = typeof PostStatus[keyof typeof PostStatus];
+```
+
+Handy for `<select options={Object.values(PostStatus)}>` and similar runtime patterns. Opt-in because it switches the file extension and the barrel's re-export style.
+
 ### Form Requests
 
 Validation rules map to TypeScript types. `required` → non-optional; `nullable` → adds `| null`; `sometimes` and conditional `required_*` rules → optional. Fields without `required` are optional.
@@ -132,7 +144,7 @@ With `extract_nested: true`, nested keys become named types (`StorePostRequestMe
 
 ### Pivots
 
-Pivot types are derived from `belongsToMany` / `morphToMany` declarations:
+Pivot types are derived from `belongsToMany` / `morphToMany` declarations. They're written into the same `models/` directory as their parent types — no separate `pivots/` subdirectory — so a relationship field like `roles?: (Role & { pivot: UserRolePivot })[];` resolves with a simple sibling import:
 
 ```typescript
 export type UserRolePivot = {
@@ -260,6 +272,7 @@ return [
     'enums' => [
         'enabled' => true,
         'paths' => [app_path('Enums')],
+        'emit_values' => false,                         // true → `.ts` with `as const` runtime values
     ],
 
     'requests' => [

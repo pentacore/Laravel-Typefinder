@@ -21,9 +21,9 @@ For verbose line-oriented debug output use `--debug`. For CI drift-checking use 
 ### What gets generated
 
 - **Models** (`app/Models/*`) → `{output_path}/models/<Name>.d.ts`. Respects `$hidden` / `$visible`. Uses `$casts` plus DB schema. Relationships are emitted as optional fields. Each file also contains `{Model}Create` and `{Model}Update` companion types.
-- **Enums** (`app/Enums/*`) → `{output_path}/enums/<Name>.d.ts`. Backed enums only.
+- **Enums** (`app/Enums/*`) → `{output_path}/enums/<Name>.d.ts`. Backed enums only. Setting `enums.emit_values: true` switches the output to `.ts` with an `as const` object paired with the union type — useful for runtime iteration.
 - **Form Requests** (`app/Http/Requests/*`) → `{output_path}/requests/<Name>.d.ts`. Extracted from `rules()` with null-safe proxy recovery for runtime-dependent rules.
-- **Pivots** — auto-derived from `belongsToMany` / `morphToMany` relationships.
+- **Pivots** — auto-derived from `belongsToMany` / `morphToMany` relationships. Written alongside models in the `models/` directory (e.g. `models/UserRolePivot.d.ts`).
 - **Resources** (`app/Http/Resources/*`) → `{output_path}/resources/<Name>.d.ts`. Three declaration tiers: `#[TypefinderResource(shape: [...])]`, `#[TypefinderResource(model: …, omit, extend)]`, or `{Model}Resource` name convention.
 - **Pages** (opt-in) → `{output_path}/pages.d.ts`. A `PageProps` map keyed by Inertia component name; declared per controller action with `#[TypefinderPage(component: ..., props: [...])]`.
 - **Broadcasting** (opt-in) → `{output_path}/broadcasting.d.ts`. `BroadcastPublicChannels` / `BroadcastPrivateChannels` / `BroadcastPresenceChannels` / `BroadcastEvents` maps, discovered from classes implementing `ShouldBroadcast`.

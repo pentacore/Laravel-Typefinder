@@ -182,19 +182,23 @@ If every `files[].written` is `false`, no PHP types changed in a way that affect
 ## Generated File Layout
 
 ```
-{output_path}/              # default: resources/js/types/
-├── models/
+{output_path}/              # default: resources/js/typefinder/
+├── helpers.d.ts            # generic response wrappers (always emitted)
+├── models/                 # Eloquent models + derived pivots
 │   ├── {ModelName}.d.ts
-│   └── index.d.ts          # barrel: re-exports all model types
-├── enums/
+│   ├── {PivotName}Pivot.d.ts
+│   └── index.d.ts          # barrel: re-exports all model + pivot types
+├── enums/                  # `.ts` when enums.emit_values is on
 │   ├── {EnumName}.d.ts
 │   └── index.d.ts
 ├── requests/
 │   ├── {RequestName}.d.ts
 │   └── index.d.ts
-├── pivots/
-│   ├── {PivotName}.d.ts
+├── resources/              # JsonResource subclasses
+│   ├── {ResourceName}.d.ts
 │   └── index.d.ts
+├── pages.d.ts              # Inertia PageProps map (opt-in)
+├── broadcasting.d.ts       # Echo channel + event types (opt-in)
 └── index.d.ts              # top-level barrel: re-exports all categories
 ```
 

@@ -6,6 +6,7 @@ A Vite plugin that automatically runs `php artisan typefinder:generate` on build
 
 - Vite 6+
 - Node 18+
+- ESM-only — the package exposes only `dist/index.mjs`. Consumers must `import` (not `require`) it. Any modern Vite/Laravel app already meets this.
 
 ## Installation
 
