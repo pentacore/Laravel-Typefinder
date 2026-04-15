@@ -16,12 +16,12 @@ use Attribute;
  * can't be salvaged with the other attributes.
  *
  * Example:
- * ```php
+ * <pre>
  * use Pentacore\Typefinder\Attributes\TypefinderIgnore;
  *
  * #[TypefinderIgnore]
  * class LegacyModel extends \Illuminate\Database\Eloquent\Model {}
- * ```
+ * </pre>
  */
 #[Attribute(Attribute::TARGET_CLASS)]
 final class TypefinderIgnore {}

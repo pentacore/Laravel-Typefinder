@@ -20,7 +20,7 @@ use Attribute;
  * can't infer.
  *
  * Example — supply a declarative payload when `broadcastWith()` is dynamic:
- * ```php
+ * <pre>
  * use Pentacore\Typefinder\Attributes\TypefinderBroadcast;
  *
  * #[TypefinderBroadcast(
@@ -30,7 +30,7 @@ use Attribute;
  *     channelType: 'private',
  * )]
  * class OrderShipped implements \Illuminate\Contracts\Broadcasting\ShouldBroadcast { … }
- * ```
+ * </pre>
  *
  * Generation is opt-in via `config('typefinder.broadcasting.enabled')`.
  * When `$channel` is set, `$channelType` is required. Two events targeting

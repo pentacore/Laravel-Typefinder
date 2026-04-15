@@ -20,7 +20,7 @@ use Attribute;
  * column types, and relationship inference.
  *
  * Example on a model:
- * ```php
+ * <pre>
  * use Pentacore\Typefinder\Attributes\TypefinderOverrides;
  *
  * #[TypefinderOverrides([
@@ -29,16 +29,16 @@ use Attribute;
  *     'owner' => \App\Models\User::class,           // resolved to the generated User type
  * ])]
  * class Post extends \Illuminate\Database\Eloquent\Model {}
- * ```
+ * </pre>
  *
  * Example on a FormRequest:
- * ```php
+ * <pre>
  * #[TypefinderOverrides(['attachment' => 'File | null', 'amount' => 'number'])]
  * class StoreInvoiceRequest extends FormRequest
  * {
  *     public function rules(): array { … }
  * }
- * ```
+ * </pre>
  *
  * @see TypefinderWriteShape for tuning Create/Update companions.
  * @see TypefinderIgnore to skip a class entirely.

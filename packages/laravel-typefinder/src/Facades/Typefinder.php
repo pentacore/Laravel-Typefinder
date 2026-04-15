@@ -18,7 +18,7 @@ use Pentacore\Typefinder\TypefinderRegistry;
  * generator runs.
  *
  * Example:
- * ```php
+ * <pre>
  * // AppServiceProvider::boot()
  * use Pentacore\Typefinder\Facades\Typefinder;
  *
@@ -28,7 +28,7 @@ use Pentacore\Typefinder\TypefinderRegistry;
  *     \Cknow\Money\MoneyCast::class,
  *     fn (): string => '{ amount: number; currency: string }',
  * );
- * ```
+ * </pre>
  *
  * For casts you own, prefer the
  * {@see TypefinderCast} attribute on the cast

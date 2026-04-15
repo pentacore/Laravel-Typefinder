@@ -16,7 +16,7 @@ use Attribute;
  * policy when the conventions don't fit.
  *
  * Example:
- * ```php
+ * <pre>
  * use Pentacore\Typefinder\Attributes\TypefinderWriteShape;
  *
  * #[TypefinderWriteShape(
@@ -25,7 +25,7 @@ use Attribute;
  *     immutableOnUpdate: ['customer_id'],       // extra fields excluded from Update
  * )]
  * class Invoice extends \Illuminate\Database\Eloquent\Model {}
- * ```
+ * </pre>
  *
  * Only applies when `config('typefinder.models.emit_write_shapes')` is enabled.
  *

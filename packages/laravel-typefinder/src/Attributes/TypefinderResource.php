@@ -22,7 +22,7 @@ use Attribute;
  * A resource matching none of the three is skipped with a warning.
  *
  * Tier 1 example:
- * ```php
+ * <pre>
  * use Pentacore\Typefinder\Attributes\TypefinderResource;
  *
  * #[TypefinderResource(shape: [
@@ -32,17 +32,17 @@ use Attribute;
  *     'published_at' => 'string | null',
  * ])]
  * class PostResource extends \Illuminate\Http\Resources\Json\JsonResource {}
- * ```
+ * </pre>
  *
  * Tier 2 example — the common "resource wraps a model":
- * ```php
+ * <pre>
  * #[TypefinderResource(
  *     model: \App\Models\User::class,
  *     omit: ['password', 'remember_token'],
  *     extend: ['avatarUrl' => 'string', 'postsCount' => 'number'],
  * )]
  * class AdminUserResource extends \Illuminate\Http\Resources\Json\JsonResource {}
- * ```
+ * </pre>
  *
  * Emits `export type AdminUserResource = Omit<User, 'password' | 'remember_token'> & { avatarUrl: string; postsCount: number };`.
  *

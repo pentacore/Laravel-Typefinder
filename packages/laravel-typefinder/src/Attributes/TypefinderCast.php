@@ -16,7 +16,7 @@ use Pentacore\Typefinder\Resolvers\CastTypeResolver;
  * type becomes the TS type for any model column cast to this class.
  *
  * Example:
- * ```php
+ * <pre>
  * use Pentacore\Typefinder\Attributes\TypefinderCast;
  * use Illuminate\Contracts\Database\Eloquent\CastsAttributes;
  *
@@ -26,7 +26,7 @@ use Pentacore\Typefinder\Resolvers\CastTypeResolver;
  *     public function get($model, $key, $value, $attributes): mixed { … }
  *     public function set($model, $key, $value, $attributes): mixed { … }
  * }
- * ```
+ * </pre>
  *
  * For cast classes you don't own (e.g. casts shipped by third-party packages),
  * use the runtime registry instead — see

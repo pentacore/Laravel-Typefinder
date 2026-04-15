@@ -24,7 +24,7 @@ use Pentacore\Typefinder\Resolvers\CastTypeResolver;
  *   6. `'unknown'` fallback
  *
  * Typical usage — register casts from a service provider's `boot()`:
- * ```php
+ * <pre>
  * use Pentacore\Typefinder\Facades\Typefinder;
  *
  * Typefinder::registerCast(
@@ -38,7 +38,7 @@ use Pentacore\Typefinder\Resolvers\CastTypeResolver;
  *         ? '{ amount: number; currency: string; formatted: string }'
  *         : '{ amount: number; currency: string }',
  * );
- * ```
+ * </pre>
  */
 class TypefinderRegistry
 {

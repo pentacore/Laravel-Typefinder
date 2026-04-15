@@ -21,7 +21,7 @@ use Attribute;
  * trigger the matching import. Anything unrecognised is emitted verbatim.
  *
  * Example:
- * ```php
+ * <pre>
  * use Pentacore\Typefinder\Attributes\TypefinderPage;
  *
  * class UserController
@@ -37,7 +37,7 @@ use Attribute;
  *     )]
  *     public function show(\App\Models\User $user) { … }
  * }
- * ```
+ * </pre>
  *
  * Generation is opt-in via `config('typefinder.inertia.enabled')`. Components
  * declared by two different methods cause the generator to fail loudly so the
