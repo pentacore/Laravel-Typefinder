@@ -112,6 +112,29 @@ final class TypeScriptRendererTest extends TestCase
         $this->assertStringContainsString('High: 3,', $output);
     }
 
+    public function test_fully_guarded_model_emits_record_string_never_for_create_and_update(): void
+    {
+        // Default Eloquent guard (`$guarded = ['*']`) — no mass-assignable
+        // columns, so Create + Update bodies would otherwise be `{}`.
+        $model = [
+            'name' => 'QuirkyThing',
+            'fqcn' => \App\Models\QuirkyThing::class,
+            'columns' => [
+                ['name' => 'id', 'type' => 'number', 'nullable' => false, 'is_server_filled' => true],
+                ['name' => 'shape', 'type' => 'unknown', 'nullable' => true, 'is_server_filled' => false],
+            ],
+            'relationships' => [],
+            'assignable_columns' => [],
+        ];
+
+        $output = $this->typeScriptRenderer->renderModelFile($model, [], [], true, []);
+
+        $this->assertStringNotContainsString('= {}', $output);
+        $this->assertStringNotContainsString("= {\n\n};", $output);
+        $this->assertStringContainsString('export type QuirkyThingCreate = Record<string, never>;', $output);
+        $this->assertStringContainsString('export type QuirkyThingUpdate = Record<string, never>;', $output);
+    }
+
     public function test_override_with_trailing_null_does_not_double_up(): void
     {
         // The override already includes `| null`. Combined with a nullable

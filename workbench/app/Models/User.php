@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Models;
 
 use App\Casts\SettingsCast;
@@ -9,6 +11,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class User extends Model
 {
+    protected $fillable = ['name', 'email', 'password', 'settings', 'is_admin'];
+
     protected $hidden = ['password'];
 
     protected $casts = [

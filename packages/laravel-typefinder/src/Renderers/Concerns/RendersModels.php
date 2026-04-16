@@ -130,7 +130,9 @@ trait RendersModels
             $lines[] = sprintf('  %s%s: %s;', $column['name'], $optional, TypeScriptRenderer::appendNullable($typeStr, (bool) $column['nullable']));
         }
 
-        $body = "export type {$model['name']}Create = {\n".implode("\n", $lines)."\n};\n";
+        $body = $lines === []
+            ? "export type {$model['name']}Create = Record<string, never>;\n"
+            : "export type {$model['name']}Create = {\n".implode("\n", $lines)."\n};\n";
 
         return ['imports' => $imports, 'body' => $body];
     }
@@ -156,7 +158,9 @@ trait RendersModels
             $lines[] = sprintf('  %s?: %s;', $column['name'], TypeScriptRenderer::appendNullable($typeStr, (bool) $column['nullable']));
         }
 
-        $body = "export type {$model['name']}Update = {\n".implode("\n", $lines)."\n};\n";
+        $body = $lines === []
+            ? "export type {$model['name']}Update = Record<string, never>;\n"
+            : "export type {$model['name']}Update = {\n".implode("\n", $lines)."\n};\n";
 
         return ['imports' => $imports, 'body' => $body];
     }
