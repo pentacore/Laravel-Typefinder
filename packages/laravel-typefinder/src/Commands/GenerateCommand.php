@@ -25,7 +25,9 @@ class GenerateCommand extends Command
 {
     protected $signature = 'typefinder:generate {--debug} {--json} {--check : Dry-run: fail if regeneration would change on-disk files.}';
 
-    protected $description = 'Generate TypeScript type definitions from Laravel Models, Enums, and Requests';
+    protected $aliases = ['typefinder:gen', 'typefinder'];
+
+    protected $description = 'Generate TypeScript type definitions from Laravel Models, Enums, JsonResources, Typefinder Attributes, and Requests';
 
     /** @var list<array{path: string, written: bool}> */
     private array $files = [];

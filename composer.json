@@ -32,6 +32,7 @@
         "illuminate/validation": "^11.0|^12.0|^13.0"
     },
     "require-dev": {
+        "laravel/boost": "^2.4",
         "laravel/pint": "^1.21",
         "orchestra/testbench": "^10.1|^9.0",
         "phpunit/phpunit": "^11.0|^10.5",

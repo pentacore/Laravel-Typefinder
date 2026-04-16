@@ -1,5 +1,29 @@
-/.github export-ignore
-/tests export-ignore
-/workbench export-ignore
-phpunit.xml.dist export-ignore
-rector.php export-ignore
+# CI / tests / dev fixtures
+/.github                 export-ignore
+/tests                   export-ignore
+/workbench               export-ignore
+/docs                    export-ignore
+
+# JS side of the monorepo — users install via npm, not Composer
+/packages/vite-plugin-laravel-typefinder export-ignore
+
+# Release tooling
+/scripts                 export-ignore
+/.releaserc.json         export-ignore
+
+# Dev-only config
+/phpunit.xml.dist        export-ignore
+/pint.json               export-ignore
+/rector.php              export-ignore
+/testbench.yaml          export-ignore
+/package.json            export-ignore
+/package-lock.json       export-ignore
+/.nvmrc                  export-ignore
+
+# Editor / dotfile noise
+/.gitattributes          export-ignore
+/.gitignore              export-ignore
+/.codex                  export-ignore
+/.claude                 export-ignore
+/CONTRIBUTING.md         export-ignore
+/CLAUDE.md               export-ignore

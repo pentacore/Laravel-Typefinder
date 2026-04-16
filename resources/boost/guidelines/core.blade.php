@@ -1,61 +1,40 @@
-## Laravel Typefinder
+@php
+    /** @var \Laravel\Boost\Install\GuidelineAssist $assist */
+@endphp
+# Laravel Typefinder
 
-This project uses `laravel-typefinder` to auto-generate TypeScript `.d.ts` definitions from Laravel Models, Enums, Form Requests, API Resources, Inertia controllers, broadcast events, and pivot tables. Types are written to the `output_path` configured in `config/typefinder.php` (default: `resources/js/typefinder/`).
+This project uses `pentacore/laravel-typefinder` to auto-generate TypeScript type definitions from Laravel source. Generated files live under the configured `typefinder.output_path` (default: `resources/js/typefinder/`) and are kept in sync by running `{{$assist->artisanCommand('typefinder:generate')}}` — either manually, via the companion Vite plugin, or from CI.
 
-### Generate types
+## Config
 
-Run:
-```
-php artisan typefinder:generate
-```
+The user can publish a config file with `{{$assist->artisanCommand('vendor:publish --tag=typefinder-config')}}`.
+The values are available under the `typefinder` key.
 
-For agent-friendly structured output use `--json`:
-```
-php artisan typefinder:generate --json
-```
+## What gets emitted
 
-The JSON response contains: `success`, `duration_ms`, `output_path`, `counts`, `files` (each with `path` and `written` boolean), `warnings`, `errors`. Parse it to decide whether to continue or abort.
-
-For verbose line-oriented debug output use `--debug`. For CI drift-checking use `--check` (exits non-zero when on-disk output is stale).
-
-### What gets generated
-
-- **Models** (`app/Models/*`) → `{output_path}/models/<Name>.d.ts`. Respects `$hidden` / `$visible`. Uses `$casts` plus DB schema. Relationships are emitted as optional fields. Each file also contains `{Model}Create` and `{Model}Update` companion types.
-- **Enums** (`app/Enums/*`) → `{output_path}/enums/<Name>.d.ts`. Backed enums only. Setting `enums.emit_values: true` switches the output to `.ts` with an `as const` object paired with the union type — useful for runtime iteration.
-- **Form Requests** (`app/Http/Requests/*`) → `{output_path}/requests/<Name>.d.ts`. Extracted from `rules()` with null-safe proxy recovery for runtime-dependent rules.
-- **Pivots** — auto-derived from `belongsToMany` / `morphToMany` relationships. Written alongside models in the `models/` directory (e.g. `models/UserRolePivot.d.ts`).
-- **Resources** (`app/Http/Resources/*`) → `{output_path}/resources/<Name>.d.ts`. Three declaration tiers: `#[TypefinderResource(shape: [...])]`, `#[TypefinderResource(model: …, omit, extend)]`, or `{Model}Resource` name convention.
-- **Pages** (opt-in) → `{output_path}/pages.d.ts`. A `PageProps` map keyed by Inertia component name; declared per controller action with `#[TypefinderPage(component: ..., props: [...])]`.
-- **Broadcasting** (opt-in) → `{output_path}/broadcasting.d.ts`. `BroadcastPublicChannels` / `BroadcastPrivateChannels` / `BroadcastPresenceChannels` / `BroadcastEvents` maps, discovered from classes implementing `ShouldBroadcast`.
-- **Helpers** (always emitted) → `{output_path}/helpers.d.ts`. Generic response wrappers: `Wrapped<T>`, `WrappedCollection<T>`, `PaginatedCollection<T>`, `CursorPaginatedCollection<T>`, `SimplePaginatedCollection<T>`, `ValidationErrorResponse`, `ErrorResponse`.
-
-### Attributes
-
-All live under `\Pentacore\Typefinder\Attributes\`:
-
-- `#[TypefinderIgnore]` — skip a class.
-- `#[TypefinderOverrides(['col' => 'T'])]` — override field types on models / form requests.
-- `#[TypefinderWriteShape(serverFilled, respectMassAssignment, immutableOnUpdate)]` — tune Create/Update shapes on models.
-- `#[TypefinderResource(shape / model / omit / extend)]` — declare a JSON resource's shape.
-- `#[TypefinderPage(component, props, optional)]` — tag controller actions for Inertia page types.
-- `#[TypefinderBroadcast(payload, as, channel, channelType)]` — override reflection for broadcast events.
-- `#[TypefinderCast('T')]` — declare the TS shape for a custom cast class.
-
-### Custom cast types
-
-For casts you own, use the attribute:
+@verbatim
+    - **Models** (`{{$assist->appPath('Models/*')}}`) → `{output_path}/models/{Name}.d.ts`. Respects `$hidden` / `$visible`. Uses `$casts` plus DB schema. Relationships are emitted as optional fields. Each file also contains `{Name}Create` and `{Name}Update` companion types (unless `typefinder.models.emit_write_shapes` is disabled).
+        - **Pivots** — auto-derived from `belongsToMany` / `morphToMany` relationships. Written into `{output_path}/models/{Name}Pivot.d.ts` alongside the models they connect.
+    - **Enums** (`{{$assist->appPath('Enums/*')}}`) → `{output_path}/enums/{Name}.d.ts`. Backed enums only. Setting `enums.emit_values: true` switches the output to `.ts` files with both an `as const` object (for runtime iteration) and the matching union type.
+    - **Form Requests** (`{{$assist->appPath('Http/Requests/*')}}`) → `{output_path}/requests/{Name}.d.ts`. Extracted from `rules()` with null-safe proxy recovery for rules that touch request context at runtime.
+    - **Resources** (`{{$assist->appPath('Http/Resources/*')}}`) → `{output_path}/resources/{Name}.d.ts`. Declared via `#[TypefinderResource]` with an explicit shape, a model extension (`Omit<Model, ...> & { ... }`), or name-convention passthrough (`{Model}Resource` → `{Model}`).
+    - **Pages** (opt-in, `typefinder.inertia.enabled`, `{{$assist->appPath('Http/Controllers/*')}}`) → `{output_path}/pages.d.ts`. A single file with a `PageProps` map keyed by Inertia component name. Tag controller actions with `#[TypefinderPage(component: ..., props: [...])]`.
+    - **Broadcasting** (opt-in, `typefinder.broadcasting.enabled`, `{{$assist->appPath('Events/*')}}`) → `{output_path}/broadcasting.d.ts`. Public/private/presence channel maps plus a flat `BroadcastEvents` map. Discovered from classes implementing `ShouldBroadcast`.
+    - **Helpers** (always emitted) → `{output_path}/helpers.d.ts`. Generic response wrappers: `Wrapped<T>`, `WrappedCollection<T>`, `PaginatedCollection<T>`, `CursorPaginatedCollection<T>`, `SimplePaginatedCollection<T>`, `ValidationErrorResponse`, `ErrorResponse`.
+    - **Top-level barrel** → `{output_path}/index.d.ts`. Re-exports every active category.
+@endverbatim
+## Custom cast types
+                        
+For casts you own, tag the class:
 
 ```php
 use Pentacore\Typefinder\Attributes\TypefinderCast;
 
 #[TypefinderCast('{ theme: string; notifications: boolean }')]
-class SettingsCast implements CastsAttributes
-{
-    // ... get() / set()
-}
+class SettingsCast implements CastsAttributes { /* get() / set() */ }
 ```
 
-For third-party casts you can't modify, register them from a service provider:
+For casts you can't modify (third-party packages), register them from a service provider:
 
 ```php
 use Pentacore\Typefinder\Facades\Typefinder;
@@ -63,16 +42,4 @@ use Pentacore\Typefinder\Facades\Typefinder;
 Typefinder::registerCast(\Spatie\MediaLibrary\Cast::class, 'Media[]');
 ```
 
-### When to regenerate
-
-Regenerate types whenever you:
-- Add or rename a migration column
-- Add/change `$casts` on a model
-- Add or change `$hidden` / `$visible`
-- Add an enum or change its cases
-- Add or change a FormRequest's rules
-- Add or change a relationship method
-- Add or change a JsonResource
-- Tag a controller action with `#[TypefinderPage]` or an event with `ShouldBroadcast`
-
-The Vite plugin `@pentacore/vite-plugin-laravel-typefinder` runs this command automatically on build and on file changes during dev.
+`Typefinder::registerCast()` accepts a closure as the second argument when the type depends on runtime config.
