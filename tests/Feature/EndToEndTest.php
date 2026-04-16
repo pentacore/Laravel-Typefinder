@@ -430,8 +430,10 @@ PHP);
 
         $this->assertFileExists($this->outputPath.'/helpers.d.ts');
         $content = File::get($this->outputPath.'/helpers.d.ts');
-        $this->assertStringContainsString('export type Wrapped<T>', $content);
-        $this->assertStringContainsString('export type PaginatedCollection<T>', $content);
+        $this->assertStringContainsString('export type WrappedResource<T>', $content);
+        $this->assertStringContainsString('export type PaginatedResourceCollection<T>', $content);
+        $this->assertStringContainsString('export type PaginatedModel<TData>', $content);
+        $this->assertStringContainsString('export type PaginationFields', $content);
         $this->assertStringContainsString('export type ValidationErrorResponse', $content);
     }
 
