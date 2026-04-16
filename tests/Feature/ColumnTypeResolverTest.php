@@ -19,33 +19,39 @@ final class ColumnTypeResolverTest extends TestCase
 
     public function test_integer_types(): void
     {
-        foreach (['bigint', 'integer', 'smallint', 'tinyint', 'mediumint'] as $type) {
+        $types = [
+            'bigint', 'int', 'integer', 'smallint', 'tinyint', 'mediumint', 'year', 'bit',
+            'int2', 'int4', 'int8',
+        ];
+        foreach ($types as $type) {
             $this->assertSame('number', $this->columnTypeResolver->resolve($type, false), 'Failed for: '.$type);
         }
     }
 
     public function test_float_types(): void
     {
-        foreach (['decimal', 'float', 'double'] as $type) {
+        foreach (['decimal', 'numeric', 'float', 'double', 'real', 'float4', 'float8'] as $type) {
             $this->assertSame('number', $this->columnTypeResolver->resolve($type, false), 'Failed for: '.$type);
         }
     }
 
     public function test_string_types(): void
     {
-        foreach (['varchar', 'char', 'text', 'mediumtext', 'longtext', 'tinytext'] as $type) {
+        foreach (['varchar', 'char', 'bpchar', 'text', 'mediumtext', 'longtext', 'tinytext'] as $type) {
             $this->assertSame('string', $this->columnTypeResolver->resolve($type, false), 'Failed for: '.$type);
         }
     }
 
-    public function test_boolean_type(): void
+    public function test_boolean_types(): void
     {
-        $this->assertSame('boolean', $this->columnTypeResolver->resolve('boolean', false));
+        foreach (['boolean', 'bool'] as $type) {
+            $this->assertSame('boolean', $this->columnTypeResolver->resolve($type, false), 'Failed for: '.$type);
+        }
     }
 
     public function test_date_types(): void
     {
-        foreach (['date', 'datetime', 'timestamp', 'time'] as $type) {
+        foreach (['date', 'datetime', 'timestamp', 'timestamptz', 'time', 'timetz', 'interval'] as $type) {
             $this->assertSame('string', $this->columnTypeResolver->resolve($type, false), 'Failed for: '.$type);
         }
     }
@@ -59,7 +65,7 @@ final class ColumnTypeResolverTest extends TestCase
 
     public function test_binary_types(): void
     {
-        foreach (['blob', 'binary'] as $type) {
+        foreach (['blob', 'tinyblob', 'mediumblob', 'longblob', 'binary', 'varbinary', 'bytea'] as $type) {
             $this->assertSame('string', $this->columnTypeResolver->resolve($type, false), 'Failed for: '.$type);
         }
     }
