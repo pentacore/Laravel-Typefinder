@@ -264,11 +264,11 @@ class TypeScriptRenderer
     public function renderHelpers(): string
     {
         return self::FILE_HEADER."\n".<<<'TS'
-export type Wrapped<T> = { data: T };
+export type WrappedResource<T> = { data: T };
 
-export type WrappedCollection<T> = { data: T[] };
+export type WrappedResourceCollection<T> = { data: T[] };
 
-export type PaginatedCollection<T> = WrappedCollection<T> & {
+export type PaginatedResourceCollection<T> = WrappedResourceCollection<T> & {
   links: {
     first: string | null;
     last: string | null;
@@ -287,7 +287,7 @@ export type PaginatedCollection<T> = WrappedCollection<T> & {
   };
 };
 
-export type CursorPaginatedCollection<T> = WrappedCollection<T> & {
+export type CursorPaginatedResourceCollection<T> = WrappedResourceCollection<T> & {
   meta: {
     path: string;
     per_page: number;
@@ -296,7 +296,7 @@ export type CursorPaginatedCollection<T> = WrappedCollection<T> & {
   };
 };
 
-export type SimplePaginatedCollection<T> = WrappedCollection<T> & {
+export type SimplePaginatedResourceCollection<T> = WrappedResourceCollection<T> & {
   meta: {
     current_page: number;
     from: number | null;
@@ -305,6 +305,26 @@ export type SimplePaginatedCollection<T> = WrappedCollection<T> & {
     to: number | null;
   };
 };
+
+export type PaginatedModel<TData> = PaginationFields & {
+    "data": TData[]
+}
+
+export type PaginationFields = {
+  current_page: number,
+  first_page_url: string,
+  from: number,
+  last_page: number,
+  last_page_url: string,
+  links: PaginationLink[],
+  next_page_url: string|null,
+  path: string,
+  per_page: number,
+  prev_page_url: string|null,
+  to: number,
+  total: number
+}
+
 
 export type ValidationErrorResponse = {
   message: string;
