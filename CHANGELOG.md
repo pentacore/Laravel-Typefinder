@@ -1,3 +1,9 @@
+## [4.0.1](https://github.com/pentacore/Laravel-Typefinder/compare/v4.0.0...v4.0.1) (2026-04-16)
+
+### Bug Fixes
+
+* move Laravel Boost guidelines to repo root for discovery ([f0cd27b](https://github.com/pentacore/Laravel-Typefinder/commit/f0cd27b166a9789e05759050c075735d678fb8ff))
+
 ## [4.0.0](https://github.com/pentacore/Laravel-Typefinder/compare/v3.0.1...v4.0.0) (2026-04-15)
 
 ### ⚠ BREAKING CHANGES
