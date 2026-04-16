@@ -35,6 +35,8 @@ class ModelExtractor
     public function __construct(
         protected ColumnTypeResolver $columnTypeResolver,
         protected CastTypeResolver $castTypeResolver,
+        /** @var null|callable(string): void */
+        protected $onWarn = null,
     ) {}
 
     /**
@@ -49,7 +51,7 @@ class ModelExtractor
         $reflectionClass = new ReflectionClass($model);
         $table = $model->getTable();
 
-        $columns = $this->extractColumns($model, $table);
+        $columns = $this->extractColumns($model, $table, $modelClass);
         $relationships = $this->extractRelationships($model, $reflectionClass);
 
         return [
@@ -109,9 +111,10 @@ class ModelExtractor
      * Respects $visible/$hidden on the model: hidden columns are excluded;
      * if $visible is set, only those columns pass through.
      *
+     * @param  class-string<Model>|null  $modelClass
      * @return list<array{name: string, type: mixed, nullable: bool}>
      */
-    protected function extractColumns(Model $model, string $table): array
+    protected function extractColumns(Model $model, string $table, ?string $modelClass = null): array
     {
         $schemaColumns = Schema::getColumns($table);
         $casts = $model->getCasts();
@@ -164,7 +167,17 @@ class ModelExtractor
             }
 
             // Priority 3: DB column type
-            $columns[] = ['type' => $this->columnTypeResolver->resolve($schemaColumn['type_name'], false)] + $base;
+            $resolved = $this->columnTypeResolver->resolve($schemaColumn['type_name'], false);
+            if ($resolved === 'unknown' && $this->onWarn !== null) {
+                ($this->onWarn)(sprintf(
+                    "%s.%s: column type '%s' not recognised — emitted as `unknown`. Add a #[TypefinderOverrides] entry or open an issue if this is a common DB type.",
+                    $modelClass ?? $model::class,
+                    $name,
+                    $schemaColumn['type_name'],
+                ));
+            }
+
+            $columns[] = ['type' => $resolved] + $base;
         }
 
         return $columns;

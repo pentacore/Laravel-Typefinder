@@ -10,6 +10,7 @@ use App\Models\Comment;
 use App\Models\Invoice;
 use App\Models\Post;
 use App\Models\Product;
+use App\Models\QuirkyThing;
 use App\Models\Role;
 use App\Models\Tag;
 use App\Models\User;
@@ -130,8 +131,31 @@ final class ModelExtractorTest extends TestCase
         $this->assertContains('Article', $names);
         $this->assertContains('Product', $names);
         $this->assertContains('Invoice', $names);
+        $this->assertContains('QuirkyThing', $names);
         $this->assertNotContains('LegacyModel', $names);
-        $this->assertCount(8, $results);
+        $this->assertCount(9, $results);
+    }
+
+    public function test_unknown_column_type_emits_warning_and_falls_back_to_unknown(): void
+    {
+        $warnings = [];
+        $modelExtractor = new ModelExtractor(
+            new ColumnTypeResolver,
+            new CastTypeResolver,
+            function (string $message) use (&$warnings): void {
+                $warnings[] = $message;
+            },
+        );
+
+        $result = $modelExtractor->extract(QuirkyThing::class);
+
+        $shapeCol = $this->findColumn($result, 'shape');
+        $this->assertSame('unknown', $shapeCol['type']);
+
+        $this->assertCount(1, $warnings, 'expected exactly one warning for the geometry column');
+        $this->assertStringContainsString('QuirkyThing', $warnings[0]);
+        $this->assertStringContainsString('shape', $warnings[0]);
+        $this->assertStringContainsString('geometry', $warnings[0]);
     }
 
     public function test_extracts_has_many_relationship(): void

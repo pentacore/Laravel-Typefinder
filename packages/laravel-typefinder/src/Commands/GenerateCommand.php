@@ -87,9 +87,16 @@ class GenerateCommand extends Command
 
             if (config('typefinder.models.enabled', true)) {
                 $castOverrides = config('typefinder.casts.type_map', []);
+                $onModelWarn = function (string $message) use ($useJson): void {
+                    $this->warnings[] = $message;
+                    if (! $useJson) {
+                        $this->warn('[typefinder] '.$message);
+                    }
+                };
                 $modelExtractor = new ModelExtractor(
                     new ColumnTypeResolver,
                     new CastTypeResolver($castOverrides, app(TypefinderRegistry::class)),
+                    $onModelWarn,
                 );
 
                 $paths = config('typefinder.models.paths', []);
