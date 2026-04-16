@@ -94,8 +94,7 @@ trait RendersModels
 
         foreach ($model['columns'] as $column) {
             $typeStr = $this->resolveTypeString($column['type'], $column['nullable'], $allEnums, $imports);
-            $nullUnion = $column['nullable'] ? ' | null' : '';
-            $lines[] = sprintf('  %s: %s%s;', $column['name'], $typeStr, $nullUnion);
+            $lines[] = sprintf('  %s: %s;', $column['name'], TypeScriptRenderer::appendNullable($typeStr, (bool) $column['nullable']));
         }
 
         foreach ($model['relationships'] ?? [] as $rel) {
@@ -128,8 +127,7 @@ trait RendersModels
         foreach ($eligible as $column) {
             $typeStr = $this->resolveTypeString($column['type'], $column['nullable'], $allEnums, $imports);
             $optional = $column['nullable'] ? '?' : '';
-            $nullUnion = $column['nullable'] ? ' | null' : '';
-            $lines[] = sprintf('  %s%s: %s%s;', $column['name'], $optional, $typeStr, $nullUnion);
+            $lines[] = sprintf('  %s%s: %s;', $column['name'], $optional, TypeScriptRenderer::appendNullable($typeStr, (bool) $column['nullable']));
         }
 
         $body = "export type {$model['name']}Create = {\n".implode("\n", $lines)."\n};\n";
@@ -155,8 +153,7 @@ trait RendersModels
 
         foreach ($eligible as $column) {
             $typeStr = $this->resolveTypeString($column['type'], $column['nullable'], $allEnums, $imports);
-            $nullUnion = $column['nullable'] ? ' | null' : '';
-            $lines[] = sprintf('  %s?: %s%s;', $column['name'], $typeStr, $nullUnion);
+            $lines[] = sprintf('  %s?: %s;', $column['name'], TypeScriptRenderer::appendNullable($typeStr, (bool) $column['nullable']));
         }
 
         $body = "export type {$model['name']}Update = {\n".implode("\n", $lines)."\n};\n";

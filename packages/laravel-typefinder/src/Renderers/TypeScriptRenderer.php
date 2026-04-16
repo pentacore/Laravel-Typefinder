@@ -25,6 +25,66 @@ class TypeScriptRenderer
         TS;
 
     /**
+     * Append ` | null` to a TS type string when the column/field is nullable,
+     * unless `null` is already a top-level union member of the type. Prevents
+     * `... | null | null` when an override or cast already wrote the union.
+     *
+     * Splits on `|` while respecting bracket depth so generics like
+     * `Record<string, null>` aren't mistaken for a top-level null union.
+     */
+    public static function appendNullable(string $type, bool $nullable): string
+    {
+        if (! $nullable) {
+            return $type;
+        }
+
+        if (self::unionContainsNull($type)) {
+            return $type;
+        }
+
+        return $type.' | null';
+    }
+
+    private static function unionContainsNull(string $type): bool
+    {
+        $depth = 0;
+        $current = '';
+        $length = strlen($type);
+
+        for ($i = 0; $i < $length; ++$i) {
+            $character = $type[$i];
+
+            if (in_array($character, ['<', '{', '(', '['], true)) {
+                ++$depth;
+                $current .= $character;
+
+                continue;
+            }
+
+            if (in_array($character, ['>', '}', ')', ']'], true)) {
+                --$depth;
+                $current .= $character;
+
+                continue;
+            }
+
+            if ($character === '|' && $depth === 0) {
+                if (trim($current) === 'null') {
+                    return true;
+                }
+
+                $current = '';
+
+                continue;
+            }
+
+            $current .= $character;
+        }
+
+        return trim($current) === 'null';
+    }
+
+    /**
      * Render an enum to a file content string.
      *
      * When $emitValues is false (default), produces a `.d.ts`-style union
@@ -176,9 +236,8 @@ class TypeScriptRenderer
         $lines = [];
 
         foreach ($pivot['columns'] as $column) {
-            $nullable = $column['nullable'] ?? false;
-            $nullUnion = $nullable ? ' | null' : '';
-            $lines[] = sprintf('  %s: %s%s;', $column['name'], $column['type'], $nullUnion);
+            $nullable = (bool) ($column['nullable'] ?? false);
+            $lines[] = sprintf('  %s: %s;', $column['name'], self::appendNullable($column['type'], $nullable));
         }
 
         if ($pivot['withTimestamps'] ?? false) {
@@ -375,7 +434,7 @@ TS;
     ): void {
         $prefix = str_repeat('  ', $indent);
         $optional = $field['required'] ? '' : '?';
-        $nullUnion = $field['nullable'] ? ' | null' : '';
+        $nullable = (bool) $field['nullable'];
 
         if ($field['type'] === 'object' && isset($field['children'])) {
             if ($extractNested) {
@@ -383,27 +442,25 @@ TS;
                 $nestedLines = [];
                 foreach ($field['children'] as $child) {
                     $childOptional = $child['required'] ? '' : '?';
-                    $childNull = $child['nullable'] ? ' | null' : '';
                     $childType = $this->resolveTypeString($child['type'], $child['nullable'], $allEnums, $imports);
-                    $nestedLines[] = sprintf('  %s%s: %s%s;', $child['name'], $childOptional, $childType, $childNull);
+                    $nestedLines[] = sprintf('  %s%s: %s;', $child['name'], $childOptional, self::appendNullable($childType, (bool) $child['nullable']));
                 }
 
                 $extractedTypes[] = "export type {$nestedName} = {\n".implode("\n", $nestedLines)."\n};";
-                $lines[] = sprintf('%s%s%s: %s%s;', $prefix, $field['name'], $optional, $nestedName, $nullUnion);
+                $lines[] = sprintf('%s%s%s: %s;', $prefix, $field['name'], $optional, self::appendNullable($nestedName, $nullable));
             } else {
                 $lines[] = sprintf('%s%s%s: {', $prefix, $field['name'], $optional);
                 foreach ($field['children'] as $child) {
                     $childOptional = $child['required'] ? '' : '?';
-                    $childNull = $child['nullable'] ? ' | null' : '';
                     $childType = $this->resolveTypeString($child['type'], $child['nullable'], $allEnums, $imports);
-                    $lines[] = sprintf('%s  %s%s: %s%s;', $prefix, $child['name'], $childOptional, $childType, $childNull);
+                    $lines[] = sprintf('%s  %s%s: %s;', $prefix, $child['name'], $childOptional, self::appendNullable($childType, (bool) $child['nullable']));
                 }
 
-                $lines[] = sprintf('%s}%s;', $prefix, $nullUnion);
+                $lines[] = sprintf('%s}%s;', $prefix, $nullable ? ' | null' : '');
             }
         } else {
             $typeStr = $this->resolveTypeString($field['type'], $field['nullable'], $allEnums, $imports);
-            $lines[] = sprintf('%s%s%s: %s%s;', $prefix, $field['name'], $optional, $typeStr, $nullUnion);
+            $lines[] = sprintf('%s%s%s: %s;', $prefix, $field['name'], $optional, self::appendNullable($typeStr, $nullable));
         }
     }
 

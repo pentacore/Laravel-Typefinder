@@ -24,6 +24,22 @@ final class TypeScriptRendererTest extends TestCase
         $this->typeScriptRenderer = new TypeScriptRenderer;
     }
 
+    public function test_append_nullable_skips_existing_top_level_null(): void
+    {
+        // Bare scalar — adds | null when nullable.
+        $this->assertSame('string | null', TypeScriptRenderer::appendNullable('string', true));
+        $this->assertSame('string', TypeScriptRenderer::appendNullable('string', false));
+
+        // Override that already includes null in either position — no double null.
+        $this->assertSame('string | null', TypeScriptRenderer::appendNullable('string | null', true));
+        $this->assertSame('null | string', TypeScriptRenderer::appendNullable('null | string', true));
+        $this->assertSame('Record<string, any> | null', TypeScriptRenderer::appendNullable('Record<string, any> | null', true));
+
+        // `null` appearing inside a generic must NOT prevent the top-level append.
+        $this->assertSame('Record<string, null> | null', TypeScriptRenderer::appendNullable('Record<string, null>', true));
+        $this->assertSame('Array<{ x: null }> | null', TypeScriptRenderer::appendNullable('Array<{ x: null }>', true));
+    }
+
     public function test_renders_enum_type(): void
     {
         $enum = [
@@ -94,6 +110,31 @@ final class TypeScriptRendererTest extends TestCase
         $this->assertStringContainsString('Low: 1,', $output);
         $this->assertStringContainsString('Medium: 2,', $output);
         $this->assertStringContainsString('High: 3,', $output);
+    }
+
+    public function test_override_with_trailing_null_does_not_double_up(): void
+    {
+        // The override already includes `| null`. Combined with a nullable
+        // column, the renderer must NOT emit `... | null | null`.
+        $model = [
+            'name' => 'Doc',
+            'fqcn' => 'App\\Models\\Doc',
+            'columns' => [
+                ['name' => 'id', 'type' => 'number', 'nullable' => false],
+                ['name' => 'metadata', 'type' => 'Record<string, any> | null', 'nullable' => true],
+            ],
+            'relationships' => [],
+            'assignable_columns' => [
+                ['name' => 'metadata', 'type' => 'Record<string, any> | null', 'nullable' => true],
+            ],
+        ];
+
+        $output = $this->typeScriptRenderer->renderModelFile($model, [], [], true, []);
+
+        $this->assertStringNotContainsString('| null | null', $output);
+        $this->assertStringContainsString('metadata: Record<string, any> | null;', $output);
+        // Create + Update shapes also see the override and must not double up.
+        $this->assertStringContainsString('metadata?: Record<string, any> | null;', $output);
     }
 
     public function test_renders_simple_model_type(): void
