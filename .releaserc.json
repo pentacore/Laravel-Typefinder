@@ -26,11 +26,6 @@
         "composer.json"
       ],
       "message": "chore(release): ${nextRelease.version}\n\n${nextRelease.notes}"
-    }],
-    ["@semantic-release/github", {
-      "assets": [
-        { "path": "packages/vite-plugin-laravel-typefinder/dist/**", "label": "vite-plugin dist" }
-      ]
     }]
   ]
 }

@@ -1,5 +1,11 @@
 name: Release
 
+# Version-only workflow. Runs semantic-release to analyse conventional
+# commits on master, update CHANGELOG.md + package.json / composer.json /
+# Version.php, commit the bump back to master, and push a `v…` tag.
+# Actual publishing (npm + GitHub Release + Packagist) happens in
+# `publish.yml`, which is triggered by the tag push.
+
 on:
   workflow_run:
     workflows: ['Tests']
@@ -8,15 +14,12 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: 'Run semantic-release in dry-run mode (no publish)'
+        description: 'Run semantic-release in dry-run mode (no tag, no commit)'
         type: boolean
         default: false
 
 permissions:
   contents: write
-  issues: write
-  pull-requests: write
-  id-token: write
   actions: read
 
 jobs:
@@ -36,42 +39,8 @@ jobs:
         with:
           node-version: '24'
 
-      - name: Setup PHP
-        uses: shivammathur/setup-php@v2
-        with:
-          php-version: '8.3'
-          coverage: none
-
       - name: Install root deps
         run: npm install --no-audit --no-fund
-
-      - name: Download dist from tests run
-        if: github.event_name == 'workflow_run'
-        uses: actions/download-artifact@v4
-        with:
-          name: vite-plugin-dist
-          path: packages/vite-plugin-laravel-typefinder/dist
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          run-id: ${{ github.event.workflow_run.id }}
-        continue-on-error: true
-
-      - name: Fallback build if dist missing
-        run: |
-          if [ ! -f packages/vite-plugin-laravel-typefinder/dist/index.mjs ]; then
-            echo "No dist artifact; building fresh."
-            npm run build
-          fi
-
-      - name: Download reference .d.ts
-        if: github.event_name == 'workflow_run'
-        uses: actions/download-artifact@v4
-        with:
-          pattern: generated-dts-P8.5-L13
-          path: artifacts/generated-dts
-          merge-multiple: true
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          run-id: ${{ github.event.workflow_run.id }}
-        continue-on-error: true
 
       - name: Run semantic-release
         env:
@@ -84,25 +53,3 @@ jobs:
           else
             npx semantic-release
           fi
-
-      - name: Publish npm package (trusted publisher via OIDC)
-        if: ${{ !inputs.dry_run }}
-        working-directory: packages/vite-plugin-laravel-typefinder
-        run: npm publish --provenance --access public
-
-      - name: Ping Packagist
-        if: ${{ !inputs.dry_run }}
-        continue-on-error: true
-        env:
-          PACKAGIST_USER: ${{ secrets.PACKAGIST_USER }}
-          PACKAGIST_TOKEN: ${{ secrets.PACKAGIST_TOKEN }}
-          REPO: ${{ github.repository }}
-        run: |
-          if [ -z "$PACKAGIST_USER" ] || [ -z "$PACKAGIST_TOKEN" ]; then
-            echo "Packagist credentials not set; skipping (the GitHub webhook can handle resync)."
-            exit 0
-          fi
-          curl -sf -XPOST -H 'content-type:application/json' \
-            "https://packagist.org/api/update-package?username=${PACKAGIST_USER}&apiToken=${PACKAGIST_TOKEN}" \
-            -d "{\"repository\":{\"url\":\"https://github.com/${REPO}\"}}" \
-            || echo "Packagist ping failed (non-fatal)"

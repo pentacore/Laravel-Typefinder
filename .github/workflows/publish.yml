@@ -1,0 +1,73 @@
+name: Publish
+
+# Tag-triggered publish workflow. Runs whenever a `v…` tag is pushed —
+# usually by semantic-release from `release.yml`, but a manually pushed
+# tag works too. Publishes the npm package (via OIDC trusted publisher),
+# creates the GitHub Release, and pings Packagist.
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write       # gh release create
+  id-token: write       # npm trusted publisher (OIDC)
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Install root deps
+        run: npm install --no-audit --no-fund
+
+      - name: Build vite plugin
+        run: npm run build
+
+      - name: Publish npm package (trusted publisher via OIDC)
+        working-directory: packages/vite-plugin-laravel-typefinder
+        run: npm publish --provenance --access public
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          # Extract the section of CHANGELOG.md for this tag so the release
+          # notes match what semantic-release wrote. If we can't find it,
+          # fall back to GitHub's auto-generated notes.
+          version="${TAG#v}"
+          notes=$(awk -v v="$version" '
+            $0 ~ "^(## |# )\\[?" v "\\]?" { found=1; next }
+            found && $0 ~ "^(## |# )\\[?" { exit }
+            found { print }
+          ' CHANGELOG.md)
+
+          if [ -n "$notes" ]; then
+            gh release create "$TAG" --title "$TAG" --notes "$notes"
+          else
+            gh release create "$TAG" --title "$TAG" --generate-notes
+          fi
+
+      - name: Ping Packagist
+        continue-on-error: true
+        env:
+          PACKAGIST_USER: ${{ secrets.PACKAGIST_USER }}
+          PACKAGIST_TOKEN: ${{ secrets.PACKAGIST_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          if [ -z "$PACKAGIST_USER" ] || [ -z "$PACKAGIST_TOKEN" ]; then
+            echo "Packagist credentials not set; skipping (the GitHub webhook can handle resync)."
+            exit 0
+          fi
+          curl -sf -XPOST -H 'content-type:application/json' \
+            "https://packagist.org/api/update-package?username=${PACKAGIST_USER}&apiToken=${PACKAGIST_TOKEN}" \
+            -d "{\"repository\":{\"url\":\"https://github.com/${REPO}\"}}" \
+            || echo "Packagist ping failed (non-fatal)"
