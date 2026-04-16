@@ -1,3 +1,9 @@
+## [4.0.2](https://github.com/pentacore/Laravel-Typefinder/compare/v4.0.1...v4.0.2) (2026-04-16)
+
+### Bug Fixes
+
+* convert boost guidelines + skill to blade templates, wire up publish tags, minor cleanup ([f8994da](https://github.com/pentacore/Laravel-Typefinder/commit/f8994da165f7e75eb9b628c56366f6663e1e7a58))
+
 ## [4.0.1](https://github.com/pentacore/Laravel-Typefinder/compare/v4.0.0...v4.0.1) (2026-04-16)
 
 ### Bug Fixes
