@@ -8,6 +8,7 @@ use App\Enums\PostStatus;
 use App\Http\Requests\StorePostRequest;
 use App\Models\Comment;
 use App\Models\Post;
+use App\Models\QuirkyThing;
 use App\Models\Role;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
@@ -118,7 +119,7 @@ final class TypeScriptRendererTest extends TestCase
         // columns, so Create + Update bodies would otherwise be `{}`.
         $model = [
             'name' => 'QuirkyThing',
-            'fqcn' => \App\Models\QuirkyThing::class,
+            'fqcn' => QuirkyThing::class,
             'columns' => [
                 ['name' => 'id', 'type' => 'number', 'nullable' => false, 'is_server_filled' => true],
                 ['name' => 'shape', 'type' => 'unknown', 'nullable' => true, 'is_server_filled' => false],
