@@ -147,5 +147,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `HasTypeDefinition` contract for custom cast type shapes.
 - Selective-write: files are only rewritten when content changes; stale files are pruned.
 - Vite plugin `@pentacore/vite-plugin-laravel-typefinder` with debounced HMR and single-flight queued runs.
-- Laravel Boost guidelines auto-discovered from `resources/boost/guidelines/core.blade.php`.
-- Claude Code skill publishable via `vendor:publish --tag=typefinder-skill`.
+- Laravel Boost guidelines and Claude Code skill at repo-root `resources/boost/`.
