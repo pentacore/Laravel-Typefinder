@@ -16,6 +16,8 @@ namespace Pentacore\Typefinder\Cache;
  */
 final class ExtractionCache
 {
+    public const int SCHEMA_VERSION = 1;
+
     /** @var array<string, Entry> */
     private array $entries = [];
 
@@ -53,6 +55,10 @@ final class ExtractionCache
         }
 
         if (($decoded['config_hash'] ?? null) !== $configHash) {
+            return $cache;
+        }
+
+        if (($decoded['schema_version'] ?? null) !== self::SCHEMA_VERSION) {
             return $cache;
         }
 
@@ -135,13 +141,22 @@ final class ExtractionCache
         }
 
         $payload = [
+            'schema_version' => self::SCHEMA_VERSION,
             'composer_lock_hash' => $this->composerLockHash,
             'config_hash' => $this->configHash,
             'entries' => $this->entries,
         ];
 
         $tmp = $this->path.'.'.bin2hex(random_bytes(4)).'.tmp';
-        file_put_contents($tmp, json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
-        rename($tmp, $this->path);
+        $bytes = @file_put_contents($tmp, json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+        if ($bytes === false) {
+            @unlink($tmp);
+
+            return;
+        }
+
+        if (! @rename($tmp, $this->path)) {
+            @unlink($tmp);
+        }
     }
 }

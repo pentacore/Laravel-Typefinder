@@ -127,4 +127,48 @@ final class ExtractionCacheTest extends TestCase
 
         $this->assertNull($extractionCache->get($this->fixturePath));
     }
+
+    public function test_load_returns_empty_cache_when_schema_version_mismatch(): void
+    {
+        // Persist a cache, then hand-edit the schema_version and confirm load() drops it.
+        $extractionCache = new ExtractionCache($this->cachePath, 'sha256:lock', 'sha256:cfg');
+        $extractionCache->put($this->fixturePath, 'models', ['v' => 1]);
+        $extractionCache->persist();
+
+        $raw = (array) json_decode((string) file_get_contents($this->cachePath), true);
+        $raw['schema_version'] = 999;
+        file_put_contents($this->cachePath, (string) json_encode($raw));
+
+        $reloaded = ExtractionCache::load($this->cachePath, 'sha256:lock', 'sha256:cfg');
+
+        $this->assertNull($reloaded->get($this->fixturePath));
+    }
+
+    public function test_persist_does_not_corrupt_existing_cache_when_write_fails(): void
+    {
+        // Write a valid cache, then force persist() to a path we can't write to.
+        $extractionCache = new ExtractionCache($this->cachePath, 'sha256:lock', 'sha256:cfg');
+        $extractionCache->put($this->fixturePath, 'models', ['v' => 1]);
+        $extractionCache->persist();
+
+        $valid = (string) file_get_contents($this->cachePath);
+        $this->assertJson($valid);
+
+        // Swap to a path inside a nonexistent, un-mkdir-able location.
+        // Use a file-as-directory to guarantee mkdir + write both fail.
+        $trap = sys_get_temp_dir().'/typefinder-trap-'.uniqid('', true);
+        file_put_contents($trap, 'blocking file');
+
+        try {
+            $bad = new ExtractionCache($trap.'/nested/cache.json', 'sha256:lock', 'sha256:cfg');
+            $bad->put($this->fixturePath, 'models', ['v' => 2]);
+            $bad->persist(); // must not throw
+
+            // Verify no .tmp droppings next to the trap file.
+            $tmps = glob($trap.'.*.tmp');
+            $this->assertEmpty($tmps ?: []);
+        } finally {
+            @unlink($trap);
+        }
+    }
 }
