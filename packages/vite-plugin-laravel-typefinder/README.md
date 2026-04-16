@@ -2,8 +2,11 @@
 
 A Vite plugin that automatically runs `php artisan typefinder:generate` on build start and re-runs it (debounced) whenever watched PHP files change via HMR.
 
+> **This plugin is a companion to the [`pentacore/laravel-typefinder`](https://packagist.org/packages/pentacore/laravel-typefinder) Composer package — you must install that first.** The plugin's only job is to invoke its artisan command at the right moments; all type generation lives in the PHP package. Installing this npm package without the Composer package will result in the plugin failing to find `php artisan typefinder:generate`.
+
 ## Requirements
 
+- The Composer package `pentacore/laravel-typefinder` installed and auto-discovered in your Laravel app.
 - Vite 6+
 - Node 18+
 - ESM-only — the package exposes only `dist/index.mjs`. Consumers must `import` (not `require`) it. Any modern Vite/Laravel app already meets this.
@@ -11,6 +14,7 @@ A Vite plugin that automatically runs `php artisan typefinder:generate` on build
 ## Installation
 
 ```bash
+composer require pentacore/laravel-typefinder
 npm i -D @pentacore/vite-plugin-laravel-typefinder
 ```
 
