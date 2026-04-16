@@ -227,6 +227,20 @@ final class TypeScriptRendererTest extends TestCase
         $this->assertStringContainsString("category: 'tech' | 'science' | 'art';", $output);
     }
 
+    public function test_renders_fieldless_request_as_record_string_never(): void
+    {
+        $request = [
+            'name' => 'TwoFactorAuthenticationRequest',
+            'fqcn' => 'App\\Http\\Requests\\TwoFactorAuthenticationRequest',
+            'fields' => [],
+        ];
+
+        $output = $this->typeScriptRenderer->renderRequest($request, []);
+
+        $this->assertStringNotContainsString('{}', $output);
+        $this->assertStringContainsString('export type TwoFactorAuthenticationRequest = Record<string, never>;', $output);
+    }
+
     public function test_renders_request_with_nested_object(): void
     {
         $request = [

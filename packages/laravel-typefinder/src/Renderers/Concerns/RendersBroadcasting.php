@@ -64,7 +64,7 @@ trait RendersBroadcasting
     protected function renderChannelMap(string $typeName, array $entries): string
     {
         if ($entries === []) {
-            return "export type {$typeName} = {};\n";
+            return "export type {$typeName} = Record<string, never>;\n";
         }
 
         $lines = [];
@@ -84,7 +84,7 @@ trait RendersBroadcasting
     protected function renderPayloadRecord(array $payload, array $allModels, array $allEnums, array &$imports): string
     {
         if ($payload === []) {
-            return '{}';
+            return 'Record<string, never>';
         }
 
         $parts = [];

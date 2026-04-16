@@ -64,4 +64,43 @@ final class BroadcastRenderTest extends TestCase
 
         $this->assertStringContainsString("'X': { raw: Record<string, unknown> };", $output);
     }
+
+    public function test_empty_payload_emits_record_string_never(): void
+    {
+        $typeScriptRenderer = new TypeScriptRenderer;
+
+        $events = [[
+            'event_class' => 'App\\Events\\Ping',
+            'broadcast_name' => 'Ping',
+            'channels' => [['type' => 'public', 'name' => 'pings']],
+            'payload' => [],
+        ]];
+
+        $output = $typeScriptRenderer->renderBroadcasting($events, [], []);
+
+        $this->assertStringNotContainsString('{}', $output);
+        $this->assertStringContainsString("'Ping': Record<string, never>;", $output);
+        $this->assertStringContainsString("'pings': { 'Ping': Record<string, never> };", $output);
+    }
+
+    public function test_empty_channel_category_emits_record_string_never(): void
+    {
+        $typeScriptRenderer = new TypeScriptRenderer;
+
+        // Only public channels — private and presence categories should still
+        // be emitted as type aliases, but with `Record<string, never>` rather
+        // than the eslint-flagged `{}` literal.
+        $events = [[
+            'event_class' => 'App\\Events\\Ping',
+            'broadcast_name' => 'Ping',
+            'channels' => [['type' => 'public', 'name' => 'pings']],
+            'payload' => ['at' => 'string'],
+        ]];
+
+        $output = $typeScriptRenderer->renderBroadcasting($events, [], []);
+
+        $this->assertStringNotContainsString('= {};', $output);
+        $this->assertStringContainsString('export type BroadcastPrivateChannels = Record<string, never>;', $output);
+        $this->assertStringContainsString('export type BroadcastPresenceChannels = Record<string, never>;', $output);
+    }
 }

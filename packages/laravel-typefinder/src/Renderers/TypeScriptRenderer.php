@@ -158,6 +158,10 @@ class TypeScriptRenderer
             $output .= $extractedType."\n\n";
         }
 
+        if ($lines === []) {
+            return $output."export type {$request['name']} = Record<string, never>;\n";
+        }
+
         $output .= "export type {$request['name']} = {\n";
         $output .= implode("\n", $lines)."\n";
 
