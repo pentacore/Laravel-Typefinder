@@ -65,6 +65,18 @@ final class BroadcastExtractorTest extends TestCase
         $this->assertSame(Post::class, $byName['PostPublished']['payload']['post']);
     }
 
+    public function test_skips_socket_property_inherited_from_interacts_with_sockets(): void
+    {
+        $results = $this->broadcastExtractor->extractFromDirectory(workbench_path('app/Events'));
+        $byName = collect($results)->keyBy('broadcast_name');
+
+        $this->assertArrayHasKey('PingDispatched', $byName->toArray());
+        $payload = $byName['PingDispatched']['payload'];
+
+        $this->assertArrayHasKey('reason', $payload);
+        $this->assertArrayNotHasKey('socket', $payload, 'socket from InteractsWithSockets should be filtered out');
+    }
+
     public function test_skips_classes_tagged_with_typefinder_ignore(): void
     {
         $results = $this->broadcastExtractor->extractFromDirectory(workbench_path('app/Events'));

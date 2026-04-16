@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Pentacore\Typefinder\Extractors;
 
 use Illuminate\Broadcasting\Channel;
+use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PresenceChannel;
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
@@ -202,9 +203,18 @@ class BroadcastExtractor
             }
         }
 
+        // Framework-internal trait properties (e.g. `$socket` from
+        // InteractsWithSockets) always end up on the wire but are noise
+        // users don't want to type against — collect their names up front.
+        $traitInjectedNames = $this->traitInjectedPropertyNames($reflectionClass);
+
         $payload = [];
         foreach ($reflectionClass->getProperties(ReflectionProperty::IS_PUBLIC) as $reflectionProperty) {
             if ($reflectionProperty->isStatic()) {
+                continue;
+            }
+
+            if (in_array($reflectionProperty->getName(), $traitInjectedNames, true)) {
                 continue;
             }
 
@@ -212,6 +222,48 @@ class BroadcastExtractor
         }
 
         return $payload;
+    }
+
+    /**
+     * Collect property names contributed by Laravel's framework-internal
+     * broadcast traits (currently just InteractsWithSockets). Walks the
+     * class hierarchy and trait composition so trait-of-trait inclusion
+     * is also detected.
+     *
+     * @return list<string>
+     */
+    protected function traitInjectedPropertyNames(ReflectionClass $reflectionClass): array
+    {
+        $names = [];
+        $stack = [$reflectionClass];
+        $seen = [];
+
+        while ($stack !== []) {
+            $current = array_pop($stack);
+            $key = $current->getName();
+            if (isset($seen[$key])) {
+                continue;
+            }
+
+            $seen[$key] = true;
+
+            foreach ($current->getTraits() as $trait) {
+                if ($trait->getName() === InteractsWithSockets::class) {
+                    foreach ($trait->getProperties() as $traitProperty) {
+                        $names[] = $traitProperty->getName();
+                    }
+                }
+
+                $stack[] = $trait;
+            }
+
+            $parent = $current->getParentClass();
+            if ($parent instanceof ReflectionClass) {
+                $stack[] = $parent;
+            }
+        }
+
+        return array_values(array_unique($names));
     }
 
     protected function typeToTsHint(?\ReflectionType $reflectionType): string
