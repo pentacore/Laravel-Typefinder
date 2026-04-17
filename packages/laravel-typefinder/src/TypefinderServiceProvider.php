@@ -7,6 +7,8 @@ namespace Pentacore\Typefinder;
 use Illuminate\Support\ServiceProvider;
 use Pentacore\Typefinder\Commands\GenerateCommand;
 use Pentacore\Typefinder\Facades\Typefinder;
+use Pentacore\Typefinder\Renderers\TypeScriptRenderer;
+use Pentacore\Typefinder\Services\Generator;
 
 /**
  * Package service provider. Auto-discovered via Laravel's package discovery —
@@ -32,6 +34,11 @@ class TypefinderServiceProvider extends ServiceProvider
         );
 
         $this->app->singleton(TypefinderRegistry::class);
+
+        $this->app->singleton(Generator::class, fn ($app): Generator => new Generator(
+            $app->make(TypefinderRegistry::class),
+            new TypeScriptRenderer,
+        ));
     }
 
     public function boot(): void
