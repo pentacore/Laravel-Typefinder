@@ -10,7 +10,7 @@ use Pentacore\Typefinder\Services\Generator;
 
 class GenerateCommand extends Command
 {
-    protected $signature = 'typefinder:generate {--debug} {--json} {--check : Dry-run: fail if regeneration would change on-disk files.}';
+    protected $signature = 'typefinder:generate {--debug} {--json} {--check : Dry-run: fail if regeneration would change on-disk files.} {--only=* : Absolute paths to re-extract incrementally.}';
 
     protected $aliases = ['typefinder:gen', 'typefinder'];
 
@@ -41,6 +41,17 @@ class GenerateCommand extends Command
             config(['typefinder.output_path' => $outputPath]);
         }
 
+        $onlyRaw = (array) $this->option('only');
+        $onlyPaths = [];
+        foreach ($onlyRaw as $entry) {
+            foreach (explode(',', (string) $entry) as $p) {
+                $p = trim($p);
+                if ($p !== '') {
+                    $onlyPaths[] = $p;
+                }
+            }
+        }
+
         $this->files = [];
         $this->counts = [];
         $this->warnings = [];
@@ -50,7 +61,9 @@ class GenerateCommand extends Command
 
             /** @var Generator $generator */
             $generator = app(Generator::class);
-            $result = $generator->generateFull();
+            $result = $onlyPaths === []
+                ? $generator->generateFull()
+                : $generator->generatePaths($onlyPaths);
 
             $this->warnings = $result->warnings;
             $this->files = array_map(fn (string $p): array => ['path' => $p, 'written' => true], $result->changed);

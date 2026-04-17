@@ -100,4 +100,25 @@ final class IncrementalRegenTest extends TestCase
         $this->assertNotEmpty($regenResult->warnings);
         $this->assertSame([], $regenResult->failed);
     }
+
+    public function test_generate_command_only_flag_rewrites_only_targeted_files(): void
+    {
+        $this->artisan('typefinder:generate')->assertSuccessful();
+
+        $postPath = $this->output.'/models/Post.d.ts';
+        $userPath = $this->output.'/models/User.d.ts';
+
+        $postMtimeBefore = filemtime($postPath);
+        $userMtimeBefore = filemtime($userPath);
+
+        sleep(1);
+
+        $userSourcePath = (new ReflectionClass(User::class))->getFileName();
+        $this->artisan('typefinder:generate', ['--only' => [$userSourcePath]])->assertSuccessful();
+
+        clearstatcache();
+
+        $this->assertSame($postMtimeBefore, filemtime($postPath));
+        $this->assertGreaterThanOrEqual($userMtimeBefore, filemtime($userPath));
+    }
 }
