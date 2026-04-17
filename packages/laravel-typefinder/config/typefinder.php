@@ -9,7 +9,6 @@ return [
     | The directory where generated .d.ts files will be written.
     |
     */
-
     'output_path' => resource_path('js/typefinder'),
 
     /*
@@ -22,7 +21,6 @@ return [
     | stay out of version control. Idempotent — adds the line at most once.
     |
     */
-
     'gitignore_generated' => true,
 
     /*
@@ -33,7 +31,6 @@ return [
     | Configuration for model type generation.
     |
     */
-
     'models' => [
         'enabled' => true,
         'paths' => [app_path('Models')],
@@ -60,7 +57,6 @@ return [
     | Configuration for enum type generation.
     |
     */
-
     'enums' => [
         'enabled' => true,
         'paths' => [app_path('Enums')],
@@ -86,7 +82,6 @@ return [
     | Configuration for form request type generation.
     |
     */
-
     'requests' => [
         'enabled' => true,
         'paths' => [app_path('Http/Requests')],
@@ -101,11 +96,24 @@ return [
     | Override or extend the built-in cast-to-TypeScript type mappings.
     |
     */
-
     'casts' => [
         'type_map' => [
             // 'datetime' => 'Date',
         ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Resources
+    |--------------------------------------------------------------------------
+    |
+    | Configuration for JsonResource type generation. Default-on: ships with
+    | Laravel core, no external dependency. Empty directory = no output.
+    |
+    */
+    'resources' => [
+        'enabled' => true,
+        'paths' => [app_path('Http/Resources')],
     ],
 
     /*
@@ -118,22 +126,6 @@ return [
     | consolidated pages.d.ts describing the PageProps map.
     |
     */
-
-    /*
-    |--------------------------------------------------------------------------
-    | Resources
-    |--------------------------------------------------------------------------
-    |
-    | Configuration for JsonResource type generation. Default-on: ships with
-    | Laravel core, no external dependency. Empty directory = no output.
-    |
-    */
-
-    'resources' => [
-        'enabled' => true,
-        'paths' => [app_path('Http/Resources')],
-    ],
-
     'inertia' => [
         'enabled' => false,
         'paths' => [app_path('Http/Controllers')],
@@ -149,7 +141,6 @@ return [
     | channel → event → payload maps.
     |
     */
-
     'broadcasting' => [
         'enabled' => false,
         'paths' => [app_path('Events')],
