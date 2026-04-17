@@ -1,8 +1,10 @@
 /.phpunit.cache
 /composer.lock
-/node_modules
-/vendor
+node_modules
+vendor
 /workbench/resources/js
+/workbench/bootstrap/cache
+/workbench/storage/logs
 .idea
 .vscode
 docs/
