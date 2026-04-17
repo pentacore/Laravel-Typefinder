@@ -3,6 +3,20 @@
 comment:
   layout: "header, diff, flags, components"  # show component info in the PR comment
 
+coverage:
+  status:
+    project:
+      default:   # default is the status check's name, not default settings
+        target: auto
+        threshold: 5
+        paths:
+        - "packages/*/src/**"
+        # advanced settings
+        branches:
+        - master
+        if_ci_failed: error #success, failure, error, ignore
+        only_pulls: false
+
 component_management:
   default_rules:  # default rules that will be inherited by all components
     statuses:
