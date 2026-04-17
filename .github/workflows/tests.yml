@@ -96,49 +96,7 @@ jobs:
 
   vite-plugin:
     runs-on: ubuntu-latest
-    name: Vite plugin build & lint
-
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-      - name: Install
-        working-directory: packages/vite-plugin-laravel-typefinder
-        run: npm install
-      - name: Lint
-        working-directory: packages/vite-plugin-laravel-typefinder
-        run: npm run lint
-      - name: Test with coverage
-        working-directory: packages/vite-plugin-laravel-typefinder
-        run: npx vitest run --coverage --exclude=tests/integration.test.ts --reporter=junit --outputFile=test-report.junit.xml
-      - name: Build
-        working-directory: packages/vite-plugin-laravel-typefinder
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
-        run: npm run build
-      - name: Upload vite-plugin dist
-        uses: actions/upload-artifact@v4
-        with:
-          name: vite-plugin-dist
-          path: packages/vite-plugin-laravel-typefinder/dist
-          if-no-files-found: error
-      - name: Upload JS coverage to Codecov
-        uses: codecov/codecov-action@v4
-        with:
-          files: packages/vite-plugin-laravel-typefinder/coverage/lcov.info
-          flags: js
-          fail_ci_if_error: false
-          token: ${{ secrets.CODECOV_TOKEN }}
-      - name: Upload test results to Codecov
-        if: ${{ !cancelled() }}
-        uses: codecov/test-results-action@v1
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-
-  vite-plugin-integration:
-    runs-on: ubuntu-latest
-    name: Vite plugin integration
+    name: Vite plugin
 
     steps:
       - uses: actions/checkout@v4
@@ -158,9 +116,24 @@ jobs:
       - name: Install JS dependencies
         working-directory: packages/vite-plugin-laravel-typefinder
         run: npm install
-      - name: Run integration tests
+      - name: Lint
         working-directory: packages/vite-plugin-laravel-typefinder
-        run: npx vitest run tests/integration.test.ts --coverage --reporter=junit --outputFile=test-report.junit.xml
+        run: npm run lint
+      - name: Tests with coverage
+        working-directory: packages/vite-plugin-laravel-typefinder
+        run: npx vitest run --coverage --reporter=junit --outputFile=test-report.junit.xml
+      - name: Build
+        working-directory: packages/vite-plugin-laravel-typefinder
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+          CODECOV_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: npm run build
+      - name: Upload vite-plugin dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: vite-plugin-dist
+          path: packages/vite-plugin-laravel-typefinder/dist
+          if-no-files-found: error
       - name: Upload JS coverage to Codecov
         uses: codecov/codecov-action@v4
         with:
@@ -200,7 +173,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: junit
+          name: phpunit-junit-coverage
           path: junit.xml
           if-no-files-found: warn
 
@@ -218,7 +191,7 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
 
   test-summary:
-    needs: [php]
+    needs: [php, coverage, vite-plugin]
     if: always()
     runs-on: ubuntu-latest
     name: Test summary
@@ -234,7 +207,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: junit
-          pattern: junit.xml
+          pattern: junit
           merge-multiple: true
       - name: Publish summary
         uses: dorny/test-reporter@v1
