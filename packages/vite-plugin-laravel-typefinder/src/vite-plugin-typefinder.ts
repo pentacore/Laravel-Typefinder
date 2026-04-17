@@ -1,130 +1,61 @@
-import { exec } from 'child_process';
-import { minimatch } from 'minimatch';
-import path from 'path';
-import type { PluginContext } from 'rollup';
-import { promisify } from 'util';
-import type { HmrContext, Plugin } from 'vite';
+import { exec } from 'node:child_process';
+import { promisify } from 'node:util';
+import type { Plugin, ResolvedConfig } from 'vite';
+import { compileMatcher } from './matcher';
+import { Watcher } from './watcher';
+import type { Categories } from './types';
 
 const execAsync = promisify(exec);
 
-/**
- * Options for the `typefinder` Vite plugin.
- *
- * All fields are optional — the defaults work for a standard Laravel project
- * running PHP directly. Override `command` when using Sail, Herd, Docker, or
- * any other PHP runtime wrapper. Extend `watch` when you use Typefinder's
- * resource / page / broadcast features so the plugin regenerates on those
- * file changes too.
- */
 export interface TypefinderOptions {
-    /**
-     * Glob patterns (relative to the Vite project root) whose changes should
-     * trigger a regeneration. Matched against each HMR update's file path.
-     *
-     * The default covers models, enums, and form requests — the always-on
-     * Typefinder categories. If you enable optional categories (Inertia pages,
-     * broadcasting) or use JSON resources, extend the list so updates on
-     * those directories also re-run the generator.
-     *
-     * @default ['app/Models/** /*.php', 'app/Enums/** /*.php', 'app/Http/Requests/** /*.php']
-     */
-    watch?: string[];
-
-    /**
-     * Shell command used to regenerate types. Customize for non-standard
-     * PHP runtimes:
-     *
-     * - Sail: `'./vendor/bin/sail artisan typefinder:generate'`
-     * - Herd: `'herd php artisan typefinder:generate'`
-     * - Docker: `'docker compose exec app php artisan typefinder:generate'`
-     *
-     * @default 'php artisan typefinder:generate'
-     */
     command?: string;
-
-    /**
-     * Debounce window in milliseconds. When multiple files change within this
-     * window the plugin coalesces them into a single regeneration. Keep small
-     * for fast feedback; raise if your editor triggers noisy saves.
-     *
-     * @default 100
-     */
+    buildCommand?: string | false;
+    watch?: string[];
     debounceMs?: number;
+    startupTimeoutMs?: number;
+    killTimeoutMs?: number;
 }
 
-/**
- * Vite plugin that runs `php artisan typefinder:generate` automatically —
- * once at `buildStart`, and again on every HMR update whose file path
- * matches any pattern in {@link TypefinderOptions.watch}.
- *
- * Install the Composer package `pentacore/laravel-typefinder` in your Laravel
- * app, then register this plugin in `vite.config.ts`:
- *
- * ```ts
- * import { defineConfig } from 'vite';
- * import laravel from 'laravel-vite-plugin';
- * import typefinder from '@pentacore/vite-plugin-laravel-typefinder';
- *
- * export default defineConfig({
- *   plugins: [
- *     laravel({ input: ['resources/js/app.ts'] }),
- *     typefinder(),
- *   ],
- * });
- * ```
- *
- * Regenerations are debounced and serialized — concurrent triggers coalesce
- * into at most one in-flight run plus one queued run. The plugin uses Vite's
- * `enforce: 'pre'` ordering so types are fresh before other plugins inspect
- * them.
- *
- * @param options Plugin options. See {@link TypefinderOptions}.
- * @returns A Vite plugin.
- */
 export const typefinder = ({
-    watch = [
-        'app/Models/**/*.php',
-        'app/Enums/**/*.php',
-        'app/Http/Requests/**/*.php',
-    ],
-    command = 'php artisan typefinder:generate',
+    command = 'php artisan typefinder:watch',
+    buildCommand = 'php artisan typefinder:generate --json',
+    watch,
     debounceMs = 100,
+    startupTimeoutMs = 10_000,
+    killTimeoutMs = 2_000,
 }: TypefinderOptions = {}): Plugin => {
-    // Normalize path separators
-    const patterns = watch.map((pattern) => pattern.replace(/\\/g, '/'));
+    let resolvedRoot = process.cwd();
+    let watcher: Watcher | null = null;
+    let matcher: (file: string) => boolean = () => false;
+    const pending = new Set<string>();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let isBuild = false;
 
-    let timer: NodeJS.Timeout | undefined;
-    let running = false;
-    let queued = false;
-
-    const runCommand = async (ctx: PluginContext): Promise<void> => {
-        if (running) {
-            queued = true;
-            return;
-        }
-
-        running = true;
-
-        try {
-            await execAsync(command);
-        } catch (error) {
-            ctx.error('Error generating types: ' + error);
-        } finally {
-            running = false;
-
-            if (queued) {
-                queued = false;
-                await runCommand(ctx);
-            }
-        }
-
-        ctx.info('Typefinder: TypeScript types generated');
-    };
-
-    const scheduleRun = (ctx: PluginContext): void => {
+    const scheduleRegen = (): void => {
         clearTimeout(timer);
         timer = setTimeout(() => {
-            void runCommand(ctx);
+            if (!watcher || watcher.dead) return;
+            const batch = Array.from(pending);
+            pending.clear();
+            if (batch.length === 0) return;
+            watcher
+                .regen(batch)
+                .then((result) => {
+                    if (result.changed.length > 0) {
+                        process.stderr.write(
+                            `[typefinder] regen ${result.changed.length} file(s) in ${result.duration_ms}ms\n`,
+                        );
+                    }
+                    for (const warning of result.warnings) {
+                        process.stderr.write(`[typefinder] ${warning}\n`);
+                    }
+                    for (const failure of result.failed) {
+                        process.stderr.write(`[typefinder] ${failure.path}: ${failure.message}\n`);
+                    }
+                })
+                .catch((error: Error) => {
+                    process.stderr.write(`[typefinder] regen failed: ${error.message}\n`);
+                });
         }, debounceMs);
     };
 
@@ -132,35 +63,91 @@ export const typefinder = ({
         name: '@pentacore/vite-plugin-laravel-typefinder',
         enforce: 'pre',
 
-        buildStart(this: PluginContext) {
-            return runCommand(this);
+        configResolved(config: ResolvedConfig) {
+            resolvedRoot = config.root;
+            isBuild = config.command === 'build';
         },
 
-        async handleHotUpdate(this: PluginContext, { file, server }: Pick<HmrContext, 'file' | 'server'>) {
-            if (shouldRun(patterns, { file, server })) {
-                scheduleRun(this);
+        async configureServer(server) {
+            if (isBuild) return;
+
+            watcher = await Watcher.spawn({
+                command,
+                cwd: resolvedRoot,
+                startupTimeoutMs,
+                killTimeoutMs,
+            });
+
+            const paths = watch ?? flattenCategoryPaths(watcher.handshake.categories);
+            matcher = compileMatcher(paths);
+
+            watcher.on('died', (reason: string) => {
+                process.stderr.write(
+                    `[typefinder] watcher exited: ${reason} — restart the dev server\n`,
+                );
+            });
+
+            server.ws.on('typefinder:full-regen', () => {
+                if (watcher && !watcher.dead) {
+                    watcher.regen([]).catch((error: Error) => {
+                        process.stderr.write(`[typefinder] full regen failed: ${error.message}\n`);
+                    });
+                }
+            });
+
+            server.httpServer?.once('close', () => void watcher?.kill());
+            process.once('exit', () => void watcher?.kill());
+        },
+
+        async buildStart() {
+            if (isBuild) {
+                if (buildCommand === false) {
+                    process.stderr.write('[typefinder] build-time generation disabled\n');
+                    return;
+                }
+                try {
+                    await execAsync(buildCommand, { cwd: resolvedRoot });
+                } catch (error) {
+                    const message = error instanceof Error ? error.message : String(error);
+                    throw new Error(`[typefinder] build-time generation failed: ${message}`);
+                }
+                return;
+            }
+
+            if (watcher && !watcher.dead) {
+                const result = await watcher.regen([]);
+                if (result.changed.length > 0) {
+                    process.stderr.write(
+                        `[typefinder] initial regen: ${result.changed.length} file(s) in ${result.duration_ms}ms\n`,
+                    );
+                }
+            }
+        },
+
+        handleHotUpdate({ file }) {
+            if (isBuild || !watcher || watcher.dead) return;
+            if (!matcher(file)) return;
+            pending.add(file);
+            scheduleRegen();
+        },
+
+        async closeBundle() {
+            if (watcher && !watcher.dead) {
+                await watcher.kill();
             }
         },
     };
 };
 
-/**
- * Decide whether a given HMR file event matches any of the configured
- * watch patterns. Patterns are resolved relative to the Vite project root.
- *
- * @internal
- */
-const shouldRun = (
-    patterns: string[],
-    opts: Pick<HmrContext, 'file' | 'server'>,
-): boolean => {
-    const file = opts.file.replace(/\\/g, '/');
-
-    return patterns.some((pattern) => {
-        const resolved = path
-            .resolve(opts.server.config.root, pattern)
-            .replace(/\\/g, '/');
-
-        return minimatch(file, resolved);
-    });
+const flattenCategoryPaths = (categories: Categories): string[] => {
+    const out: string[] = [];
+    for (const name of Object.keys(categories) as Array<keyof Categories>) {
+        const entry = categories[name];
+        if (entry.enabled) {
+            out.push(...entry.paths);
+        }
+    }
+    return out;
 };
+
+export default typefinder;
