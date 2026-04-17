@@ -51,18 +51,18 @@ class TypeScriptRenderer
         $current = '';
         $length = strlen($type);
 
-        for ($i = 0; $i < $length; $i++) {
+        for ($i = 0; $i < $length; ++$i) {
             $character = $type[$i];
 
             if (in_array($character, ['<', '{', '(', '['], true)) {
-                $depth++;
+                ++$depth;
                 $current .= $character;
 
                 continue;
             }
 
             if (in_array($character, ['>', '}', ')', ']'], true)) {
-                $depth--;
+                --$depth;
                 $current .= $character;
 
                 continue;
