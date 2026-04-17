@@ -44,6 +44,15 @@ Scans configured directories, resolves types, and writes `.d.ts` files to `outpu
 | `--check` | Dry-run: generate into a temp directory, compare against the on-disk output, exit non-zero if they differ. Useful as a CI gate. |
 | `--debug` | Print line-oriented diagnostic output prefixed with `[typefinder]`. Includes per-class parsing lines so you can pinpoint a failing class. |
 | `--json` | Output a single JSON object to stdout (machine-readable, used by the Vite plugin). |
+| `--only=<path>` | Re-extract only the given absolute paths instead of the full tree. Repeatable (`--only=/a/Foo.php --only=/a/Bar.php`). Used by the Vite plugin's watch loop for incremental regeneration; rarely useful by hand. |
+
+### Watching for changes
+
+```bash
+php artisan typefinder:watch
+```
+
+Starts a long-lived generator process that reads incremental regeneration requests from stdin (NDJSON) and emits status lines on stdout. Not intended for direct interactive use — the [Vite plugin](../vite-plugin-laravel-typefinder/) spawns and drives it during `vite dev` for 20–60ms per-change latency. Exits on `SIGINT` / `SIGTERM`.
 
 ## What gets generated
 
@@ -174,19 +183,28 @@ Consolidated `broadcasting.d.ts` with four maps: `BroadcastPublicChannels`, `Bro
 
 ### Helpers (always emitted)
 
-`helpers.d.ts` ships seven generic response wrappers that work with *any* generated type:
+`helpers.d.ts` ships nine generic response wrappers that work with *any* generated type:
 
 ```typescript
-Wrapped<T>                      { data: T }
-WrappedCollection<T>            { data: T[] }
-PaginatedCollection<T>          { data: T[]; links: ...; meta: ... }   // paginate()
-CursorPaginatedCollection<T>    cursorPaginate()
-SimplePaginatedCollection<T>    simplePaginate()
-ValidationErrorResponse         { message: string; errors: Record<string, string[]> }
-ErrorResponse                   { message: string }
+// JsonResource / ResourceCollection envelopes
+WrappedResource<T>                      { data: T }
+WrappedResourceCollection<T>            { data: T[] }
+
+// Paginated JsonResource collections
+PaginatedResourceCollection<T>          paginate()       — adds links + full meta
+CursorPaginatedResourceCollection<T>    cursorPaginate() — adds meta (next/prev cursor)
+SimplePaginatedResourceCollection<T>    simplePaginate() — adds meta (no total)
+
+// Raw model paginator (Model::paginate() without a Resource)
+PaginatedModel<T>                       PaginationFields & { data: T[] }
+PaginationFields                        current_page, last_page, total, links, …
+
+// Error envelopes
+ValidationErrorResponse                 { message: string; errors: Record<string, string[]> }
+ErrorResponse                           { message: string }
 ```
 
-Consumers write `Wrapped<UserResource>` or `PaginatedCollection<Post>` at the fetch site.
+Consumers write `WrappedResource<UserResource>` or `PaginatedResourceCollection<PostResource>` at the fetch site. When you return a raw paginator from `Model::paginate()` without wrapping in a Resource, use `PaginatedModel<User>` instead.
 
 ## Attribute reference
 
@@ -319,11 +337,13 @@ return [
 
 ## Publishing the Claude Code skill
 
+Optional — if you use [Claude Code](https://claude.com/claude-code), publish the bundled skill so Claude knows how to invoke Typefinder itself:
+
 ```bash
 php artisan vendor:publish --tag=typefinder-skill
 ```
 
-Teaches Claude Code to run `php artisan typefinder:generate --json`, parse the output, and act on warnings.
+This copies a skill definition into `.claude/skills/` that teaches Claude Code to run `php artisan typefinder:generate --json`, parse the output, and act on warnings.
 
 ## Testing
 

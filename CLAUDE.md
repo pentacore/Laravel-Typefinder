@@ -15,7 +15,7 @@ Both are versioned in lockstep by semantic-release.
 .                                   root composer package lives here
 ├── packages/
 │   ├── laravel-typefinder/src/     PHP source (namespace Pentacore\Typefinder\*)
-│   │   ├── Commands/               typefinder:generate artisan command
+│   │   ├── Commands/               typefinder:generate + typefinder:watch artisan commands
 │   │   ├── Attributes/             class-level attributes (TypefinderOverrides, TypefinderWriteShape, TypefinderPage)
 │   │   ├── Extractors/             Model / Enum / Request AST→metadata
 │   │   ├── Renderers/              TypeScriptRenderer emits the .d.ts strings
@@ -83,7 +83,7 @@ Every generation run produces a tree under `output_path` (default `resources/js/
 | Resources | `resources/{Name}.d.ts` | on | `app/Http/Resources/*` (`JsonResource` subclasses) |
 | Pages | `pages.d.ts` (single file) | **off** | controller actions tagged `#[TypefinderPage]` |
 | Broadcasting | `broadcasting.d.ts` (single file) | **off** | classes implementing `ShouldBroadcast` |
-| Helpers | `helpers.d.ts` (single file) | always | seven generic response wrappers — see README |
+| Helpers | `helpers.d.ts` (single file) | always | nine generic response wrappers (`WrappedResource`, `WrappedResourceCollection`, three resource paginators, `PaginatedModel` + `PaginationFields`, `ValidationErrorResponse`, `ErrorResponse`) — see README |
 | Top-level barrel | `index.d.ts` | always | re-exports every emitted category |
 
 Default-off categories are gated because they depend on optional Laravel features (Inertia, broadcasting). The rest default on per the gating rule above.
