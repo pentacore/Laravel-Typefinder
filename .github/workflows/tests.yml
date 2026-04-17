@@ -119,12 +119,9 @@ jobs:
       - name: Lint
         working-directory: packages/vite-plugin-laravel-typefinder
         run: npm run lint
-      - name: Unit tests with coverage
+      - name: Tests with coverage
         working-directory: packages/vite-plugin-laravel-typefinder
-        run: npx vitest run --coverage --exclude=tests/integration.test.ts --reporter=junit --outputFile=unit-report.junit.xml
-      - name: Integration tests
-        working-directory: packages/vite-plugin-laravel-typefinder
-        run: npx vitest run tests/integration.test.ts --reporter=junit --outputFile=integration-report.junit.xml
+        run: npx vitest run --coverage --reporter=junit --outputFile=test-report.junit.xml
       - name: Build
         working-directory: packages/vite-plugin-laravel-typefinder
         env:
