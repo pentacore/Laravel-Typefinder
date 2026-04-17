@@ -6,6 +6,7 @@ namespace Pentacore\Typefinder\Commands;
 
 use Illuminate\Console\Command;
 use Pentacore\Typefinder\Protocol\ProtocolCodec;
+use Pentacore\Typefinder\Protocol\ProtocolException;
 use Pentacore\Typefinder\Services\Generator;
 use Pentacore\Typefinder\Version;
 
@@ -25,10 +26,69 @@ class WatchCommand extends Command
                 break;
             }
 
-            // Regen loop is Task 10. For now just consume and discard.
+            $trimmed = trim($line);
+            if ($trimmed === '') {
+                continue;
+            }
+
+            try {
+                $message = ProtocolCodec::decode($trimmed);
+            } catch (ProtocolException $protocolException) {
+                $this->writeLine([
+                    'type' => 'regen.error',
+                    'id' => null,
+                    'message' => $protocolException->getMessage(),
+                ]);
+
+                continue;
+            }
+
+            if ($message['type'] !== 'regen') {
+                $this->writeLine([
+                    'type' => 'regen.error',
+                    'id' => $message['id'] ?? null,
+                    'message' => sprintf('unknown message type "%s"', $message['type']),
+                ]);
+
+                continue;
+            }
+
+            $id = is_string($message['id'] ?? null) ? $message['id'] : null;
+            $paths = [];
+            foreach ((array) ($message['paths'] ?? []) as $p) {
+                if (is_string($p)) {
+                    $paths[] = $p;
+                }
+            }
+
+            try {
+                $result = $generator->generatePaths($paths);
+                $this->writeLine([
+                    'type' => 'regen.done',
+                    'id' => $id,
+                    'duration_ms' => $result->durationMs,
+                    'changed' => $result->changed,
+                    'warnings' => $result->warnings,
+                    'failed' => $result->failed,
+                ]);
+            } catch (\Throwable $throwable) {
+                fwrite(STDERR, '[typefinder] '.$throwable->getMessage()."\n");
+                $this->writeLine([
+                    'type' => 'regen.error',
+                    'id' => $id,
+                    'message' => $throwable->getMessage(),
+                ]);
+            }
         }
 
         return self::SUCCESS;
+    }
+
+    /** @param array<string, mixed> $message */
+    private function writeLine(array $message): void
+    {
+        fwrite(STDOUT, ProtocolCodec::encode($message));
+        fflush(STDOUT);
     }
 
     private function emitHandshake(): void
