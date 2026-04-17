@@ -30,8 +30,25 @@ class WatchCommand extends Command
             pcntl_signal(SIGINT, $shutdown);
         }
 
-        while (! feof(STDIN)) {
-            $line = fgets(STDIN);
+        // Use stream_select with a 1-second timeout instead of blocking
+        // fgets so that pcntl signal handlers can fire between iterations.
+        // A bare fgets(STDIN) is a libc call subject to SA_RESTART which
+        // silently resumes after signal delivery, defeating pcntl_signal.
+        $stdin = STDIN;
+        while (! feof($stdin)) {
+            $read = [$stdin];
+            $write = [];
+            $except = [];
+            $ready = @stream_select($read, $write, $except, 1);
+            if ($ready === false) {
+                continue;
+            }
+
+            if ($ready === 0) {
+                continue;
+            }
+
+            $line = fgets($stdin);
             if ($line === false) {
                 break;
             }
