@@ -9,13 +9,19 @@ on:
   push:
     tags: ['v*']
 
+concurrency:
+  group: publish-${{ github.ref_name }}
+  cancel-in-progress: false
+
 permissions:
-  contents: write       # gh release create
-  id-token: write       # npm trusted publisher (OIDC)
+  contents: read
 
 jobs:
   publish:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write       # gh release create
+      id-token: write       # npm trusted publisher (OIDC)
     steps:
       - uses: actions/checkout@v4
         with:
@@ -24,6 +30,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
 
       - name: Install root deps
         run: npm install --no-audit --no-fund

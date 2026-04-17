@@ -6,6 +6,13 @@ on:
   pull_request:
     branches: [main, master]
 
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
 jobs:
   php:
     runs-on: ubuntu-latest
@@ -16,9 +23,13 @@ jobs:
         php: ['8.3', '8.4', '8.5']
         laravel: ['11.*', '12.*', '13.*']
         exclude:
-        # Laravel 11 requires PHP 8.4-
-        - php: '8.5'
-          laravel: '11.*'
+          # Laravel 11 requires PHP 8.4-
+          - php: '8.5'
+            laravel: '11.*'
+        include:
+          - php: '8.5'
+            laravel: '13.*'
+            coverage: true
 
     name: P${{ matrix.php }} L${{ matrix.laravel }}
 
@@ -35,7 +46,20 @@ jobs:
         with:
           php-version: ${{ matrix.php }}
           extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, sqlite, pdo_sqlite, bcmath, soap, intl, gd, exif, iconv
-          coverage: none
+          coverage: ${{ matrix.coverage && 'pcov' || 'none' }}
+
+      - name: Get composer cache directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache composer packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: composer-P${{ matrix.php }}-L${{ env.LARAVEL_SLUG }}-${{ hashFiles('composer.json') }}
+          restore-keys: |
+            composer-P${{ matrix.php }}-L${{ env.LARAVEL_SLUG }}-
+            composer-P${{ matrix.php }}-
 
       - name: Install dependencies
         env:
@@ -45,7 +69,14 @@ jobs:
           composer update --prefer-dist --no-interaction --no-progress
 
       - name: Run tests
-        run: vendor/bin/phpunit --log-junit "phpunit-P${{ matrix.php }}-L${LARAVEL_SLUG}.xml"
+        env:
+          COVERAGE: ${{ matrix.coverage }}
+        run: |
+          if [ "$COVERAGE" = "true" ]; then
+            vendor/bin/phpunit --log-junit "phpunit-P${{ matrix.php }}-L${LARAVEL_SLUG}.xml" --coverage-clover=coverage.xml
+          else
+            vendor/bin/phpunit --log-junit "phpunit-P${{ matrix.php }}-L${LARAVEL_SLUG}.xml"
+          fi
 
       - name: Upload JUnit
         if: always()
@@ -63,9 +94,27 @@ jobs:
           path: workbench/resources/js/typefinder/**
           if-no-files-found: error
 
+      - name: Upload coverage to Codecov
+        if: matrix.coverage
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage.xml
+          flags: php
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Upload test results to Codecov
+        if: ${{ matrix.coverage && !cancelled() }}
+        uses: codecov/test-results-action@v1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+
   pint:
     runs-on: ubuntu-latest
     name: Pint (code style)
+    permissions:
+      contents: read
+      pull-requests: write
 
     steps:
       - uses: actions/checkout@v4
@@ -74,14 +123,42 @@ jobs:
         with:
           php-version: '8.3'
           coverage: none
+      - name: Get composer cache directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+      - name: Cache composer packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: composer-pint-${{ hashFiles('composer.json') }}
+          restore-keys: |
+            composer-pint-
       - name: Install
         run: composer install --prefer-dist --no-interaction --no-progress
-      - name: Check style
-        run: vendor/bin/pint --test
+      - name: Run Pint
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            vendor/bin/pint
+          else
+            vendor/bin/pint --test
+          fi
+      - name: Suggest fixes on PR
+        if: github.event_name == 'pull_request'
+        uses: reviewdog/action-suggester@v1
+        with:
+          tool_name: pint
+          fail_level: error
+          level: error
 
   rector:
     runs-on: ubuntu-latest
     name: Rector
+    permissions:
+      contents: read
+      pull-requests: write
+
     steps:
       - uses: actions/checkout@v4
       - name: Setup PHP
@@ -89,10 +166,34 @@ jobs:
         with:
           php-version: '8.3'
           coverage: none
+      - name: Get composer cache directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+      - name: Cache composer packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: composer-rector-${{ hashFiles('composer.json') }}
+          restore-keys: |
+            composer-rector-
       - name: Install
         run: composer install --prefer-dist --no-interaction --no-progress
-      - name: Check with Rector
-        run: vendor/bin/rector process --dry-run
+      - name: Run Rector
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            vendor/bin/rector process
+          else
+            vendor/bin/rector process --dry-run
+          fi
+      - name: Suggest fixes on PR
+        if: github.event_name == 'pull_request'
+        uses: reviewdog/action-suggester@v1
+        with:
+          tool_name: rector
+          fail_level: error
+          level: error
 
   vite-plugin:
     runs-on: ubuntu-latest
@@ -106,6 +207,17 @@ jobs:
           php-version: '8.4'
           extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, sqlite, pdo_sqlite
           coverage: none
+      - name: Get composer cache directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+      - name: Cache composer packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: composer-vite-P8.4-L12-${{ hashFiles('composer.json') }}
+          restore-keys: |
+            composer-vite-P8.4-L12-
+            composer-vite-P8.4-
       - name: Install PHP dependencies
         run: |
           composer require "laravel/framework:12.*" "orchestra/testbench:*" --no-update --no-interaction
@@ -113,6 +225,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
       - name: Install JS dependencies
         working-directory: packages/vite-plugin-laravel-typefinder
         run: npm install
@@ -147,54 +261,42 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
 
-  coverage:
+  dependency-review:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    name: Coverage (PHP 8.5 / Laravel 12)
+    name: Dependency review
+    permissions:
+      contents: read
+      pull-requests: write
 
     steps:
       - uses: actions/checkout@v4
-
-      - name: Setup PHP
-        uses: shivammathur/setup-php@v2
+      - uses: actions/dependency-review-action@v4
         with:
-          php-version: '8.5'
-          extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, sqlite, pdo_sqlite, bcmath, soap, intl, gd, exif, iconv
-          coverage: pcov
+          fail-on-severity: high
+          comment-summary-in-pr: on-failure
 
-      - name: Install dependencies
-        run: |
-          composer require "laravel/framework:12.*" "orchestra/testbench:*" --no-update --no-interaction
-          composer update --prefer-dist --no-interaction --no-progress
+  commitlint:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    name: Commit message lint
 
-      - name: Run PHPUnit with coverage
-        run: vendor/bin/phpunit --coverage-clover=coverage.xml --log-junit=junit.xml
-
-      - name: Upload JUnit
-        if: always()
-        uses: actions/upload-artifact@v4
+    steps:
+      - uses: actions/checkout@v4
         with:
-          name: phpunit-junit-coverage
-          path: junit.xml
-          if-no-files-found: warn
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
+          fetch-depth: 0
+      - uses: wagoid/commitlint-github-action@v6
         with:
-          files: coverage.xml
-          flags: php
-          fail_ci_if_error: false
-          token: ${{ secrets.CODECOV_TOKEN }}
-      - name: Upload test results to Codecov
-        if: ${{ !cancelled() }}
-        uses: codecov/test-results-action@v1
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
+          configFile: .commitlintrc.json
 
   test-summary:
-    needs: [php, coverage, vite-plugin]
+    needs: [php, vite-plugin]
     if: always()
     runs-on: ubuntu-latest
     name: Test summary
+    permissions:
+      contents: read
+      checks: write
     steps:
       - uses: actions/checkout@v4
       - name: Download JUnit artifacts
@@ -203,16 +305,10 @@ jobs:
           path: junit
           pattern: phpunit-*
           merge-multiple: true
-      - name: Download JUnit artifacts from coverage
-        uses: actions/download-artifact@v4
-        with:
-          path: junit
-          pattern: junit
-          merge-multiple: true
       - name: Publish summary
         uses: dorny/test-reporter@v1
         with:
           name: PHPUnit
           path: junit/*.xml
-          reporter: java-junit
+          reporter: phpunit-junit
           fail-on-error: false
