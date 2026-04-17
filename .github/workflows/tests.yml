@@ -111,7 +111,7 @@ jobs:
         run: npm run lint
       - name: Test with coverage
         working-directory: packages/vite-plugin-laravel-typefinder
-        run: npx vitest run --coverage
+        run: npx vitest run --coverage --exclude=tests/integration.test.ts
       - name: Build
         working-directory: packages/vite-plugin-laravel-typefinder
         run: npm run build
@@ -153,7 +153,14 @@ jobs:
         run: npm install
       - name: Run integration tests
         working-directory: packages/vite-plugin-laravel-typefinder
-        run: npx vitest run tests/integration.test.ts
+        run: npx vitest run tests/integration.test.ts --coverage
+      - name: Upload JS coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: packages/vite-plugin-laravel-typefinder/coverage/lcov.info
+          flags: js
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
 
   coverage:
     runs-on: ubuntu-latest
