@@ -201,16 +201,15 @@ export class Watcher extends EventEmitter {
 
     async kill(): Promise<void> {
         if (this._dead) return;
-        this.child.kill('SIGTERM');
         await new Promise<void>((resolve) => {
             const timer = setTimeout(() => {
                 if (!this._dead) this.child.kill('SIGKILL');
-                resolve();
             }, this.killTimeoutMs);
             this.child.once('exit', () => {
                 clearTimeout(timer);
                 resolve();
             });
+            this.child.kill('SIGTERM');
         });
     }
 }
