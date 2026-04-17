@@ -1,3 +1,31 @@
+## [4.2.0](https://github.com/pentacore/Laravel-Typefinder/compare/v4.1.0...v4.2.0) (2026-04-17)
+
+### Features
+
+* add --only= option to typefinder:generate for incremental regen ([7937f18](https://github.com/pentacore/Laravel-Typefinder/commit/7937f18fef1549e447dc0b5d55586ae33379c10e))
+* add CacheKeyFactory for composer.lock and config hashing ([8c3c3c1](https://github.com/pentacore/Laravel-Typefinder/commit/8c3c3c1733aa136d70a65e0bce1c58ad76e0a9d5))
+* add compileMatcher using picomatch ([7aa4353](https://github.com/pentacore/Laravel-Typefinder/commit/7aa435331168b0717390bcc5948c79ecf95ef289))
+* add ExtractionCache with mtime/size and top-level hash invalidation ([5dcad4a](https://github.com/pentacore/Laravel-Typefinder/commit/5dcad4a19f838b4783a2ce29489b2b3ac739a1e3))
+* add Generator::generatePaths() for incremental regeneration ([8dda433](https://github.com/pentacore/Laravel-Typefinder/commit/8dda433532236b763299ab025d38ccd9ab80f7d4))
+* add ProtocolCodec for NDJSON wire format ([2013048](https://github.com/pentacore/Laravel-Typefinder/commit/201304863f6fe81fa8702edeb7d3e07f069b494a))
+* add typefinder:watch skeleton with NDJSON handshake ([7deffdf](https://github.com/pentacore/Laravel-Typefinder/commit/7deffdfece7e5aba08817c26185aaddc4a8fbfe1))
+* add Watcher class with handshake, regen dispatch, and coalesce ([b7ded34](https://github.com/pentacore/Laravel-Typefinder/commit/b7ded34536b6cd47aa61dd35dc69494251cd8626))
+* clean SIGTERM/SIGINT shutdown in typefinder:watch ([3ef830e](https://github.com/pentacore/Laravel-Typefinder/commit/3ef830ef137c2521f2475a933642f08d727e9dda))
+* populate extraction cache during full regen ([5964aff](https://github.com/pentacore/Laravel-Typefinder/commit/5964aff2afd9d8694dc169a2d7e448c9880a1524))
+* rewrite Vite plugin to drive typefinder:watch via Watcher ([69e9435](https://github.com/pentacore/Laravel-Typefinder/commit/69e9435df4cee29ed5de307d0e9c1ba15f013d2f))
+* typefinder:watch regen loop dispatches to Generator::generatePaths ([943079a](https://github.com/pentacore/Laravel-Typefinder/commit/943079a9ddebbd86f1967ea159e7aa4127fb3b37))
+
+### Bug Fixes
+
+* evict stale entries from ExtractionCache on load and persist ([1e740a1](https://github.com/pentacore/Laravel-Typefinder/commit/1e740a1101f178be652733b3022bbacc803eaf46))
+* harden ExtractionCache persist and add schema version ([ee8b1f8](https://github.com/pentacore/Laravel-Typefinder/commit/ee8b1f8746877f88a1fc664093c9427024553c86))
+* use stream_select in WatchCommand so SIGTERM interrupts the stdin loop ([47d1253](https://github.com/pentacore/Laravel-Typefinder/commit/47d125348598b45b27d197a4ea56a81dbb515f01))
+
+### Dependencies and Other Build Updates
+
+* add vitest + picomatch; define watcher wire protocol types ([b515be2](https://github.com/pentacore/Laravel-Typefinder/commit/b515be2fe58601b7b28d5be9094a41a2d9184bf3))
+* switch vite plugin from unbuild to vite library mode ([f6d8367](https://github.com/pentacore/Laravel-Typefinder/commit/f6d83675fdb809afaa7d727794e10f1492ac2a57))
+
 ## [4.1.0](https://github.com/pentacore/Laravel-Typefinder/compare/v4.0.2...v4.1.0) (2026-04-17)
 
 ### Features
