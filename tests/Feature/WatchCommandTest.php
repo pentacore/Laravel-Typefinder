@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Models\User;
 use Pentacore\Typefinder\Protocol\ProtocolCodec;
 use Symfony\Component\Process\InputStream;
 use Symfony\Component\Process\Process;
@@ -132,6 +133,141 @@ final class WatchCommandTest extends TestCase
         $this->assertIsArray($response['changed']);
         $this->assertIsArray($response['warnings']);
         $this->assertArrayHasKey('duration_ms', $response);
+    }
+
+    public function test_unknown_message_type_returns_error(): void
+    {
+        $stdin = ProtocolCodec::encode([
+            'type' => 'unknown_cmd',
+            'id' => 'u1',
+        ]);
+
+        $process = $this->spawnWatch($stdin);
+        $process->wait();
+
+        $output = $process->getOutput();
+        $lines = array_values(array_filter(explode("\n", $output), fn (string $l): bool => trim($l) !== ''));
+
+        $this->assertGreaterThanOrEqual(2, count($lines));
+        $response = json_decode($lines[1], true);
+        $this->assertSame('regen.error', $response['type']);
+        $this->assertSame('u1', $response['id']);
+        $this->assertStringContainsString('unknown message type', $response['message']);
+    }
+
+    public function test_blank_lines_are_silently_skipped(): void
+    {
+        // Send blank lines before a valid regen — they should be ignored.
+        $stdin = "\n\n".ProtocolCodec::encode([
+            'type' => 'regen',
+            'id' => 'after-blanks',
+            'paths' => [],
+        ]);
+
+        $process = $this->spawnWatch($stdin);
+        $process->wait();
+
+        $output = $process->getOutput();
+        $lines = array_values(array_filter(explode("\n", $output), fn (string $l): bool => trim($l) !== ''));
+
+        // Handshake + regen.done — no error lines for blank input
+        $this->assertGreaterThanOrEqual(2, count($lines));
+
+        $response = json_decode($lines[1], true);
+        $this->assertSame('regen.done', $response['type']);
+        $this->assertSame('after-blanks', $response['id']);
+    }
+
+    public function test_missing_id_falls_back_to_null(): void
+    {
+        $stdin = ProtocolCodec::encode([
+            'type' => 'regen',
+            'paths' => [],
+        ]);
+
+        $process = $this->spawnWatch($stdin);
+        $process->wait();
+
+        $output = $process->getOutput();
+        $lines = array_values(array_filter(explode("\n", $output), fn (string $l): bool => trim($l) !== ''));
+
+        $this->assertGreaterThanOrEqual(2, count($lines));
+        $response = json_decode($lines[1], true);
+        $this->assertSame('regen.done', $response['type']);
+        $this->assertNull($response['id']);
+    }
+
+    public function test_non_string_paths_are_filtered_out(): void
+    {
+        // paths contains a mix of strings and non-strings
+        $stdin = ProtocolCodec::encode([
+            'type' => 'regen',
+            'id' => 'filter-test',
+            'paths' => ['/tmp/valid.php', 42, null, true],
+        ]);
+
+        $process = $this->spawnWatch($stdin);
+        $process->wait();
+
+        $output = $process->getOutput();
+        $lines = array_values(array_filter(explode("\n", $output), fn (string $l): bool => trim($l) !== ''));
+
+        $this->assertGreaterThanOrEqual(2, count($lines));
+        $response = json_decode($lines[1], true);
+        $this->assertSame('regen.done', $response['type']);
+        $this->assertSame('filter-test', $response['id']);
+    }
+
+    public function test_regen_with_specific_paths_returns_done(): void
+    {
+        $userPath = (new \ReflectionClass(User::class))->getFileName();
+        $stdin = ProtocolCodec::encode([
+            'type' => 'regen',
+            'id' => 'inc1',
+            'paths' => [$userPath],
+        ]);
+
+        $process = $this->spawnWatch($stdin);
+        $process->wait();
+
+        $output = $process->getOutput();
+        $lines = array_values(array_filter(explode("\n", $output), fn (string $l): bool => trim($l) !== ''));
+
+        $this->assertGreaterThanOrEqual(2, count($lines));
+        $response = json_decode($lines[1], true);
+        $this->assertSame('regen.done', $response['type']);
+        $this->assertSame('inc1', $response['id']);
+        $this->assertIsArray($response['changed']);
+    }
+
+    public function test_multiple_regen_requests_in_sequence(): void
+    {
+        $stdin = ProtocolCodec::encode([
+            'type' => 'regen',
+            'id' => 'first',
+            'paths' => [],
+        ]).ProtocolCodec::encode([
+            'type' => 'regen',
+            'id' => 'second',
+            'paths' => [],
+        ]);
+
+        $process = $this->spawnWatch($stdin);
+        $process->wait();
+
+        $output = $process->getOutput();
+        $lines = array_values(array_filter(explode("\n", $output), fn (string $l): bool => trim($l) !== ''));
+
+        // Handshake + 2 regen.done responses
+        $this->assertGreaterThanOrEqual(3, count($lines));
+
+        $first = json_decode($lines[1], true);
+        $this->assertSame('regen.done', $first['type']);
+        $this->assertSame('first', $first['id']);
+
+        $second = json_decode($lines[2], true);
+        $this->assertSame('regen.done', $second['type']);
+        $this->assertSame('second', $second['id']);
     }
 
     public function test_sigterm_causes_clean_exit(): void
