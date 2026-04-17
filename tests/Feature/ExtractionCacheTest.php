@@ -144,6 +144,48 @@ final class ExtractionCacheTest extends TestCase
         $this->assertNull($reloaded->get($this->fixturePath));
     }
 
+    public function test_load_evicts_entries_for_deleted_files(): void
+    {
+        $extractionCache = new ExtractionCache($this->cachePath, 'sha256:lock', 'sha256:cfg');
+        $extractionCache->put($this->fixturePath, 'models', ['v' => 1]);
+
+        // Add an entry for a file that will be deleted before reload.
+        $ephemeral = sys_get_temp_dir().'/typefinder-ephemeral-'.uniqid('', true).'.php';
+        file_put_contents($ephemeral, "<?php\n");
+        $extractionCache->put($ephemeral, 'models', ['v' => 2]);
+        $extractionCache->persist();
+
+        // Delete the ephemeral file, then reload.
+        unlink($ephemeral);
+        $reloaded = ExtractionCache::load($this->cachePath, 'sha256:lock', 'sha256:cfg');
+
+        // The surviving fixture is still present.
+        $this->assertSame(['v' => 1], $reloaded->get($this->fixturePath));
+        // The deleted file's entry was evicted.
+        $this->assertNull($reloaded->get($ephemeral));
+        // entriesByCategory also reflects the eviction.
+        $this->assertCount(1, $reloaded->entriesByCategory('models'));
+    }
+
+    public function test_persist_evicts_entries_for_deleted_files(): void
+    {
+        $extractionCache = new ExtractionCache($this->cachePath, 'sha256:lock', 'sha256:cfg');
+        $extractionCache->put($this->fixturePath, 'models', ['v' => 1]);
+
+        $ephemeral = sys_get_temp_dir().'/typefinder-ephemeral-'.uniqid('', true).'.php';
+        file_put_contents($ephemeral, "<?php\n");
+        $extractionCache->put($ephemeral, 'models', ['v' => 2]);
+
+        // Delete before persisting.
+        unlink($ephemeral);
+        $extractionCache->persist();
+
+        // Reload and verify the deleted entry was not persisted.
+        $reloaded = ExtractionCache::load($this->cachePath, 'sha256:lock', 'sha256:cfg');
+        $this->assertNull($reloaded->get($ephemeral));
+        $this->assertCount(1, $reloaded->entriesByCategory('models'));
+    }
+
     public function test_persist_does_not_corrupt_existing_cache_when_write_fails(): void
     {
         // Write a valid cache, then force persist() to a path we can't write to.

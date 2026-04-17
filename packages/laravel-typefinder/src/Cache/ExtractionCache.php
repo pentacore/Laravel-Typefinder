@@ -68,6 +68,12 @@ final class ExtractionCache
             $cache->entries = $entries;
         }
 
+        $cache->entries = array_filter(
+            $cache->entries,
+            fn (array $entry, string $path): bool => is_file($path),
+            ARRAY_FILTER_USE_BOTH,
+        );
+
         return $cache;
     }
 
@@ -139,6 +145,12 @@ final class ExtractionCache
         if (! is_dir($dir)) {
             @mkdir($dir, 0755, true);
         }
+
+        $this->entries = array_filter(
+            $this->entries,
+            fn (array $entry, string $path): bool => is_file($path),
+            ARRAY_FILTER_USE_BOTH,
+        );
 
         $payload = [
             'schema_version' => self::SCHEMA_VERSION,
