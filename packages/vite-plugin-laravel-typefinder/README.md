@@ -1,8 +1,8 @@
 # @pentacore/vite-plugin-laravel-typefinder
 
-A Vite plugin that automatically runs `php artisan typefinder:generate` on build start and re-runs it (debounced) whenever watched PHP files change via HMR.
+A Vite plugin that keeps your TypeScript type definitions in sync with your Laravel codebase. In development, it spawns a persistent `typefinder:watch` process that regenerates only the `.d.ts` files affected by each edit — typical latency is 20-60ms per change. In production builds, it runs a one-shot `typefinder:generate` before bundling.
 
-> **This plugin is a companion to the [`pentacore/laravel-typefinder`](https://packagist.org/packages/pentacore/laravel-typefinder) Composer package — you must install that first.** The plugin's only job is to invoke its artisan command at the right moments; all type generation lives in the PHP package. Installing this npm package without the Composer package will result in the plugin failing to find `php artisan typefinder:generate`.
+> **This plugin is a companion to the [`pentacore/laravel-typefinder`](https://packagist.org/packages/pentacore/laravel-typefinder) Composer package — you must install that first.**
 
 ## Requirements
 
@@ -28,31 +28,69 @@ import typefinder from '@pentacore/vite-plugin-laravel-typefinder';
 export default defineConfig({
     plugins: [
         laravel({ input: ['resources/js/app.js'] }),
-        typefinder({
-            // All options are optional — defaults shown below
-            command: 'php artisan typefinder:generate',
-            watch: ['app/Models/**/*.php', 'app/Enums/**/*.php', 'app/Http/Requests/**/*.php'],
-            debounceMs: 100,
-        }),
+        typefinder(),   // zero-config — all options are optional
     ],
 });
 ```
 
-## Options
+## Configuration
 
-| Option | Type | Default | Description |
-|---|---|---|---|
-| `command` | `string` | `'php artisan typefinder:generate'` | The shell command to run for type generation |
-| `watch` | `string[]` | `['app/Models/**/*.php', 'app/Enums/**/*.php', 'app/Http/Requests/**/*.php']` | Glob patterns for files that trigger re-generation on HMR change |
-| `debounceMs` | `number` | `100` | Milliseconds to wait after a file change before running the command, to coalesce rapid saves |
+All options are optional. Defaults work for a standard Laravel project with `php` on `$PATH`.
+
+```ts
+typefinder({
+    // Shell command for the long-lived watcher process.
+    // Override for Sail/Herd/Docker.
+    command: 'php artisan typefinder:watch',
+
+    // Shell command used in `vite build` (one-shot, no watcher).
+    // Set to `false` to skip generation entirely in build mode.
+    buildCommand: 'php artisan typefinder:generate --json',
+
+    // Override the paths the plugin watches. When unset (the default),
+    // paths come from the watcher's handshake, which mirrors your
+    // config/typefinder.php. Provide absolute paths.
+    watch: undefined,
+
+    // Debounce window (ms) for coalescing HMR events.
+    debounceMs: 100,
+
+    // How long to wait for the watcher's `ready` handshake before failing.
+    startupTimeoutMs: 10_000,
+
+    // Grace period between SIGTERM and SIGKILL when shutting down.
+    killTimeoutMs: 2_000,
+});
+```
+
+### Runtime-specific examples
+
+```ts
+// Laravel Sail
+typefinder({ command: './vendor/bin/sail artisan typefinder:watch' })
+
+// Laravel Herd
+typefinder({ command: 'herd php artisan typefinder:watch' })
+
+// Docker Compose
+typefinder({ command: 'docker compose exec app php artisan typefinder:watch' })
+```
 
 ## Behavior
 
-**On `buildStart`:** The command runs once synchronously before bundling begins, ensuring your TypeScript types are always fresh before the build processes them.
+**Development (`vite dev`):** The plugin spawns `typefinder:watch` — a persistent Laravel process that boots once and accepts incremental regeneration requests over NDJSON. When a `.php` file matching the watched paths changes via HMR, the plugin sends the changed file paths to the watcher, which re-extracts only those files and rewrites only the affected `.d.ts` outputs. Multiple rapid edits within the debounce window are coalesced into a single request.
 
-**On HMR file changes:** When a file matching one of the `watch` patterns changes, the plugin schedules a debounced run. If the command is already running when the timer fires, the new run is queued — only one run is ever active at a time, but at most one follow-up run will be queued to pick up any changes that arrived mid-run. This prevents stale types while avoiding unbounded queuing.
+The watched paths are read from the watcher's startup handshake, which mirrors your `config/typefinder.php`. If you enable Inertia pages or broadcasting in the config, the plugin automatically watches those directories too — no manual `watch` array needed.
 
-The plugin relies on Typefinder's selective-write behaviour: the PHP command re-extracts the full type graph on every run, but only files whose content has actually changed are rewritten on disk — meaning HMR in your frontend is not needlessly triggered for unchanged types.
+**Production (`vite build`):** No watcher. The plugin runs `typefinder:generate --json` once in `buildStart` and fails the build on non-zero exit. Set `buildCommand: false` to skip generation entirely (e.g. for pre-built containers without a PHP runtime).
+
+**Shutdown:** The watcher is killed on `closeBundle` and on process exit. If the watcher dies mid-session (PHP fatal, OOM), the plugin logs the error and stops regenerating — restart the dev server to recover.
+
+### Migration from v4.0
+
+- `command` default changed from `typefinder:generate` to `typefinder:watch`. If you explicitly set `command`, update it — dev mode requires the long-lived watcher.
+- `watch` default changed from a hardcoded path list to `undefined`, meaning "use whatever the watcher reports". Existing explicit `watch: [...]` configurations keep working unchanged.
+- Regenerations now run against a persistent Laravel boot via NDJSON. Typical edit latency drops from ~300-500ms to ~20-60ms.
 
 ## Alternative install (from vendor)
 

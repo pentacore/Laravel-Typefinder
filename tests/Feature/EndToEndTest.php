@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\File;
 use Tests\TestCase;
 
@@ -452,5 +453,59 @@ PHP);
 
         $barrel = File::get($this->outputPath.'/resources/index.d.ts');
         $this->assertStringNotContainsString('LegacyResource', $barrel);
+    }
+
+    public function test_check_mode_with_json_outputs_structured_result_on_pass(): void
+    {
+        $this->artisan('typefinder:generate')->assertSuccessful();
+
+        $exitCode = Artisan::call('typefinder:generate', ['--check' => true, '--json' => true]);
+        $this->assertSame(0, $exitCode);
+
+        $decoded = json_decode(Artisan::output(), true);
+        $this->assertIsArray($decoded);
+        $this->assertTrue($decoded['success']);
+        $this->assertIsInt($decoded['duration_ms']);
+    }
+
+    public function test_check_mode_with_json_outputs_drift_on_fail(): void
+    {
+        $this->artisan('typefinder:generate')->assertSuccessful();
+        File::put($this->outputPath.'/models/User.d.ts', "// manually edited\n");
+
+        $exitCode = Artisan::call('typefinder:generate', ['--check' => true, '--json' => true]);
+        $this->assertSame(1, $exitCode);
+
+        $decoded = json_decode(Artisan::output(), true);
+        $this->assertIsArray($decoded);
+        $this->assertFalse($decoded['success']);
+    }
+
+    public function test_check_mode_detects_stale_files_on_disk(): void
+    {
+        $this->artisan('typefinder:generate')->assertSuccessful();
+
+        // Plant a file that the generator wouldn't produce
+        File::put($this->outputPath.'/models/StaleExtra.d.ts', '// stale');
+
+        $this->artisan('typefinder:generate', ['--check' => true])
+            ->expectsOutputToContain('StaleExtra.d.ts')
+            ->assertFailed();
+    }
+
+    public function test_enum_emit_values_produces_ts_files_via_command(): void
+    {
+        config(['typefinder.enums.emit_values' => true]);
+
+        $this->artisan('typefinder:generate')->assertSuccessful();
+
+        $this->assertFileExists($this->outputPath.'/enums/PostStatus.ts');
+        $this->assertFileDoesNotExist($this->outputPath.'/enums/PostStatus.d.ts');
+
+        $content = File::get($this->outputPath.'/enums/PostStatus.ts');
+        $this->assertStringContainsString('as const', $content);
+
+        $barrel = File::get($this->outputPath.'/enums/index.ts');
+        $this->assertStringContainsString('export * from', $barrel);
     }
 }

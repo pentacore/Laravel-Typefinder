@@ -5,8 +5,12 @@ declare(strict_types=1);
 namespace Pentacore\Typefinder;
 
 use Illuminate\Support\ServiceProvider;
+use Pentacore\Typefinder\Cache\CacheKeyFactory;
 use Pentacore\Typefinder\Commands\GenerateCommand;
+use Pentacore\Typefinder\Commands\WatchCommand;
 use Pentacore\Typefinder\Facades\Typefinder;
+use Pentacore\Typefinder\Renderers\TypeScriptRenderer;
+use Pentacore\Typefinder\Services\Generator;
 
 /**
  * Package service provider. Auto-discovered via Laravel's package discovery —
@@ -32,6 +36,13 @@ class TypefinderServiceProvider extends ServiceProvider
         );
 
         $this->app->singleton(TypefinderRegistry::class);
+
+        $this->app->singleton(Generator::class, fn ($app): Generator => new Generator(
+            $app->make(TypefinderRegistry::class),
+            new TypeScriptRenderer,
+            new CacheKeyFactory(base_path()),
+            storage_path('framework/cache/typefinder/extractions.json'),
+        ));
     }
 
     public function boot(): void
@@ -39,6 +50,7 @@ class TypefinderServiceProvider extends ServiceProvider
         if ($this->app->runningInConsole()) {
             $this->commands([
                 GenerateCommand::class,
+                WatchCommand::class,
             ]);
 
             $this->publishes([
