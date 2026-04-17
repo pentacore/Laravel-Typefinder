@@ -109,6 +109,9 @@ jobs:
       - name: Lint
         working-directory: packages/vite-plugin-laravel-typefinder
         run: npm run lint
+      - name: Test with coverage
+        working-directory: packages/vite-plugin-laravel-typefinder
+        run: npx vitest run --coverage
       - name: Build
         working-directory: packages/vite-plugin-laravel-typefinder
         run: npm run build
@@ -118,10 +121,17 @@ jobs:
           name: vite-plugin-dist
           path: packages/vite-plugin-laravel-typefinder/dist
           if-no-files-found: error
+      - name: Upload JS coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: packages/vite-plugin-laravel-typefinder/coverage/lcov.info
+          flags: js
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
 
   coverage:
     runs-on: ubuntu-latest
-    name: Coverage (PHP 8.4 / Laravel 12)
+    name: Coverage (PHP 8.5 / Laravel 12)
 
     steps:
       - uses: actions/checkout@v4
@@ -129,7 +139,7 @@ jobs:
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
-          php-version: '8.4'
+          php-version: '8.5'
           extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, sqlite, pdo_sqlite, bcmath, soap, intl, gd, exif, iconv
           coverage: pcov
 
@@ -139,12 +149,12 @@ jobs:
           composer update --prefer-dist --no-interaction --no-progress
 
       - name: Run PHPUnit with coverage
-        run: vendor/bin/phpunit --coverage-clover=coverage.xml
+        run: vendor/bin/phpunit --coverage-clover=coverage.xml --log-junit=junit.xml
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
         with:
-          files: coverage.xml
+          files: coverage.xml,junit.xml
           flags: php
           fail_ci_if_error: false
           token: ${{ secrets.CODECOV_TOKEN }}

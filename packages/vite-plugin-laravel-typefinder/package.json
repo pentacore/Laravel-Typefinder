@@ -1,6 +1,6 @@
 {
     "name": "@pentacore/vite-plugin-laravel-typefinder",
-    "version": "4.0.2",
+    "version": "4.1.0",
     "description": "Vite plugin for Laravel Typefinder — auto-generate TypeScript types from Models, Enums, Casts, and Requests.",
     "keywords": [
         "vite",
@@ -17,35 +17,36 @@
     },
     "type": "module",
     "scripts": {
-        "build": "unbuild",
-        "dev": "unbuild --stub",
+        "build": "vite build",
+        "dev": "vite build --watch",
         "lint": "eslint src/",
         "lint:fix": "eslint src/ --fix",
         "test": "vitest run",
         "test:watch": "vitest"
     },
-    "module": "dist/index.mjs",
-    "types": "dist/index.d.mts",
+    "module": "dist/index.js",
+    "types": "dist/index.d.ts",
     "exports": {
         ".": {
-            "import": "./dist/index.mjs",
-            "types": "./dist/index.d.mts"
+            "import": "./dist/index.js",
+            "types": "./dist/index.d.ts"
         }
     },
     "dependencies": {
-        "picomatch": "^4.0.2"
+        "picomatch": "^4.0.4"
     },
     "devDependencies": {
-        "@types/node": "^22.15.17",
-        "@types/picomatch": "^3.0.1",
-        "eslint": "^9.0.0",
-        "@eslint/js": "^9.0.0",
-        "typescript-eslint": "^8.0.0",
-        "rollup": "^4.40.2",
-        "typescript": "^5.8.0",
-        "unbuild": "^3.5.0",
-        "vite": "^6.3.5",
-        "vitest": "^3.2.1"
+        "@codecov/vite-plugin": "^2.0.1",
+        "@eslint/js": "^10.0.1",
+        "@types/node": "^24.12.2",
+        "@types/picomatch": "^4.0.3",
+        "@vitest/coverage-v8": "^4.1.4",
+        "eslint": "^10.2.0",
+        "typescript": "^6.0.3",
+        "typescript-eslint": "^8.58.2",
+        "vite": "^6.4.2",
+        "vite-plugin-dts": "^4.5.4",
+        "vitest": "^4.1.4"
     },
     "files": [
         "dist"

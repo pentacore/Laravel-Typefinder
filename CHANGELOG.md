@@ -1,3 +1,18 @@
+## [4.1.0](https://github.com/pentacore/Laravel-Typefinder/compare/v4.0.2...v4.1.0) (2026-04-17)
+
+### Features
+
+* warn when a model column type cannot be resolved to a TS type ([9a5b25d](https://github.com/pentacore/Laravel-Typefinder/commit/9a5b25d645ce00226543546a84a84ad5e217bf92))
+
+### Bug Fixes
+
+* avoid duplicate | null when an override or cast already includes null ([779be36](https://github.com/pentacore/Laravel-Typefinder/commit/779be36693fda109151015a584cbe30d3ea64531))
+* emit Record<string, never> for empty broadcast/request types to satisfy eslint ([93585f9](https://github.com/pentacore/Laravel-Typefinder/commit/93585f9b56c3f0c2af5133a519797f06d01ef02f))
+* emit Record<string, never> for fully guarded model Create/Update shapes ([b92a672](https://github.com/pentacore/Laravel-Typefinder/commit/b92a6723651af67b34b5bbfb96775f2da5910bef))
+* make it more clear that the Paginated types are for resources, and add type for paginated models ([2798ee6](https://github.com/pentacore/Laravel-Typefinder/commit/2798ee6ba1932116c81ac236427ef416b40ce39b))
+* recognise PostgreSQL pg_type names and MySQL int/year/bit/varbinary in column type map ([91b3f1d](https://github.com/pentacore/Laravel-Typefinder/commit/91b3f1d0fa4e0b309c17195850b67fb4e2a4f191))
+* skip InteractsWithSockets-injected properties from broadcast event payloads ([72d0fc3](https://github.com/pentacore/Laravel-Typefinder/commit/72d0fc3405efbb60e13a44be516bd4d294b0aee4))
+
 ## [4.0.2](https://github.com/pentacore/Laravel-Typefinder/compare/v4.0.1...v4.0.2) (2026-04-16)
 
 ### Bug Fixes
