@@ -109,7 +109,7 @@ export const typefinder = ({
                     await execAsync(buildCommand, { cwd: resolvedRoot });
                 } catch (error) {
                     const message = error instanceof Error ? error.message : String(error);
-                    throw new Error(`[typefinder] build-time generation failed: ${message}`);
+                    throw new Error(`[typefinder] build-time generation failed: ${message}`, { cause: error });
                 }
                 return;
             }
