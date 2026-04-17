@@ -9,20 +9,11 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
-    prefix: fix
-    prefix-development: chore
-    include: scope
   - package-ecosystem: "npm" # Semantic release
     directory: "/"
     schedule:
       interval: "weekly"
-    prefix: fix
-    prefix-development: chore
-    include: scope
   - package-ecosystem: "npm" # Vite Plugin
     directory: "/packages/vite-plugin-laravel-typefinder"
     schedule:
       interval: "weekly"
-    prefix: fix
-    prefix-development: chore
-    include: scope
