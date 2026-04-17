@@ -8,3 +8,4 @@
 docs/
 .codex
 dist/
+packages/vite-plugin-laravel-typefinder/coverage
