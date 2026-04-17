@@ -111,7 +111,7 @@ jobs:
         run: npm run lint
       - name: Test with coverage
         working-directory: packages/vite-plugin-laravel-typefinder
-        run: npx vitest run --coverage --exclude=tests/integration.test.ts
+        run: npx vitest run --coverage --exclude=tests/integration.test.ts --reporter=junit --outputFile=test-report.junit.xml
       - name: Build
         working-directory: packages/vite-plugin-laravel-typefinder
         run: npm run build
@@ -127,6 +127,11 @@ jobs:
           files: packages/vite-plugin-laravel-typefinder/coverage/lcov.info
           flags: js
           fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+      - name: Upload test results to Codecov
+        if: ${{ !cancelled() }}
+        uses: codecov/test-results-action@v1
+        with:
           token: ${{ secrets.CODECOV_TOKEN }}
 
   vite-plugin-integration:
@@ -153,13 +158,18 @@ jobs:
         run: npm install
       - name: Run integration tests
         working-directory: packages/vite-plugin-laravel-typefinder
-        run: npx vitest run tests/integration.test.ts --coverage
+        run: npx vitest run tests/integration.test.ts --coverage --reporter=junit --outputFile=test-report.junit.xml
       - name: Upload JS coverage to Codecov
         uses: codecov/codecov-action@v4
         with:
           files: packages/vite-plugin-laravel-typefinder/coverage/lcov.info
           flags: js
           fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+      - name: Upload test results to Codecov
+        if: ${{ !cancelled() }}
+        uses: codecov/test-results-action@v1
+        with:
           token: ${{ secrets.CODECOV_TOKEN }}
 
   coverage:
@@ -191,6 +201,11 @@ jobs:
           flags: php
           fail_ci_if_error: false
           token: ${{ secrets.CODECOV_TOKEN }}
+      - name: Upload test results to Codecov
+        if: ${{ !cancelled() }}
+        uses: codecov/test-results-action@v1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
 
   test-summary:
     needs: [php]
@@ -204,6 +219,12 @@ jobs:
         with:
           path: junit
           pattern: phpunit-*
+          merge-multiple: true
+      - name: Download JUnit artifacts from coverage
+        uses: actions/download-artifact@v4
+        with:
+          path: junit
+          pattern: junit.xml
           merge-multiple: true
       - name: Publish summary
         uses: dorny/test-reporter@v1
