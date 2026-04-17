@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Pentacore\Typefinder;
 
 use Illuminate\Support\ServiceProvider;
+use Pentacore\Typefinder\Cache\CacheKeyFactory;
 use Pentacore\Typefinder\Commands\GenerateCommand;
 use Pentacore\Typefinder\Facades\Typefinder;
 use Pentacore\Typefinder\Renderers\TypeScriptRenderer;
@@ -35,9 +36,11 @@ class TypefinderServiceProvider extends ServiceProvider
 
         $this->app->singleton(TypefinderRegistry::class);
 
-        $this->app->singleton(Generator::class, fn ($app): Generator => new Generator(
+        $this->app->singleton(Generator::class, fn($app): Generator => new Generator(
             $app->make(TypefinderRegistry::class),
             new TypeScriptRenderer,
+            new CacheKeyFactory(base_path()),
+            storage_path('framework/cache/typefinder/extractions.json'),
         ));
     }
 

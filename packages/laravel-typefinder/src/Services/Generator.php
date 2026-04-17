@@ -6,6 +6,8 @@ namespace Pentacore\Typefinder\Services;
 
 use Illuminate\Support\Facades\File;
 use Pentacore\Typefinder\Attributes\TypefinderWriteShape;
+use Pentacore\Typefinder\Cache\CacheKeyFactory;
+use Pentacore\Typefinder\Cache\ExtractionCache;
 use Pentacore\Typefinder\Extractors\BroadcastExtractor;
 use Pentacore\Typefinder\Extractors\ControllerExtractor;
 use Pentacore\Typefinder\Extractors\EnumExtractor;
@@ -25,6 +27,8 @@ final class Generator
     public function __construct(
         private readonly TypefinderRegistry $typefinderRegistry,
         private readonly TypeScriptRenderer $typeScriptRenderer,
+        private readonly CacheKeyFactory $cacheKeyFactory,
+        private readonly string $cachePath,
         /** @var null|callable(string): void */
         private $onWarn = null,
     ) {}
@@ -38,6 +42,13 @@ final class Generator
     {
         $startedAt = microtime(true);
         $outputPath = (string) config('typefinder.output_path');
+
+        $config = (array) config('typefinder');
+        $extractionCache = ExtractionCache::load(
+            $this->cachePath,
+            $this->cacheKeyFactory->composerLockHash(),
+            $this->cacheKeyFactory->configHash($config),
+        );
 
         $warnings = [];
         $changed = [];
@@ -63,6 +74,13 @@ final class Generator
                 $allEnums = array_merge($allEnums, $enumExtractor->extractFromDirectory($path));
             }
 
+            foreach ($allEnums as $allEnum) {
+                $absolutePath = (new ReflectionClass($allEnum['fqcn']))->getFileName();
+                if ($absolutePath !== false) {
+                    $extractionCache->put($absolutePath, 'enums', $allEnum);
+                }
+            }
+
             if ($allEnums !== []) {
                 $this->writeEnums($allEnums, $outputPath, $changed);
                 $categories[] = 'enums';
@@ -86,6 +104,13 @@ final class Generator
             $morphToResolver = new MorphToResolver;
             $allModels = $morphToResolver->resolve($allModels);
 
+            foreach ($allModels as $allModel) {
+                $absolutePath = (new ReflectionClass($allModel['fqcn']))->getFileName();
+                if ($absolutePath !== false) {
+                    $extractionCache->put($absolutePath, 'models', $allModel);
+                }
+            }
+
             $allPivots = $this->extractPivots($allModels);
 
             if ($allModels !== [] || $allPivots !== []) {
@@ -103,6 +128,13 @@ final class Generator
             };
             foreach ($paths as $path) {
                 $allRequests = array_merge($allRequests, $requestExtractor->extractFromDirectory($path, null, $onRequestWarn));
+            }
+
+            foreach ($allRequests as $allRequest) {
+                $absolutePath = (new ReflectionClass($allRequest['fqcn']))->getFileName();
+                if ($absolutePath !== false) {
+                    $extractionCache->put($absolutePath, 'requests', $allRequest);
+                }
             }
 
             if ($allRequests !== []) {
@@ -123,6 +155,13 @@ final class Generator
 
             foreach ($paths as $path) {
                 $allResources = array_merge($allResources, $resourceExtractor->extractFromDirectory($path, null, $onResourceWarn));
+            }
+
+            foreach ($allResources as $allResource) {
+                $absolutePath = (new ReflectionClass($allResource['fqcn']))->getFileName();
+                if ($absolutePath !== false) {
+                    $extractionCache->put($absolutePath, 'resources', $allResource);
+                }
             }
 
             if ($allResources !== []) {
@@ -178,6 +217,8 @@ final class Generator
         if ($wrote) {
             $changed[] = 'index.d.ts';
         }
+
+        $extractionCache->persist();
 
         $durationMs = (int) round((microtime(true) - $startedAt) * 1000);
 

@@ -52,4 +52,36 @@ final class GeneratorTest extends TestCase
             File::deleteDirectory($output);
         }
     }
+
+    public function test_generate_full_writes_extraction_cache_to_storage(): void
+    {
+        $output = sys_get_temp_dir().'/typefinder-gen-'.uniqid('', true);
+        config([
+            'typefinder.output_path' => $output,
+            'typefinder.models.paths' => [workbench_path('app/Models')],
+            'typefinder.enums.paths' => [workbench_path('app/Enums')],
+            'typefinder.requests.paths' => [workbench_path('app/Http/Requests')],
+            'typefinder.resources.paths' => [workbench_path('app/Http/Resources')],
+        ]);
+
+        $cachePath = storage_path('framework/cache/typefinder/extractions.json');
+        @unlink($cachePath);
+
+        $generator = app(Generator::class);
+        $generator->generateFull();
+
+        try {
+            $this->assertFileExists($cachePath);
+            $raw = (string) file_get_contents($cachePath);
+            $decoded = json_decode($raw, true);
+            $this->assertIsArray($decoded);
+            $this->assertArrayHasKey('composer_lock_hash', $decoded);
+            $this->assertArrayHasKey('config_hash', $decoded);
+            $this->assertArrayHasKey('entries', $decoded);
+            $this->assertNotEmpty($decoded['entries']);
+        } finally {
+            File::deleteDirectory($output);
+            @unlink($cachePath);
+        }
+    }
 }
