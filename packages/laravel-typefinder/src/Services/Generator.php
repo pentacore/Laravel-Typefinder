@@ -34,6 +34,85 @@ final class Generator
     ) {}
 
     /**
+     * Incremental regeneration: given a list of absolute PHP file paths that
+     * changed, re-extract and re-render only the affected .d.ts outputs.
+     * Empty $paths falls back to full regen.
+     *
+     * @param  list<string>  $paths  Absolute paths. Empty = full regen.
+     */
+    public function generatePaths(array $paths): RegenResult
+    {
+        if ($paths === []) {
+            return $this->generateFull();
+        }
+
+        $startedAt = microtime(true);
+        $outputPath = (string) config('typefinder.output_path');
+        $config = (array) config('typefinder');
+        $changed = [];
+        $warnings = [];
+        $failed = [];
+
+        $extractionCache = ExtractionCache::load(
+            $this->cachePath,
+            $this->cacheKeyFactory->composerLockHash(),
+            $this->cacheKeyFactory->configHash($config),
+        );
+
+        $categoryMap = $this->buildCategoryMap($config);
+        $affectedCategories = [];
+
+        foreach ($paths as $path) {
+            $category = $this->resolveCategory($path, $categoryMap);
+            if ($category === null) {
+                $warnings[] = $path.': outside any configured typefinder category — ignored';
+
+                continue;
+            }
+
+            if (! is_file($path)) {
+                $this->handleDeletion($path, $category, $extractionCache, $outputPath, $changed);
+                $affectedCategories[$category] = true;
+
+                continue;
+            }
+
+            try {
+                $extraction = $this->extractSingleFile($path, $category, $config, $warnings);
+                if ($extraction !== null) {
+                    $extractionCache->put($path, $category, $extraction);
+                    $this->writeSingleExtraction($category, $extraction, $config, $outputPath, $changed);
+                    $affectedCategories[$category] = true;
+                }
+            } catch (\Throwable $e) {
+                $failed[] = ['path' => $path, 'message' => $e->getMessage()];
+            }
+        }
+
+        foreach (array_keys($affectedCategories) as $cat) {
+            $this->rewriteCategoryBarrel($cat, $config, $outputPath, $changed);
+        }
+
+        if ($changed !== []) {
+            $enabledCats = $this->detectEnabledCategories($outputPath);
+            $barrel = $this->typeScriptRenderer->renderTopLevelBarrel($enabledCats);
+            File::ensureDirectoryExists($outputPath);
+            if ($this->writeIfChanged($outputPath.'/index.d.ts', $barrel)) {
+                $changed[] = 'index.d.ts';
+            }
+        }
+
+        $extractionCache->persist();
+
+        return new RegenResult(
+            changed: array_values(array_unique($changed)),
+            warnings: $warnings,
+            failed: $failed,
+            durationMs: (int) round((microtime(true) - $startedAt) * 1000),
+        );
+    }
+
+    /**
      * Run the full generation pipeline using values from config('typefinder').
      * Returns a RegenResult with relative paths of files that changed,
      * any warnings collected, and duration.
@@ -539,5 +618,311 @@ final class Generator
         }
 
         return $pivots;
+    }
+
+    // ── Incremental helpers ─────────────────────────────────────────────
+
+    /**
+     * Map each enabled category to its list of absolute config paths.
+     *
+     * @return array<string, list<string>>
+     */
+    private function buildCategoryMap(array $config): array
+    {
+        $map = [];
+        foreach (['enums', 'models', 'requests', 'resources', 'inertia', 'broadcasting'] as $cat) {
+            if (! ($config[$cat]['enabled'] ?? false)) {
+                continue;
+            }
+
+            $configPaths = $config[$cat]['paths'] ?? [];
+            $resolved = [];
+            foreach ((array) $configPaths as $p) {
+                $real = realpath((string) $p);
+                $resolved[] = $real !== false ? $real : (string) $p;
+            }
+
+            $map[$cat] = $resolved;
+        }
+
+        return $map;
+    }
+
+    /**
+     * Longest-prefix match to find which category a file belongs to.
+     */
+    private function resolveCategory(string $absolutePath, array $categoryMap): ?string
+    {
+        $best = null;
+        $bestLen = 0;
+        $resolved = realpath($absolutePath) ?: $absolutePath;
+        foreach ($categoryMap as $category => $roots) {
+            foreach ($roots as $root) {
+                if (str_starts_with($resolved, $root.'/') && strlen((string) $root) > $bestLen) {
+                    $best = $category;
+                    $bestLen = strlen((string) $root);
+                }
+            }
+        }
+
+        return $best;
+    }
+
+    /**
+     * Resolve the fully-qualified class name from a PHP file.
+     */
+    private function resolveClassName(string $filePath): ?string
+    {
+        $contents = @file_get_contents($filePath);
+        if ($contents === false) {
+            return null;
+        }
+
+        if (! preg_match('/namespace\s+(.+?);/', $contents, $nsMatch)) {
+            return null;
+        }
+
+        if (! preg_match('/(class|enum)\s+(\w+)/', $contents, $classMatch)) {
+            return null;
+        }
+
+        return $nsMatch[1].'\\'.$classMatch[2];
+    }
+
+    /**
+     * Extract metadata from a single PHP file using the appropriate extractor.
+     */
+    private function extractSingleFile(string $path, string $category, array $config, array &$warnings): ?array
+    {
+        $className = $this->resolveClassName($path);
+        if ($className === null || ! class_exists($className)) {
+            $warnings[] = $path.': could not resolve class name — skipped';
+
+            return null;
+        }
+
+        $warn = function (string $msg) use (&$warnings): void {
+            $warnings[] = $msg;
+            if ($this->onWarn !== null) {
+                ($this->onWarn)($msg);
+            }
+        };
+
+        return match ($category) {
+            'enums' => (new EnumExtractor)->extract($className),
+            'models' => $this->extractSingleModel($className, $config, $warn),
+            'requests' => (new RequestExtractor)->extract($className),
+            'resources' => (new ResourceExtractor)->extract($className),
+            'inertia' => $this->extractSingleController($className),
+            'broadcasting' => (new BroadcastExtractor)->extract($className),
+            default => null,
+        };
+    }
+
+    private function extractSingleModel(string $className, array $config, callable $warn): array
+    {
+        $castOverrides = $config['casts']['type_map'] ?? [];
+        $modelExtractor = new ModelExtractor(
+            new ColumnTypeResolver,
+            new CastTypeResolver($castOverrides, $this->typefinderRegistry),
+            $warn,
+        );
+
+        $extraction = $modelExtractor->extract($className);
+        $morphToResolver = new MorphToResolver;
+        $resolved = $morphToResolver->resolve([$extraction]);
+
+        return $resolved[0];
+    }
+
+    /**
+     * @return list<array>|null
+     */
+    private function extractSingleController(string $className): ?array
+    {
+        $pages = (new ControllerExtractor)->extract($className);
+
+        return $pages !== [] ? $pages : null;
+    }
+
+    /**
+     * Render and write a single .d.ts file for a non-aggregated category.
+     */
+    private function writeSingleExtraction(string $category, array $extraction, array $config, string $outputPath, array &$changed): void
+    {
+        if (in_array($category, ['inertia', 'broadcasting'], true)) {
+            return;
+        }
+
+        match ($category) {
+            'enums' => $this->writeSingleEnum($extraction, $config, $outputPath, $changed),
+            'models' => $this->writeSingleModel($extraction, $config, $outputPath, $changed),
+            'requests' => $this->writeSingleRequest($extraction, $config, $outputPath, $changed),
+            'resources' => $this->writeSingleResource($extraction, $outputPath, $changed),
+            default => null,
+        };
+    }
+
+    private function writeSingleEnum(array $enum, array $config, string $outputPath, array &$changed): void
+    {
+        $dir = $outputPath.'/enums';
+        File::ensureDirectoryExists($dir);
+        $emitValues = (bool) ($config['enums']['emit_values'] ?? false);
+        $ext = $emitValues ? 'ts' : 'd.ts';
+        $content = $this->typeScriptRenderer->renderEnum($enum, $emitValues);
+        $relativePath = 'enums/'.$enum['name'].'.'.$ext;
+        if ($this->writeIfChanged($dir.'/'.$enum['name'].'.'.$ext, $content)) {
+            $changed[] = $relativePath;
+        }
+    }
+
+    private function writeSingleModel(array $model, array $config, string $outputPath, array &$changed): void
+    {
+        $dir = $outputPath.'/models';
+        File::ensureDirectoryExists($dir);
+
+        $emitWriteShapes = (bool) ($config['models']['emit_write_shapes'] ?? true);
+        $globalImmutable = (array) ($config['models']['immutable_on_update'] ?? ['id', 'created_at', 'updated_at', 'deleted_at']);
+        $immutable = array_values(array_unique([...$globalImmutable, ...$this->getContractImmutable($model['fqcn'])]));
+
+        $content = $this->typeScriptRenderer->renderModelFile($model, [], [], $emitWriteShapes, $immutable);
+        $relativePath = 'models/'.$model['name'].'.d.ts';
+        if ($this->writeIfChanged($dir.'/'.$model['name'].'.d.ts', $content)) {
+            $changed[] = $relativePath;
+        }
+    }
+
+    private function writeSingleRequest(array $request, array $config, string $outputPath, array &$changed): void
+    {
+        $dir = $outputPath.'/requests';
+        File::ensureDirectoryExists($dir);
+        $extractNested = (bool) ($config['requests']['extract_nested'] ?? false);
+        $content = $this->typeScriptRenderer->renderRequest($request, [], $extractNested);
+        $relativePath = 'requests/'.$request['name'].'.d.ts';
+        if ($this->writeIfChanged($dir.'/'.$request['name'].'.d.ts', $content)) {
+            $changed[] = $relativePath;
+        }
+    }
+
+    private function writeSingleResource(array $resource, string $outputPath, array &$changed): void
+    {
+        $dir = $outputPath.'/resources';
+        File::ensureDirectoryExists($dir);
+        $content = $this->typeScriptRenderer->renderResource($resource, [], [], []);
+        $relativePath = 'resources/'.$resource['name'].'.d.ts';
+        if ($this->writeIfChanged($dir.'/'.$resource['name'].'.d.ts', $content)) {
+            $changed[] = $relativePath;
+        }
+    }
+
+    /**
+     * Remove the .d.ts output for a deleted source file.
+     */
+    private function handleDeletion(string $path, string $category, ExtractionCache $extractionCache, string $outputPath, array &$changed): void
+    {
+        $cachedExtraction = $extractionCache->get($path);
+        $extractionCache->forget($path);
+
+        if ($cachedExtraction === null) {
+            return;
+        }
+
+        if (in_array($category, ['inertia', 'broadcasting'], true)) {
+            return;
+        }
+
+        $name = $cachedExtraction['name'] ?? null;
+        if (! is_string($name)) {
+            return;
+        }
+
+        $ext = ($category === 'enums' && config('typefinder.enums.emit_values', false)) ? 'ts' : 'd.ts';
+        $relative = $category.'/'.$name.'.'.$ext;
+        $abs = $outputPath.'/'.$relative;
+        if (is_file($abs)) {
+            @unlink($abs);
+            $changed[] = $relative;
+        }
+
+        if ($category === 'models') {
+            $pivotRel = 'models/'.$name.'Pivot.d.ts';
+            $pivotAbs = $outputPath.'/'.$pivotRel;
+            if (is_file($pivotAbs)) {
+                @unlink($pivotAbs);
+                $changed[] = $pivotRel;
+            }
+        }
+    }
+
+    /**
+     * Re-render the barrel index for an affected category from what's on disk.
+     */
+    private function rewriteCategoryBarrel(string $category, array $config, string $outputPath, array &$changed): void
+    {
+        if (in_array($category, ['inertia', 'broadcasting'], true)) {
+            return;
+        }
+
+        $dir = $outputPath.'/'.$category;
+        if (! is_dir($dir)) {
+            return;
+        }
+
+        $names = [];
+        $ext = ($category === 'enums' && ($config['enums']['emit_values'] ?? false)) ? 'ts' : 'd.ts';
+        foreach (File::files($dir) as $file) {
+            $filename = $file->getFilename();
+            if ($filename === 'index.'.$ext) {
+                continue;
+            }
+
+            if ($filename === 'index.d.ts') {
+                continue;
+            }
+
+            if (str_ends_with($filename, '.d.ts')) {
+                $names[] = substr($filename, 0, -5);
+            } elseif (str_ends_with($filename, '.ts')) {
+                $names[] = substr($filename, 0, -3);
+            }
+        }
+
+        sort($names);
+
+        $barrelContent = ($category === 'enums' && ($config['enums']['emit_values'] ?? false))
+            ? $this->renderValueBarrel($names)
+            : $this->typeScriptRenderer->renderBarrelIndex($names);
+
+        $barrelRelative = $category.'/index.'.$ext;
+        if ($this->writeIfChanged($dir.'/index.'.$ext, $barrelContent)) {
+            $changed[] = $barrelRelative;
+        }
+    }
+
+    /**
+     * Return the list of category names that have output on disk (for the top-level barrel).
+     *
+     * @return list<string>
+     */
+    private function detectEnabledCategories(string $outputPath): array
+    {
+        $categories = [];
+        foreach (['enums', 'models', 'requests', 'resources'] as $cat) {
+            if (is_dir($outputPath.'/'.$cat)) {
+                $categories[] = $cat;
+            }
+        }
+
+        if (is_file($outputPath.'/pages.d.ts')) {
+            $categories[] = 'pages';
+        }
+
+        if (is_file($outputPath.'/broadcasting.d.ts')) {
+            $categories[] = 'broadcasting';
+        }
+
+        $categories[] = 'helpers';
+
+        return $categories;
     }
 }
