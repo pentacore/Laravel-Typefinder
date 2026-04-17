@@ -34,7 +34,7 @@ jobs:
     name: P${{ matrix.php }} L${{ matrix.laravel }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Compute matrix slug
         env:
@@ -53,7 +53,7 @@ jobs:
         run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
 
       - name: Cache composer packages
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ steps.composer-cache.outputs.dir }}
           key: composer-P${{ matrix.php }}-L${{ env.LARAVEL_SLUG }}-${{ hashFiles('composer.json') }}
@@ -80,7 +80,7 @@ jobs:
 
       - name: Upload JUnit
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: phpunit-P${{ matrix.php }}-L${{ env.LARAVEL_SLUG }}
           path: phpunit-P${{ matrix.php }}-L${{ env.LARAVEL_SLUG }}.xml
@@ -88,7 +88,7 @@ jobs:
 
       - name: Upload generated .d.ts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: generated-dts-P${{ matrix.php }}-L${{ env.LARAVEL_SLUG }}
           path: workbench/resources/js/typefinder/**
@@ -96,7 +96,7 @@ jobs:
 
       - name: Upload coverage to Codecov
         if: matrix.coverage
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v6
         with:
           files: coverage.xml
           flags: php
@@ -117,7 +117,7 @@ jobs:
       pull-requests: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
@@ -127,7 +127,7 @@ jobs:
         id: composer-cache
         run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
       - name: Cache composer packages
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ steps.composer-cache.outputs.dir }}
           key: composer-pint-${{ hashFiles('composer.json') }}
@@ -160,7 +160,7 @@ jobs:
       pull-requests: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
@@ -170,7 +170,7 @@ jobs:
         id: composer-cache
         run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
       - name: Cache composer packages
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ steps.composer-cache.outputs.dir }}
           key: composer-rector-${{ hashFiles('composer.json') }}
@@ -200,7 +200,7 @@ jobs:
     name: Vite plugin
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
@@ -211,7 +211,7 @@ jobs:
         id: composer-cache
         run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
       - name: Cache composer packages
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ steps.composer-cache.outputs.dir }}
           key: composer-vite-P8.4-L12-${{ hashFiles('composer.json') }}
@@ -222,7 +222,7 @@ jobs:
         run: |
           composer require "laravel/framework:12.*" "orchestra/testbench:*" --no-update --no-interaction
           composer update --prefer-dist --no-interaction --no-progress
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: '24'
           cache: 'npm'
@@ -243,13 +243,13 @@ jobs:
           CODECOV_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: npm run build
       - name: Upload vite-plugin dist
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: vite-plugin-dist
           path: packages/vite-plugin-laravel-typefinder/dist
           if-no-files-found: error
       - name: Upload JS coverage to Codecov
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v6
         with:
           files: packages/vite-plugin-laravel-typefinder/coverage/lcov.info
           flags: js
@@ -270,7 +270,7 @@ jobs:
       pull-requests: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/dependency-review-action@v4
         with:
           fail-on-severity: high
@@ -282,7 +282,7 @@ jobs:
     name: Commit message lint
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - uses: wagoid/commitlint-github-action@v6
@@ -298,15 +298,15 @@ jobs:
       contents: read
       checks: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Download JUnit artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: junit
           pattern: phpunit-*
           merge-multiple: true
       - name: Publish summary
-        uses: dorny/test-reporter@v1
+        uses: dorny/test-reporter@v3
         with:
           name: PHPUnit
           path: junit/*.xml

@@ -23,11 +23,11 @@ jobs:
       contents: write       # gh release create
       id-token: write       # npm trusted publisher (OIDC)
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: '24'
           cache: 'npm'

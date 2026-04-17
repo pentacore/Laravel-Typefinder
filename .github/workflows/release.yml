@@ -33,13 +33,13 @@ jobs:
       (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'master')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
           persist-credentials: true
           token: ${{ secrets.RELEASE_PAT }}
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: '24'
           cache: 'npm'
