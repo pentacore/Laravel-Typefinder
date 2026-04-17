@@ -1,5 +1,5 @@
 import { resolve } from 'node:path';
-import { defineConfig } from 'vite';
+import { defineConfig } from 'vitest/config';
 import dts from 'vite-plugin-dts';
 import {codecovVitePlugin} from "@codecov/vite-plugin";
 
@@ -29,5 +29,11 @@ export default defineConfig({
         environment: 'node',
         testTimeout: 15_000,
         include: ['tests/**/*.test.ts'],
+        coverage: {
+            provider: 'v8',
+            reporter: ['text', 'lcov'],
+            reportsDirectory: 'coverage',
+            include: ['src/**/*.ts'],
+        },
     },
 });
