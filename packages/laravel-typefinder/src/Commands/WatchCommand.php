@@ -20,6 +20,16 @@ class WatchCommand extends Command
     {
         $this->emitHandshake();
 
+        if (extension_loaded('pcntl')) {
+            pcntl_async_signals(true);
+            $shutdown = function (int $signal): void {
+                fwrite(STDERR, '[typefinder] received signal '.$signal.', exiting'."\n");
+                exit(0);
+            };
+            pcntl_signal(SIGTERM, $shutdown);
+            pcntl_signal(SIGINT, $shutdown);
+        }
+
         while (! feof(STDIN)) {
             $line = fgets(STDIN);
             if ($line === false) {

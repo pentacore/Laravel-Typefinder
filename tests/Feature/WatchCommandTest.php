@@ -132,4 +132,55 @@ final class WatchCommandTest extends TestCase
         $this->assertIsArray($response['warnings']);
         $this->assertArrayHasKey('duration_ms', $response);
     }
+
+    public function test_sigterm_causes_clean_exit(): void
+    {
+        if (! extension_loaded('pcntl')) {
+            $this->markTestSkipped('pcntl not available');
+        }
+
+        $artisan = dirname(__DIR__, 2).'/vendor/bin/testbench';
+        $process = new Process([PHP_BINARY, $artisan, 'typefinder:watch']);
+        $process->setTimeout(15.0);
+        // Provide a huge amount of stdin so the process stays busy reading.
+        // Each fgets() reads one line, so create 100k lines to keep it busy.
+        $input = str_repeat("x\n", 100000);
+        $process->setInput($input);
+        $process->start();
+
+        try {
+            // Wait for handshake
+            $deadline = microtime(true) + 8.0;
+            while ($process->isRunning() && microtime(true) < $deadline) {
+                if (str_contains($process->getOutput(), '"type":"ready"')) {
+                    break;
+                }
+
+                usleep(50_000);
+            }
+
+            $this->assertStringContainsString('"type":"ready"', $process->getOutput(), 'watcher did not emit ready handshake');
+
+            // Give a small amount of time for the process to be fully initialized
+            usleep(200_000);
+
+            // Verify process is still running
+            $this->assertTrue($process->isRunning(), 'process exited before SIGTERM could be sent');
+
+            // Send SIGTERM and wait for exit
+            $process->signal(SIGTERM);
+
+            $exitDeadline = microtime(true) + 5.0;
+            while ($process->isRunning() && microtime(true) < $exitDeadline) {
+                usleep(50_000);
+            }
+
+            $stderr = $process->getErrorOutput();
+            $this->assertFalse($process->isRunning(), 'watcher did not exit within 5s of SIGTERM; stderr: '.$stderr);
+        } finally {
+            if ($process->isRunning()) {
+                $process->stop(1.0);
+            }
+        }
+    }
 }
