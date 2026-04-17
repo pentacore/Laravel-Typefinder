@@ -1,0 +1,46 @@
+name: Sync master to development
+
+# Whenever master moves (typically via a semantic-release bump), merge it
+# into development so the prerelease branch always contains everything that
+# has shipped to stable. Dependabot opens PRs against development; this
+# workflow keeps development ahead of master in the expected direction.
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+concurrency:
+  group: sync-development
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  merge:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: development
+          persist-credentials: true
+          token: ${{ secrets.RELEASE_PAT }}
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Merge master into development
+        run: |
+          git fetch origin master
+          if git merge-base --is-ancestor refs/remotes/origin/master HEAD; then
+            echo "development already contains master; nothing to do."
+            exit 0
+          fi
+          git merge --no-edit refs/remotes/origin/master
+          git push origin development

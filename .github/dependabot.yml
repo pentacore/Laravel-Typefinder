@@ -7,19 +7,23 @@ version: 2
 updates:
   - package-ecosystem: "composer" # PHP Package
     directory: "/"
+    target-branch: "development"
     schedule:
       interval: "weekly"
   - package-ecosystem: "npm" # Semantic release
     directory: "/"
+    target-branch: "development"
     schedule:
       interval: "weekly"
   - package-ecosystem: "npm" # Vite Plugin
     directory: "/packages/vite-plugin-laravel-typefinder"
+    target-branch: "development"
     schedule:
       interval: "weekly"
   - package-ecosystem: "github-actions"
     # Workflow files stored in the default location of `.github/workflows`
     # You don't need to specify `/.github/workflows` for `directory`. You can use `directory: "/"`.
     directory: "/"
+    target-branch: "development"
     schedule:
       interval: "weekly"
