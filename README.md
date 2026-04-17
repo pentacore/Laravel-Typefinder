@@ -1,4 +1,4 @@
-# Laravel Typefinder
+# Laravel Typefinder [![codecov](https://codecov.io/github/pentacore/Laravel-Typefinder/graph/badge.svg?token=QZGUJ8XF9D)](https://codecov.io/github/pentacore/Laravel-Typefinder)
 
 Laravel Typefinder auto-generates TypeScript type definitions (`.d.ts` files) from your Laravel application. It introspects Eloquent models, backed enums, Form Requests, API Resources, Inertia controllers, broadcast events, and pivot tables to produce accurate, always-fresh types — no manual maintenance required. Ships with opt-in attributes (`#[TypefinderOverrides]`, `#[TypefinderWriteShape]`, `#[TypefinderResource]`, `#[TypefinderPage]`, `#[TypefinderBroadcast]`, `#[TypefinderCast]`, `#[TypefinderIgnore]`) for the cases where static inference needs a nudge, plus a runtime facade for registering types for third-party casts.
 
@@ -74,3 +74,5 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for full contributor guidelines.
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+
