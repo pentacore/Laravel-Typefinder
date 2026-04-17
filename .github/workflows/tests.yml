@@ -114,6 +114,8 @@ jobs:
         run: npx vitest run --coverage --exclude=tests/integration.test.ts --reporter=junit --outputFile=test-report.junit.xml
       - name: Build
         working-directory: packages/vite-plugin-laravel-typefinder
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         run: npm run build
       - name: Upload vite-plugin dist
         uses: actions/upload-artifact@v4
@@ -194,10 +196,18 @@ jobs:
       - name: Run PHPUnit with coverage
         run: vendor/bin/phpunit --coverage-clover=coverage.xml --log-junit=junit.xml
 
+      - name: Upload JUnit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit
+          path: junit.xml
+          if-no-files-found: warn
+
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
         with:
-          files: coverage.xml,junit.xml
+          files: coverage.xml
           flags: php
           fail_ci_if_error: false
           token: ${{ secrets.CODECOV_TOKEN }}

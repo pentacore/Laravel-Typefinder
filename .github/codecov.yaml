@@ -10,7 +10,8 @@ coverage:
         target: auto
         threshold: 5
         paths:
-        - "packages/*/src/**"
+        - "packages/laravel-typefinder"
+        - "packages/vite-plugin-laravel-typefinder"
         # advanced settings
         branches:
         - master
@@ -28,8 +29,8 @@ component_management:
   - component_id: module_laravel_typefinder
     name: Laravel Typefinder
     paths:
-    - packages/laravel-typefinder/**
+    - packages/laravel-typefinder
   - component_id: module_vite_plugin_laravel_typefinder
     name: Vite Plugin
     paths:
-    - packages/vite-plugin-laravel-typefinder/**
+    - packages/vite-plugin-laravel-typefinder
