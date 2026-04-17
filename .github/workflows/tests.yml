@@ -73,9 +73,9 @@ jobs:
           COVERAGE: ${{ matrix.coverage }}
         run: |
           if [ "$COVERAGE" = "true" ]; then
-            vendor/bin/phpunit --log-junit "phpunit-P${{ matrix.php }}-L${LARAVEL_SLUG}.xml" --coverage-clover=coverage.xml
+            vendor/bin/phpunit --log-junit "phpunit-P${{ matrix.php }}-L${LARAVEL_SLUG}.junit.xml" --coverage-clover=coverage.xml
           else
-            vendor/bin/phpunit --log-junit "phpunit-P${{ matrix.php }}-L${LARAVEL_SLUG}.xml"
+            vendor/bin/phpunit --log-junit "phpunit-P${{ matrix.php }}-L${LARAVEL_SLUG}.junit.xml"
           fi
 
       - name: Upload JUnit
@@ -83,7 +83,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: phpunit-P${{ matrix.php }}-L${{ env.LARAVEL_SLUG }}
-          path: phpunit-P${{ matrix.php }}-L${{ env.LARAVEL_SLUG }}.xml
+          path: phpunit-P${{ matrix.php }}-L${{ env.LARAVEL_SLUG }}.junit.xml
           if-no-files-found: warn
 
       - name: Upload generated .d.ts
