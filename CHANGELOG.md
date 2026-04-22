@@ -1,3 +1,17 @@
+## [4.2.1](https://github.com/pentacore/Laravel-Typefinder/compare/v4.2.0...v4.2.1) (2026-04-22)
+
+### Bug Fixes
+
+* rollupTypes broke ([5e8ccb7](https://github.com/pentacore/Laravel-Typefinder/commit/5e8ccb748d12e7bea0ae6a04718330471a6199b7))
+
+### Dependencies and Other Build Updates
+
+* **deps-dev:** bump @semantic-release/exec from 6.0.3 to 7.1.0 ([27ebfa7](https://github.com/pentacore/Laravel-Typefinder/commit/27ebfa78421bce40de3b6221ed99d0c987da26d6))
+* **deps-dev:** bump @semantic-release/github from 11.0.6 to 12.0.6 ([8b8adfd](https://github.com/pentacore/Laravel-Typefinder/commit/8b8adfddf0e43f5e818e47e53d16d8281fedd501))
+* **deps-dev:** bump @semantic-release/npm from 12.0.2 to 13.1.5 ([1d0483a](https://github.com/pentacore/Laravel-Typefinder/commit/1d0483a99870edb9683a2b45299f7fb2ef6fedb6))
+* **deps-dev:** bump conventional-changelog-conventionalcommits ([54a3a12](https://github.com/pentacore/Laravel-Typefinder/commit/54a3a126935d707eebfa627be22a7bc22110d77f))
+* **deps-dev:** update orchestra/testbench requirement ([021d00a](https://github.com/pentacore/Laravel-Typefinder/commit/021d00a6576f56e3c73013d1478882fbb156b211))
+
 ## [4.2.0](https://github.com/pentacore/Laravel-Typefinder/compare/v4.1.0...v4.2.0) (2026-04-17)
 
 ### Features
