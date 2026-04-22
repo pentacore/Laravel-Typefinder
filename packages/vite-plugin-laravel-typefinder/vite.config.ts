@@ -6,7 +6,7 @@ import {codecovVitePlugin} from "@codecov/vite-plugin";
 export default defineConfig({
     plugins: [
         dts({
-            rollupTypes: true,
+            // rollupTypes: true,
             tsconfigPath: './tsconfig.json',
         }),
         codecovVitePlugin({
