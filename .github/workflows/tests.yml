@@ -239,7 +239,6 @@ jobs:
       - name: Build
         working-directory: packages/vite-plugin-laravel-typefinder
         env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
           CODECOV_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: npm run build
       - name: Upload vite-plugin dist
