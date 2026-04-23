@@ -1,8 +1,26 @@
 # @pentacore/vite-plugin-laravel-typefinder
 
+[![NPM Version](https://img.shields.io/npm/v/%40pentacore%2Fvite-plugin-laravel-typefinder?logo=npm&logoColor=white)](https://www.npmjs.com/package/@pentacore/vite-plugin-laravel-typefinder)
+[![NPM Downloads](https://img.shields.io/npm/dm/%40pentacore%2Fvite-plugin-laravel-typefinder?logo=npm&logoColor=white)](https://www.npmjs.com/package/@pentacore/vite-plugin-laravel-typefinder)
+[![Vite](https://img.shields.io/badge/Vite-6%2B-646CFF?logo=vite&logoColor=white)](https://vitejs.dev/)
+[![Types](https://img.shields.io/npm/types/%40pentacore%2Fvite-plugin-laravel-typefinder?logo=typescript&logoColor=white)](https://www.npmjs.com/package/@pentacore/vite-plugin-laravel-typefinder)
+[![Tests](https://github.com/pentacore/Laravel-Typefinder/actions/workflows/tests.yml/badge.svg?branch=master)](https://github.com/pentacore/Laravel-Typefinder/actions/workflows/tests.yml)
+[![codecov](https://codecov.io/github/pentacore/Laravel-Typefinder/graph/badge.svg?token=QZGUJ8XF9D&component=Vite%20Plugin)](https://codecov.io/github/pentacore/Laravel-Typefinder)
+[![License](https://img.shields.io/github/license/pentacore/Laravel-Typefinder)](../../LICENSE)
+
 A Vite plugin that keeps your TypeScript type definitions in sync with your Laravel codebase. In development, it spawns a persistent `typefinder:watch` process that regenerates only the `.d.ts` files affected by each edit — typical latency is 20-60ms per change. In production builds, it runs a one-shot `typefinder:generate` before bundling.
 
 > **This plugin is a companion to the [`pentacore/laravel-typefinder`](https://packagist.org/packages/pentacore/laravel-typefinder) Composer package — you must install that first.**
+
+## Contents
+
+- [Requirements](#requirements)
+- [Installation](#installation)
+- [Usage](#usage)
+- [Configuration](#configuration)
+- [Behavior](#behavior)
+- [Alternative install (from vendor)](#alternative-install-from-vendor)
+- [License](#license)
 
 ## Requirements
 

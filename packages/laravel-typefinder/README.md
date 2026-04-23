@@ -1,8 +1,39 @@
 # laravel-typefinder
 
+[![Packagist Version](https://img.shields.io/packagist/v/pentacore/laravel-typefinder?logo=packagist&logoColor=white)](https://packagist.org/packages/pentacore/laravel-typefinder)
+[![Packagist Downloads](https://img.shields.io/packagist/dt/pentacore/laravel-typefinder?logo=packagist&logoColor=white)](https://packagist.org/packages/pentacore/laravel-typefinder/stats)
+[![PHP Version](https://img.shields.io/packagist/php-v/pentacore/laravel-typefinder?logo=php&logoColor=white)](https://www.php.net/)
+[![Laravel Version](https://img.shields.io/badge/Laravel-11%20%7C%2012%20%7C%2013-FF2D20?logo=laravel&logoColor=white)](https://laravel.com/)
+[![Tests](https://github.com/pentacore/Laravel-Typefinder/actions/workflows/tests.yml/badge.svg?branch=master)](https://github.com/pentacore/Laravel-Typefinder/actions/workflows/tests.yml)
+[![codecov](https://codecov.io/github/pentacore/Laravel-Typefinder/graph/badge.svg?token=QZGUJ8XF9D&component=Laravel%20Typefinder)](https://codecov.io/github/pentacore/Laravel-Typefinder)
+[![License](https://img.shields.io/github/license/pentacore/Laravel-Typefinder)](../../LICENSE)
+
 Auto-generate TypeScript type definitions from your Laravel application's Models, Enums, Form Requests, API Resources, Inertia pages, and broadcast events.
 
 Laravel Typefinder introspects your database schema, `$casts` declarations, validation rules, Eloquent relationships, controller attributes, and broadcast events to emit accurate `.d.ts` files into your frontend source tree. Types stay in sync without any manual maintenance — run the artisan command or let the Vite plugin do it on every HMR change.
+
+## Contents
+
+- [Requirements](#requirements)
+- [Installation](#installation)
+- [Publishing config](#publishing-config)
+- [Usage](#usage)
+- [What gets generated](#what-gets-generated)
+  - [Models](#models)
+  - [Enums](#enums)
+  - [Form Requests](#form-requests)
+  - [Pivots](#pivots)
+  - [Resources](#resources-default-on)
+  - [Pages](#pages-opt-in-typefinderinertiaenabled)
+  - [Broadcasting](#broadcasting-opt-in-typefinderbroadcastingenabled)
+  - [Helpers](#helpers-always-emitted)
+- [Attribute reference](#attribute-reference)
+- [Custom casts](#custom-casts)
+- [Configuration](#configuration)
+- [JSON output shape](#json-output-shape---json)
+- [Publishing the Claude Code skill](#publishing-the-claude-code-skill)
+- [Testing](#testing)
+- [License](#license)
 
 ## Requirements
 
