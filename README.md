@@ -1,4 +1,4 @@
-# Laravel Typefinder [![codecov](https://codecov.io/github/pentacore/Laravel-Typefinder/graph/badge.svg?token=QZGUJ8XF9D)](https://codecov.io/github/pentacore/Laravel-Typefinder) ![Packagist Version](https://img.shields.io/packagist/v/pentacore/laravel-typefinder) ![NPM Version](https://img.shields.io/npm/v/%40pentacore%2Fvite-plugin-laravel-typefinder)
+# Laravel Typefinder [![codecov](https://codecov.io/github/pentacore/Laravel-Typefinder/graph/badge.svg?token=QZGUJ8XF9D)](https://codecov.io/github/pentacore/Laravel-Typefinder) [![Packagist Version](https://img.shields.io/packagist/v/pentacore/laravel-typefinder)](https://packagist.org/packages/pentacore/laravel-typefinder) [![NPM Version](https://img.shields.io/npm/v/%40pentacore%2Fvite-plugin-laravel-typefinder)](https://www.npmjs.com/package/@pentacore/vite-plugin-laravel-typefinder)
 
 
 
