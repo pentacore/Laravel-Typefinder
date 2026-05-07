@@ -1,3 +1,9 @@
+## [4.2.2](https://github.com/pentacore/Laravel-Typefinder/compare/v4.2.1...v4.2.2) (2026-05-07)
+
+### Bug Fixes
+
+* emit type declarations at dist/index.d.ts and order exports correctly ([6efae7a](https://github.com/pentacore/Laravel-Typefinder/commit/6efae7af29f4cf4a7ab67ffba176128c5558a4d5))
+
 ## [4.2.1](https://github.com/pentacore/Laravel-Typefinder/compare/v4.2.0...v4.2.1) (2026-04-22)
 
 ### Bug Fixes
