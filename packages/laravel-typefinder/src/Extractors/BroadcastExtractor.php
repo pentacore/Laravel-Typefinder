@@ -157,8 +157,22 @@ class BroadcastExtractor
                 continue;
             }
 
+            // PHP 8.3 forbids ReflectionProperty::setValue() on a readonly
+            // property from outside the declaring class scope (8.4+ relaxed
+            // this). Bind a setter closure to the declaring class so the
+            // assignment runs in the right scope on every supported version.
+            $declaringClass = $reflectionProperty->getDeclaringClass()->getName();
+            $name = $reflectionProperty->getName();
+            $setter = \Closure::bind(
+                static function (object $object) use ($name, $sentinel): void {
+                    $object->{$name} = $sentinel;
+                },
+                null,
+                $declaringClass,
+            );
+
             try {
-                $reflectionProperty->setValue($instance, $sentinel);
+                $setter($instance);
             } catch (Throwable) {
                 // readonly already-initialized or unsupported — leave uninit.
             }
