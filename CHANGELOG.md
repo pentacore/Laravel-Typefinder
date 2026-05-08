@@ -1,3 +1,10 @@
+## [4.2.3](https://github.com/pentacore/Laravel-Typefinder/compare/v4.2.2...v4.2.3) (2026-05-08)
+
+### Bug Fixes
+
+* **broadcast:** resolve channel templating for parent ctor-promoted readonly props ([4c33a9b](https://github.com/pentacore/Laravel-Typefinder/commit/4c33a9bcab10118128ca462e89c129647d698d39))
+* **broadcast:** use Closure::bind for readonly prefill on PHP 8.3 ([ebc84aa](https://github.com/pentacore/Laravel-Typefinder/commit/ebc84aa2e7c001629ad0d8ae28444e9b3ce9bf08))
+
 ## [4.2.2](https://github.com/pentacore/Laravel-Typefinder/compare/v4.2.1...v4.2.2) (2026-05-07)
 
 ### Bug Fixes
