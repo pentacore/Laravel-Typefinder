@@ -339,6 +339,14 @@ PHP);
         $this->assertStringContainsString("'orders.{orderId}':", $content);
         $this->assertStringContainsString("'chat.{roomId}':", $content);
 
+        // Subclass events whose `broadcastOn()` interpolates a parent
+        // ctor-promoted readonly property must still resolve, with the
+        // property name surfacing as a `{name}` placeholder in the channel.
+        $this->assertStringContainsString("'party.{partyId}':", $content);
+        $this->assertStringContainsString("'QuestAdded':", $content);
+        $this->assertStringContainsString("'QuestRemoved':", $content);
+        $this->assertStringContainsString("'QuestUpdated':", $content);
+
         $barrel = File::get($this->outputPath.'/index.d.ts');
         $this->assertStringContainsString("export type * from './broadcasting';", $barrel);
     }

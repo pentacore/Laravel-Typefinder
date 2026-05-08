@@ -47,6 +47,16 @@ class BroadcastExtractor
         } else {
             $channels = $this->resolveChannels($instance);
             if ($channels === null) {
+                // broadcastOn likely interpolates uninit ctor-promoted props
+                // (e.g. `'party.'.$this->partyId`). Retry with a sentinel-prefilled
+                // instance so the channel template comes out as a literal
+                // (`'party.{partyId}'`), matching the OrderShipped convention.
+                $prefilled = $reflectionClass->newInstanceWithoutConstructor();
+                $this->prefillUninitializedProperties($prefilled, $reflectionClass);
+                $channels = $this->resolveChannels($prefilled);
+            }
+
+            if ($channels === null) {
                 throw new \RuntimeException('Could not resolve channels for '.$eventClass);
             }
         }
@@ -129,6 +139,53 @@ class BroadcastExtractor
     protected function cheapInstance(ReflectionClass $reflectionClass): object
     {
         return $reflectionClass->newInstanceWithoutConstructor();
+    }
+
+    protected function prefillUninitializedProperties(object $instance, ReflectionClass $reflectionClass): void
+    {
+        foreach ($reflectionClass->getProperties(ReflectionProperty::IS_PUBLIC) as $reflectionProperty) {
+            if ($reflectionProperty->isStatic()) {
+                continue;
+            }
+
+            if ($reflectionProperty->isInitialized($instance)) {
+                continue;
+            }
+
+            $sentinel = $this->sentinelFor($reflectionProperty);
+            if ($sentinel === self::NO_SENTINEL) {
+                continue;
+            }
+
+            try {
+                $reflectionProperty->setValue($instance, $sentinel);
+            } catch (Throwable) {
+                // readonly already-initialized or unsupported — leave uninit.
+            }
+        }
+    }
+
+    private const string NO_SENTINEL = "\0__typefinder_no_sentinel__\0";
+
+    /**
+     * @return mixed
+     */
+    protected function sentinelFor(ReflectionProperty $reflectionProperty)
+    {
+        $type = $reflectionProperty->getType();
+        if (! $type instanceof ReflectionNamedType) {
+            return $type !== null && $type->allowsNull() ? null : self::NO_SENTINEL;
+        }
+
+        $name = $type->getName();
+
+        return match ($name) {
+            'string' => '{'.$reflectionProperty->getName().'}',
+            'int', 'float' => 0,
+            'bool' => false,
+            'array' => [],
+            default => $type->allowsNull() ? null : self::NO_SENTINEL,
+        };
     }
 
     protected function tryCall(object $instance, string $method): ?string
