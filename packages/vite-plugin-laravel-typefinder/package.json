@@ -41,9 +41,9 @@
         "@types/node": "^24.12.2",
         "@types/picomatch": "^4.0.3",
         "@vitest/coverage-v8": "^4.1.4",
-        "eslint": "^10.2.0",
+        "eslint": "^10.3.0",
         "typescript": "^6.0.3",
-        "typescript-eslint": "^8.58.2",
+        "typescript-eslint": "^8.59.2",
         "vite": "^6.4.2",
         "vite-plugin-dts": "^4.5.4",
         "vitest": "^4.1.4"
