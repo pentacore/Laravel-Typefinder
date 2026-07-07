@@ -90,7 +90,6 @@ final class BroadcastExtractorTest extends TestCase
         $warned = [];
         $results = $this->broadcastExtractor->extractFromDirectory(
             workbench_path('app/Events'),
-            onExtract: null,
             onWarn: function (string $cls, \Throwable $throwable) use (&$warned): void {
                 $warned[] = $cls;
             },

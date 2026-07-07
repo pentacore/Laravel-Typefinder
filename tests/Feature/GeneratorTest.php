@@ -149,7 +149,7 @@ final class GeneratorTest extends TestCase
         // Mutate the enum output so writeIfChanged detects a diff
         File::put($this->output.'/enums/PostStatus.d.ts', '// stale');
 
-        $enumPath = (new ReflectionClass(PostStatus::class))->getFileName();
+        $enumPath = new ReflectionClass(PostStatus::class)->getFileName();
         $regenResult = $generator->generatePaths([$enumPath]);
 
         $this->assertContains('enums/PostStatus.d.ts', $regenResult->changed);
@@ -165,7 +165,7 @@ final class GeneratorTest extends TestCase
 
         File::put($this->output.'/models/User.d.ts', '// stale');
 
-        $modelPath = (new ReflectionClass(User::class))->getFileName();
+        $modelPath = new ReflectionClass(User::class)->getFileName();
         $regenResult = $generator->generatePaths([$modelPath]);
 
         $this->assertContains('models/User.d.ts', $regenResult->changed);
@@ -180,7 +180,7 @@ final class GeneratorTest extends TestCase
 
         File::put($this->output.'/requests/StorePostRequest.d.ts', '// stale');
 
-        $requestPath = (new ReflectionClass(StorePostRequest::class))->getFileName();
+        $requestPath = new ReflectionClass(StorePostRequest::class)->getFileName();
         $regenResult = $generator->generatePaths([$requestPath]);
 
         $this->assertContains('requests/StorePostRequest.d.ts', $regenResult->changed);
@@ -195,7 +195,7 @@ final class GeneratorTest extends TestCase
 
         File::put($this->output.'/resources/UserResource.d.ts', '// stale');
 
-        $resourcePath = (new ReflectionClass(UserResource::class))->getFileName();
+        $resourcePath = new ReflectionClass(UserResource::class)->getFileName();
         $regenResult = $generator->generatePaths([$resourcePath]);
 
         $this->assertContains('resources/UserResource.d.ts', $regenResult->changed);
@@ -248,7 +248,7 @@ final class GeneratorTest extends TestCase
         // Mutate a model so incremental regen rewrites it
         File::put($this->output.'/models/User.d.ts', '// stale');
 
-        $modelPath = (new ReflectionClass(User::class))->getFileName();
+        $modelPath = new ReflectionClass(User::class)->getFileName();
         $regenResult = $generator->generatePaths([$modelPath]);
 
         $barrelAfter = File::get($this->output.'/models/index.d.ts');
@@ -274,7 +274,7 @@ final class GeneratorTest extends TestCase
 
         // Incremental regen that touches a model should still produce a valid barrel
         File::put($this->output.'/models/User.d.ts', '// stale');
-        $modelPath = (new ReflectionClass(User::class))->getFileName();
+        $modelPath = new ReflectionClass(User::class)->getFileName();
         $generator->generatePaths([$modelPath]);
 
         $barrelAfter = File::get($this->output.'/index.d.ts');
@@ -309,7 +309,7 @@ final class GeneratorTest extends TestCase
         // Mutate so incremental detects a change
         File::put($this->output.'/enums/PostStatus.ts', '// stale');
 
-        $enumPath = (new ReflectionClass(PostStatus::class))->getFileName();
+        $enumPath = new ReflectionClass(PostStatus::class)->getFileName();
         $regenResult = $generator->generatePaths([$enumPath]);
 
         $this->assertContains('enums/PostStatus.ts', $regenResult->changed);

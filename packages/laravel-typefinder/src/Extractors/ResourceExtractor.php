@@ -168,7 +168,7 @@ class ResourceExtractor
                     continue;
                 }
 
-                $this->modelShortNameMap[(new ReflectionClass($class))->getShortName()] = $class;
+                $this->modelShortNameMap[new ReflectionClass($class)->getShortName()] = $class;
             }
         }
 

@@ -154,7 +154,7 @@ final class Generator
             }
 
             foreach ($allEnums as $allEnum) {
-                $absolutePath = (new ReflectionClass($allEnum['fqcn']))->getFileName();
+                $absolutePath = new ReflectionClass($allEnum['fqcn'])->getFileName();
                 if ($absolutePath !== false) {
                     $extractionCache->put($absolutePath, 'enums', $allEnum);
                 }
@@ -184,7 +184,7 @@ final class Generator
             $allModels = $morphToResolver->resolve($allModels);
 
             foreach ($allModels as $allModel) {
-                $absolutePath = (new ReflectionClass($allModel['fqcn']))->getFileName();
+                $absolutePath = new ReflectionClass($allModel['fqcn'])->getFileName();
                 if ($absolutePath !== false) {
                     $extractionCache->put($absolutePath, 'models', $allModel);
                 }
@@ -210,7 +210,7 @@ final class Generator
             }
 
             foreach ($allRequests as $allRequest) {
-                $absolutePath = (new ReflectionClass($allRequest['fqcn']))->getFileName();
+                $absolutePath = new ReflectionClass($allRequest['fqcn'])->getFileName();
                 if ($absolutePath !== false) {
                     $extractionCache->put($absolutePath, 'requests', $allRequest);
                 }
@@ -237,7 +237,7 @@ final class Generator
             }
 
             foreach ($allResources as $allResource) {
-                $absolutePath = (new ReflectionClass($allResource['fqcn']))->getFileName();
+                $absolutePath = new ReflectionClass($allResource['fqcn'])->getFileName();
                 if ($absolutePath !== false) {
                     $extractionCache->put($absolutePath, 'resources', $allResource);
                 }
@@ -401,7 +401,7 @@ final class Generator
      */
     private function getContractImmutable(string $fqcn): array
     {
-        $attrs = (new ReflectionClass($fqcn))
+        $attrs = new ReflectionClass($fqcn)
             ->getAttributes(TypefinderWriteShape::class, ReflectionAttribute::IS_INSTANCEOF);
         if ($attrs === []) {
             return [];

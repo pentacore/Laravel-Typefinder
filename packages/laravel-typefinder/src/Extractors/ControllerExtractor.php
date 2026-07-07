@@ -73,7 +73,7 @@ class ControllerExtractor
                 continue;
             }
 
-            if ((new ReflectionClass($className))->getAttributes(TypefinderIgnore::class, ReflectionAttribute::IS_INSTANCEOF) !== []) {
+            if (new ReflectionClass($className)->getAttributes(TypefinderIgnore::class, ReflectionAttribute::IS_INSTANCEOF) !== []) {
                 continue;
             }
 

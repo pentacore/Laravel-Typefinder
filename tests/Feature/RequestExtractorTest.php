@@ -163,7 +163,6 @@ final class RequestExtractorTest extends TestCase
         $warned = [];
         $results = $this->requestExtractor->extractFromDirectory(
             workbench_path('app/Http/Requests'),
-            onExtract: null,
             onWarn: function (string $cls, \Throwable $throwable) use (&$warned): void {
                 $warned[] = $cls;
             },

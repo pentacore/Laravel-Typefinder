@@ -53,7 +53,7 @@ final class IncrementalRegenTest extends TestCase
         File::put($userPath, '// stale');
 
         $regenResult = $generator->generatePaths([
-            (new ReflectionClass(User::class))->getFileName(),
+            new ReflectionClass(User::class)->getFileName(),
         ]);
 
         clearstatcache();
@@ -113,7 +113,7 @@ final class IncrementalRegenTest extends TestCase
 
         sleep(1);
 
-        $userSourcePath = (new ReflectionClass(User::class))->getFileName();
+        $userSourcePath = new ReflectionClass(User::class)->getFileName();
         $this->artisan('typefinder:generate', ['--only' => [$userSourcePath]])->assertSuccessful();
 
         clearstatcache();
