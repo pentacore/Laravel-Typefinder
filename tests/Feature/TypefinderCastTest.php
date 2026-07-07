@@ -16,7 +16,7 @@ final class TypefinderCastTest extends TestCase
 {
     public function test_settings_cast_declares_type_via_attribute(): void
     {
-        $attrs = (new ReflectionClass(SettingsCast::class))->getAttributes(TypefinderCast::class);
+        $attrs = new ReflectionClass(SettingsCast::class)->getAttributes(TypefinderCast::class);
 
         $this->assertCount(1, $attrs);
         $this->assertSame('{ theme: string; notifications: boolean }', $attrs[0]->newInstance()->type);

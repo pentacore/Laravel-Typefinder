@@ -10,7 +10,7 @@ return RectorConfig::configure()
         __DIR__.'/packages/laravel-typefinder/src',
         __DIR__.'/tests',
     ])
-    ->withPhpSets()
+    ->withPhpSets(php84: true)
     ->withPreparedSets(
         deadCode: true,
         codeQuality: true,

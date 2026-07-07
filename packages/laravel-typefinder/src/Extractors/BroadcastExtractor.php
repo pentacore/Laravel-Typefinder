@@ -181,10 +181,7 @@ class BroadcastExtractor
 
     private const string NO_SENTINEL = "\0__typefinder_no_sentinel__\0";
 
-    /**
-     * @return mixed
-     */
-    protected function sentinelFor(ReflectionProperty $reflectionProperty)
+    protected function sentinelFor(ReflectionProperty $reflectionProperty): null|string|array|int|false
     {
         $type = $reflectionProperty->getType();
         if (! $type instanceof ReflectionNamedType) {

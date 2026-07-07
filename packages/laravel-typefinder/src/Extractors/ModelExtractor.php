@@ -188,7 +188,7 @@ class ModelExtractor
      */
     protected function getContractServerFilled(Model $model): array
     {
-        $attrs = (new ReflectionClass($model))
+        $attrs = new ReflectionClass($model)
             ->getAttributes(TypefinderWriteShape::class, ReflectionAttribute::IS_INSTANCEOF);
         if ($attrs === []) {
             return [];
@@ -205,7 +205,7 @@ class ModelExtractor
     {
         $respect = (bool) config('typefinder.models.respect_mass_assignment', true);
 
-        $attrs = (new ReflectionClass($model))
+        $attrs = new ReflectionClass($model)
             ->getAttributes(TypefinderWriteShape::class, ReflectionAttribute::IS_INSTANCEOF);
         if ($attrs !== []) {
             $override = $attrs[0]->newInstance()->respectMassAssignment;
@@ -236,7 +236,7 @@ class ModelExtractor
      */
     protected function getTypeOverrides(Model $model): array
     {
-        $attrs = (new ReflectionClass($model))
+        $attrs = new ReflectionClass($model)
             ->getAttributes(TypefinderOverrides::class, ReflectionAttribute::IS_INSTANCEOF);
         if ($attrs === []) {
             return [];
@@ -363,7 +363,7 @@ class ModelExtractor
      */
     protected function isIgnored(string $className): bool
     {
-        return (new ReflectionClass($className))
+        return new ReflectionClass($className)
             ->getAttributes(TypefinderIgnore::class, ReflectionAttribute::IS_INSTANCEOF) !== [];
     }
 

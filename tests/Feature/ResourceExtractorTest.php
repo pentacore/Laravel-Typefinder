@@ -94,7 +94,6 @@ final class ResourceExtractorTest extends TestCase
         $warned = [];
         $results = $this->resourceExtractor->extractFromDirectory(
             workbench_path('app/Http/Resources'),
-            onExtract: null,
             onWarn: function (string $cls, \Throwable $throwable) use (&$warned): void {
                 $warned[] = $cls;
             },

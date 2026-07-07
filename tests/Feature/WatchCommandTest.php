@@ -220,7 +220,7 @@ final class WatchCommandTest extends TestCase
 
     public function test_regen_with_specific_paths_returns_done(): void
     {
-        $userPath = (new \ReflectionClass(User::class))->getFileName();
+        $userPath = new \ReflectionClass(User::class)->getFileName();
         $stdin = ProtocolCodec::encode([
             'type' => 'regen',
             'id' => 'inc1',

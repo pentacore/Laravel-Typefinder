@@ -14,7 +14,7 @@ final class TypefinderOverridesTest extends TestCase
 {
     public function test_post_model_declares_overrides_attribute(): void
     {
-        $attrs = (new ReflectionClass(Post::class))->getAttributes(TypefinderOverrides::class);
+        $attrs = new ReflectionClass(Post::class)->getAttributes(TypefinderOverrides::class);
 
         $this->assertCount(1, $attrs);
         $overrides = $attrs[0]->newInstance()->overrides;
@@ -24,7 +24,7 @@ final class TypefinderOverridesTest extends TestCase
 
     public function test_model_without_attribute_has_no_overrides(): void
     {
-        $attrs = (new ReflectionClass(Comment::class))->getAttributes(TypefinderOverrides::class);
+        $attrs = new ReflectionClass(Comment::class)->getAttributes(TypefinderOverrides::class);
 
         $this->assertSame([], $attrs);
     }

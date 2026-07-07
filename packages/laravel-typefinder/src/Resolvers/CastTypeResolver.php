@@ -85,7 +85,7 @@ class CastTypeResolver
         }
 
         if (class_exists($cast)) {
-            $attrs = (new ReflectionClass($cast))->getAttributes(TypefinderCast::class, ReflectionAttribute::IS_INSTANCEOF);
+            $attrs = new ReflectionClass($cast)->getAttributes(TypefinderCast::class, ReflectionAttribute::IS_INSTANCEOF);
             if ($attrs !== []) {
                 return $attrs[0]->newInstance()->type;
             }
