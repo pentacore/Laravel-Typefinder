@@ -1,3 +1,36 @@
+## [5.0.0](https://github.com/pentacore/Laravel-Typefinder/compare/v4.2.3...v5.0.0) (2026-07-07)
+
+### ⚠ BREAKING CHANGES
+
+* Laravel 11 (illuminate ^11.0) is no longer supported.
+The minimum supported version is now Laravel 12. Update to Laravel 12 or
+13 before upgrading this package.
+
+### Features
+
+* drop support for Laravel 11 and php 8.3 ([fb2e16f](https://github.com/pentacore/Laravel-Typefinder/commit/fb2e16ff25fe0f8c8217a51c164c596ea4a60d8c))
+
+### Bug Fixes
+
+* **request:** fold wildcard validation rules into array-of-objects ([86e0427](https://github.com/pentacore/Laravel-Typefinder/commit/86e04271dd03893f98dab636af4a7d956c87e770))
+
+### Dependencies and Other Build Updates
+
+* **deps-dev:** bump @semantic-release/github from 12.0.6 to 12.0.9 ([c0d59d1](https://github.com/pentacore/Laravel-Typefinder/commit/c0d59d1466483618519e1707cdad849a8f03d6f5))
+* **deps-dev:** bump eslint from 10.2.1 to 10.3.0 ([71b1489](https://github.com/pentacore/Laravel-Typefinder/commit/71b14890d36b935dcf51a71a51b7e907d2fb54cf))
+* **deps-dev:** bump fast-uri ([95b52c6](https://github.com/pentacore/Laravel-Typefinder/commit/95b52c6ea7cfe18d2e99f2f6f8b4ecb509fd7be1))
+* **deps-dev:** bump semantic-release from 24.2.9 to 25.0.3 ([c759a5f](https://github.com/pentacore/Laravel-Typefinder/commit/c759a5fa54b433d759f4de9cacf309a2e2145ea4))
+* **deps-dev:** bump typescript-eslint from 8.59.0 to 8.59.2 ([2c959f2](https://github.com/pentacore/Laravel-Typefinder/commit/2c959f2f53afcabeea6ef8c968229f59e7ac392a))
+* **deps-dev:** bump typescript-eslint from 8.59.2 to 8.63.0 ([41e0f03](https://github.com/pentacore/Laravel-Typefinder/commit/41e0f03fbce2e36b94e768e3d2fce1b30188b44f))
+* **deps-dev:** bump vite in /packages/vite-plugin-laravel-typefinder ([673215f](https://github.com/pentacore/Laravel-Typefinder/commit/673215f06181b083ae93ed2cf907bf41aed60a99))
+* **deps-dev:** bump vite-plugin-dts ([24f3dcd](https://github.com/pentacore/Laravel-Typefinder/commit/24f3dcde63315a2246c4102abb55374db6ed34a4))
+* **deps-dev:** bump vite-plugin-dts from 4.5.4 to 5.0.3 ([9de58dd](https://github.com/pentacore/Laravel-Typefinder/commit/9de58ddb83f13333562967864f39bd0301498635))
+* **deps-dev:** bump vitest from 4.1.5 to 4.1.10 ([95bfa0f](https://github.com/pentacore/Laravel-Typefinder/commit/95bfa0fc7a3488ef5e10779a6845e97f80c97ea7))
+* **deps:** bump actions/cache from 5 to 6 ([14e7ea4](https://github.com/pentacore/Laravel-Typefinder/commit/14e7ea4ec15af937413a2f9aeb467971d8c1b777))
+* **deps:** bump actions/checkout from 6 to 7 ([fc5dcd7](https://github.com/pentacore/Laravel-Typefinder/commit/fc5dcd782964dc284e9538f7385ee0ca8a35694d))
+* **deps:** bump actions/dependency-review-action from 4 to 5 ([7e07fcb](https://github.com/pentacore/Laravel-Typefinder/commit/7e07fcb64826416c604f4661df8367dba489f884))
+* **deps:** bump codecov/codecov-action from 6 to 7 ([feb88d0](https://github.com/pentacore/Laravel-Typefinder/commit/feb88d0716a9a2cde0805c69b64a156eb014b69d))
+
 ## [4.2.3](https://github.com/pentacore/Laravel-Typefinder/compare/v4.2.2...v4.2.3) (2026-05-08)
 
 ### Bug Fixes
