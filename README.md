@@ -107,11 +107,10 @@ Types are written to `resources/js/typefinder/` by default. The Vite plugin re-r
 
 Every cell below is exercised in CI on every push and PR.
 
-|          | PHP 8.3 | PHP 8.4 | PHP 8.5 |
-|----------|:-------:|:-------:|:-------:|
-| Laravel 11 | ✅ | ✅ | — |
-| Laravel 12 | ✅ | ✅ | ✅ |
-| Laravel 13 | ✅ | ✅ | ✅ |
+|          | PHP 8.4 | PHP 8.5 |
+|----------|:-------:|:-------:|
+| Laravel 12 | ✅ | ✅ |
+| Laravel 13 | ✅ | ✅ |
 
 ## Documentation
 
