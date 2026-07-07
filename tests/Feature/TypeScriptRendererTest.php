@@ -6,6 +6,7 @@ namespace Tests\Feature;
 
 use App\Enums\PostStatus;
 use App\Http\Requests\StorePostRequest;
+use App\Http\Requests\StoreScheduleRequest;
 use App\Models\Comment;
 use App\Models\Post;
 use App\Models\QuirkyThing;
@@ -344,6 +345,47 @@ final class TypeScriptRendererTest extends TestCase
 
         $this->assertStringContainsString('export type StoreUserRequestAddress = {', $output);
         $this->assertStringContainsString('address: StoreUserRequestAddress;', $output);
+    }
+
+    public function test_renders_request_with_object_array_wildcard(): void
+    {
+        $request = [
+            'name' => 'StoreScheduleRequest',
+            'fqcn' => StoreScheduleRequest::class,
+            'fields' => [
+                ['name' => 'rate_limits', 'type' => 'object-array', 'required' => false, 'nullable' => true, 'children' => [
+                    ['name' => 'metric', 'type' => 'string', 'required' => true, 'nullable' => false],
+                    ['name' => 'period', 'type' => 'string', 'required' => true, 'nullable' => false],
+                    ['name' => 'limit_value', 'type' => 'number', 'required' => true, 'nullable' => false],
+                ]],
+            ],
+        ];
+
+        $output = $this->typeScriptRenderer->renderRequest($request, [], false);
+
+        $this->assertStringContainsString('rate_limits?: {', $output);
+        $this->assertStringContainsString('metric: string;', $output);
+        $this->assertStringContainsString('limit_value: number;', $output);
+        $this->assertStringContainsString('}[] | null;', $output);
+        $this->assertStringNotContainsString('*', $output);
+    }
+
+    public function test_renders_request_with_extracted_object_array_wildcard(): void
+    {
+        $request = [
+            'name' => 'StoreScheduleRequest',
+            'fqcn' => StoreScheduleRequest::class,
+            'fields' => [
+                ['name' => 'rate_limits', 'type' => 'object-array', 'required' => false, 'nullable' => true, 'children' => [
+                    ['name' => 'metric', 'type' => 'string', 'required' => true, 'nullable' => false],
+                ]],
+            ],
+        ];
+
+        $output = $this->typeScriptRenderer->renderRequest($request, [], true);
+
+        $this->assertStringContainsString('export type StoreScheduleRequestRate_limits = {', $output);
+        $this->assertStringContainsString('rate_limits?: StoreScheduleRequestRate_limits[] | null;', $output);
     }
 
     public function test_renders_pivot_type(): void

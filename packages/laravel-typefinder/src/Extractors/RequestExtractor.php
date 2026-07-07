@@ -189,6 +189,8 @@ class RequestExtractor
         $topLevel = [];
         $nested = [];
         $wildcardTypes = [];
+        $wildcardObjects = [];
+        $unsafeWildcards = [];
         $confirmedFields = [];
 
         // Separate top-level, nested, and wildcard rules
@@ -197,14 +199,32 @@ class RequestExtractor
 
             if (str_contains($fieldName, '.')) {
                 $parts = explode('.', $fieldName, 2);
+                $parent = $parts[0];
+                $rest = $parts[1];
 
-                if ($parts[1] === '*') {
-                    // Wildcard rule: tags.* => 'string' → tags is string[]
-                    $wildcardTypes[$parts[0]] = $this->resolveType($fieldRules);
+                if ($rest === '*') {
+                    // Bare wildcard rule: tags.* => 'string' → tags is string[]
+                    $wildcardTypes[$parent] = $this->resolveType($fieldRules);
+                } elseif (str_starts_with($rest, '*.')) {
+                    // Object-array wildcard: rate_limits.*.metric => ...
+                    // The child path is everything after the leading '*.'.
+                    $childPath = substr($rest, 2);
+
+                    if (str_contains($childPath, '*')) {
+                        // Nested wildcard (e.g. matrix.*.* or items.*.children.*.name):
+                        // can't be flattened into a single object shape. Degrade to a
+                        // safe, VALID TS array type rather than emit a bare `*` key.
+                        $unsafeWildcards[$parent] = true;
+                    } else {
+                        $wildcardObjects[$parent][] = [
+                            'path' => $childPath,
+                            'rules' => $fieldRules,
+                        ];
+                    }
                 } else {
                     // Nested rule: metadata.key => 'string'
-                    $nested[$parts[0]][] = [
-                        'path' => $parts[1],
+                    $nested[$parent][] = [
+                        'path' => $rest,
                         'rules' => $fieldRules,
                     ];
                 }
@@ -226,7 +246,22 @@ class RequestExtractor
             }
 
             // Handle array/list types with wildcard items
-            if ($type === 'array' && isset($wildcardTypes[$fieldName])) {
+            if ($type === 'array' && isset($unsafeWildcards[$fieldName])) {
+                // Nested wildcard we can't model precisely — emit a safe array type.
+                $type = 'unknown[]';
+            } elseif ($type === 'array' && isset($wildcardObjects[$fieldName])) {
+                // Array-of-objects: rate_limits.*.metric etc.
+                $children = $this->parseNestedFields($wildcardObjects[$fieldName]);
+                $fields[] = [
+                    'name' => $fieldName,
+                    'type' => 'object-array',
+                    'required' => $required,
+                    'nullable' => $nullable,
+                    'children' => $children,
+                ];
+
+                continue;
+            } elseif ($type === 'array' && isset($wildcardTypes[$fieldName])) {
                 $itemType = $wildcardTypes[$fieldName];
                 $type = $itemType.'[]';
             } elseif ($type === 'array' && isset($nested[$fieldName])) {

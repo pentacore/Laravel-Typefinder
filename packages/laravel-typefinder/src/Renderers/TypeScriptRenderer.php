@@ -456,7 +456,9 @@ TS;
         $optional = $field['required'] ? '' : '?';
         $nullable = (bool) $field['nullable'];
 
-        if ($field['type'] === 'object' && isset($field['children'])) {
+        $isObjectArray = $field['type'] === 'object-array';
+
+        if (($field['type'] === 'object' || $isObjectArray) && isset($field['children'])) {
             if ($extractNested) {
                 $nestedName = $requestName.ucfirst((string) $field['name']);
                 $nestedLines = [];
@@ -467,7 +469,8 @@ TS;
                 }
 
                 $extractedTypes[] = "export type {$nestedName} = {\n".implode("\n", $nestedLines)."\n};";
-                $lines[] = sprintf('%s%s%s: %s;', $prefix, $field['name'], $optional, self::appendNullable($nestedName, $nullable));
+                $reference = $isObjectArray ? $nestedName.'[]' : $nestedName;
+                $lines[] = sprintf('%s%s%s: %s;', $prefix, $field['name'], $optional, self::appendNullable($reference, $nullable));
             } else {
                 $lines[] = sprintf('%s%s%s: {', $prefix, $field['name'], $optional);
                 foreach ($field['children'] as $child) {
@@ -476,7 +479,8 @@ TS;
                     $lines[] = sprintf('%s  %s%s: %s;', $prefix, $child['name'], $childOptional, self::appendNullable($childType, (bool) $child['nullable']));
                 }
 
-                $lines[] = sprintf('%s}%s;', $prefix, $nullable ? ' | null' : '');
+                $closer = $isObjectArray ? '}[]' : '}';
+                $lines[] = sprintf('%s%s%s;', $prefix, $closer, $nullable ? ' | null' : '');
             }
         } else {
             $typeStr = $this->resolveTypeString($field['type'], $field['nullable'], $allEnums, $imports);

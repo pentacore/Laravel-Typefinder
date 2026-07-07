@@ -8,6 +8,7 @@ use App\Enums\PostStatus;
 use App\Http\Requests\BrokenRequest;
 use App\Http\Requests\StoreInvoiceRequest;
 use App\Http\Requests\StorePostRequest;
+use App\Http\Requests\StoreScheduleRequest;
 use App\Http\Requests\UnrecoverableRequest;
 use App\Http\Requests\UnrecoverableWithFallbackRequest;
 use App\Http\Requests\UpdatePostRequest;
@@ -180,6 +181,46 @@ final class RequestExtractorTest extends TestCase
         $this->assertSame('number', $this->findField($result, 'amount')['type']);
         // Field without an override keeps its rule-inferred type.
         $this->assertSame('string', $this->findField($result, 'reference')['type']);
+    }
+
+    public function test_wildcard_object_array_folds_into_array_of_objects(): void
+    {
+        $result = $this->requestExtractor->extract(StoreScheduleRequest::class);
+        $field = $this->findField($result, 'rate_limits');
+
+        $this->assertSame('object-array', $field['type']);
+        $this->assertFalse($field['required']);
+        $this->assertTrue($field['nullable']);
+
+        $children = collect($field['children']);
+        $this->assertCount(3, $children);
+
+        $metric = $children->firstWhere('name', 'metric');
+        $this->assertSame('string', $metric['type']);
+        $this->assertTrue($metric['required']);
+
+        $limitValue = $children->firstWhere('name', 'limit_value');
+        $this->assertSame('number', $limitValue['type']);
+        $this->assertTrue($limitValue['required']);
+    }
+
+    public function test_bare_wildcard_scalar_array_is_typed(): void
+    {
+        $result = $this->requestExtractor->extract(StoreScheduleRequest::class);
+        $field = $this->findField($result, 'tags');
+
+        $this->assertSame('string[]', $field['type']);
+        $this->assertFalse($field['required']);
+    }
+
+    public function test_nested_wildcard_falls_back_to_safe_array(): void
+    {
+        $result = $this->requestExtractor->extract(StoreScheduleRequest::class);
+        $field = $this->findField($result, 'matrix');
+
+        // A nested wildcard (matrix.*.*) can't be modelled as a flat object
+        // array; it must degrade to a VALID TS type, never a bare `*` key.
+        $this->assertSame('unknown[]', $field['type']);
     }
 
     /**
