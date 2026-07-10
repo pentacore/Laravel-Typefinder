@@ -33,7 +33,7 @@
         }
     },
     "dependencies": {
-        "picomatch": "^4.0.4"
+        "picomatch": "^4.0.5"
     },
     "devDependencies": {
         "@codecov/vite-plugin": "^2.0.1",
