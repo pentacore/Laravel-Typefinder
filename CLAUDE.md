@@ -33,9 +33,9 @@ Both are versioned in lockstep by semantic-release.
 ## Core conventions
 
 - **Namespace:** `Pentacore\Typefinder\…` (psr-4 maps it to `packages/laravel-typefinder/src/`).
-- **Minimum PHP:** 8.3 (8.2 was dropped in v1.0 via `feat!:`). PHP 8.5 pipe operator (`|>`) is **not** allowed in source — it parses only on 8.5 and breaks the matrix.
-- **Laravel matrix tested in CI:** 11 / 12 / 13 × PHP 8.3 / 8.4 / 8.5 (minus L11+P8.5). See `.github/workflows/tests.yml`.
-- **Local PHP may be 8.5+.** That means local `phpunit` passes version-specific code that CI rejects. When touching syntax, think "does this parse on 8.3?"
+- **Minimum PHP:** 8.4 (8.3 and Laravel 11 were dropped in v5.0 via `feat!:`). PHP 8.5 pipe operator (`|>`) is **not** allowed in source — it parses only on 8.5 and breaks the matrix.
+- **Laravel matrix tested in CI:** 12 / 13 × PHP 8.4 / 8.5. See `.github/workflows/tests.yml`.
+- **Local PHP may be 8.5+.** That means local `phpunit` passes version-specific code that CI rejects. When touching syntax, think "does this parse on 8.4?"
 - **Test suite is Testbench-based.** Tests extend `Tests\TestCase` (`tests/TestCase.php`) which loads `workbench/database/migrations/` automatically. Use `workbench_path()` from `Orchestra\Testbench` to point at fixture files.
 - **Feature suite vs Unit suite:** files under `tests/Feature/` are the Feature suite; everything else under `tests/` is the Unit suite. PHPUnit config is `phpunit.xml.dist`.
 

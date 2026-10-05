@@ -15,11 +15,30 @@ updates:
     target-branch: "development"
     schedule:
       interval: "weekly"
+    groups:
+      npm-minor-patch:
+        update-types: ["minor", "patch"]
+    ignore:
+      # v10 needs conventional-changelog-writer 9, which only ships with
+      # @semantic-release/release-notes-generator 15 (beta). Lift once 15 is stable.
+      - dependency-name: "conventional-changelog-conventionalcommits"
+        update-types: ["version-update:semver-major"]
+      # TS 7 (native port) has no classic compiler API; typescript-eslint and
+      # vite-plugin-dts still need TS 6. Lift once they support 7.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: "npm" # Vite Plugin
     directory: "/packages/vite-plugin-laravel-typefinder"
     target-branch: "development"
     schedule:
       interval: "weekly"
+    groups:
+      npm-minor-patch:
+        update-types: ["minor", "patch"]
+    ignore:
+      # See root entry: TS 7 has no classic compiler API yet.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: "github-actions"
     # Workflow files stored in the default location of `.github/workflows`
     # You don't need to specify `/.github/workflows` for `directory`. You can use `directory: "/"`.

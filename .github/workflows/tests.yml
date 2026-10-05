@@ -101,8 +101,12 @@ jobs:
 
       - name: Upload test results to Codecov
         if: ${{ matrix.coverage && !cancelled() }}
-        uses: codecov/test-results-action@v1
+        uses: codecov/codecov-action@v7
         with:
+          report_type: test_results
+          files: phpunit-P${{ matrix.php }}-L${{ env.LARAVEL_SLUG }}.junit.xml
+          flags: php
+          fail_ci_if_error: false
           token: ${{ secrets.CODECOV_TOKEN }}
 
   pint:
@@ -218,7 +222,7 @@ jobs:
         run: |
           composer require "laravel/framework:12.*" "orchestra/testbench:*" --no-update --no-interaction
           composer update --prefer-dist --no-interaction --no-progress
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: '24'
           cache: 'npm'
@@ -234,8 +238,6 @@ jobs:
         run: npx vitest run --coverage --reporter=junit --outputFile=test-report.junit.xml
       - name: Build
         working-directory: packages/vite-plugin-laravel-typefinder
-        env:
-          CODECOV_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: npm run build
       - name: Upload vite-plugin dist
         uses: actions/upload-artifact@v7
@@ -252,8 +254,12 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
       - name: Upload test results to Codecov
         if: ${{ !cancelled() }}
-        uses: codecov/test-results-action@v1
+        uses: codecov/codecov-action@v7
         with:
+          report_type: test_results
+          files: packages/vite-plugin-laravel-typefinder/test-report.junit.xml
+          flags: js
+          fail_ci_if_error: false
           token: ${{ secrets.CODECOV_TOKEN }}
 
   dependency-review:
