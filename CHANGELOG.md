@@ -1,3 +1,11 @@
+## [5.0.1](https://github.com/pentacore/Laravel-Typefinder/compare/v5.0.0...v5.0.1) (2026-10-05)
+
+### Dependencies and Other Build Updates
+
+* **deps-dev:** bump phpunit/phpunit to ^13.0 ([f5b998f](https://github.com/pentacore/Laravel-Typefinder/commit/f5b998f3d3fcf34f309522a67b479a6444ca0f4c))
+* **deps:** bump actions/setup-node from 6 to 7 ([2632edd](https://github.com/pentacore/Laravel-Typefinder/commit/2632eddf37f94d9173b9d49f4826f9da58177174))
+* **deps:** bump npm dependencies to latest (vite 8, vitest 5, semantic-release plugins) ([0a1dd23](https://github.com/pentacore/Laravel-Typefinder/commit/0a1dd23a16e60cadba6ee13310dbf9ae4112b5c5))
+
 ## [5.0.0](https://github.com/pentacore/Laravel-Typefinder/compare/v4.2.3...v5.0.0) (2026-07-07)
 
 ### ⚠ BREAKING CHANGES
