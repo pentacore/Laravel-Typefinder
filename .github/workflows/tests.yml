@@ -234,8 +234,6 @@ jobs:
         run: npx vitest run --coverage --reporter=junit --outputFile=test-report.junit.xml
       - name: Build
         working-directory: packages/vite-plugin-laravel-typefinder
-        env:
-          CODECOV_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: npm run build
       - name: Upload vite-plugin dist
         uses: actions/upload-artifact@v7
