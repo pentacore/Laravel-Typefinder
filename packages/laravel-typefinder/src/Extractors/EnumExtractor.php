@@ -6,7 +6,9 @@ namespace Pentacore\Typefinder\Extractors;
 
 use BackedEnum;
 use Pentacore\Typefinder\Attributes\TypefinderIgnore;
+use Pentacore\Typefinder\Support\ClassNameResolver;
 use ReflectionEnum;
+use RuntimeException;
 use Symfony\Component\Finder\Finder;
 
 class EnumExtractor
@@ -41,7 +43,7 @@ class EnumExtractor
      *
      * @return list<array{name: string, fqcn: class-string, backingType: string, values: list<string|int>}>
      */
-    public function extractFromDirectory(string $path, ?callable $onExtract = null): array
+    public function extractFromDirectory(string $path, ?callable $onExtract = null, ?callable $onWarn = null): array
     {
         if (! is_dir($path)) {
             return [];
@@ -51,12 +53,17 @@ class EnumExtractor
         $finder = Finder::create()->files()->name('*.php')->in($path);
 
         foreach ($finder as $file) {
-            $className = $this->resolveClassName($file->getRealPath());
+            $className = ClassNameResolver::fromFile($file->getRealPath());
             if ($className === null) {
                 continue;
             }
 
             if (! enum_exists($className)) {
+                $failure = ClassNameResolver::autoloadFailure($className, $file->getRealPath());
+                if ($failure instanceof RuntimeException && $onWarn !== null) {
+                    $onWarn($className, $failure);
+                }
+
                 continue;
             }
 
@@ -78,23 +85,5 @@ class EnumExtractor
         }
 
         return $results;
-    }
-
-    /**
-     * Resolve the fully qualified class name from a PHP file.
-     */
-    protected function resolveClassName(string $filePath): ?string
-    {
-        $contents = file_get_contents($filePath);
-
-        if (! preg_match('/namespace\s+(.+?);/', $contents, $nsMatch)) {
-            return null;
-        }
-
-        if (! preg_match('/enum\s+(\w+)/', $contents, $classMatch)) {
-            return null;
-        }
-
-        return $nsMatch[1].'\\'.$classMatch[1];
     }
 }

@@ -8,8 +8,10 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Pentacore\Typefinder\Attributes\TypefinderIgnore;
 use Pentacore\Typefinder\Attributes\TypefinderResource;
+use Pentacore\Typefinder\Support\ClassNameResolver;
 use ReflectionAttribute;
 use ReflectionClass;
+use RuntimeException;
 use Symfony\Component\Finder\Finder;
 use Throwable;
 
@@ -33,7 +35,7 @@ class ResourceExtractor
         $attribute = $this->getAttribute($reflectionClass);
 
         if ($attribute instanceof TypefinderResource && $attribute->shape !== [] && $attribute->model !== null) {
-            throw new \RuntimeException(
+            throw new RuntimeException(
                 sprintf('TypefinderResource on %s: `shape` and `model` are mutually exclusive.', $resourceClass),
             );
         }
@@ -97,12 +99,17 @@ class ResourceExtractor
         $finder = Finder::create()->files()->name('*.php')->in($path);
 
         foreach ($finder as $file) {
-            $className = $this->resolveClassName($file->getRealPath());
+            $className = ClassNameResolver::fromFile($file->getRealPath());
             if ($className === null) {
                 continue;
             }
 
             if (! class_exists($className)) {
+                $failure = ClassNameResolver::autoloadFailure($className, $file->getRealPath());
+                if ($failure instanceof RuntimeException && $onWarn !== null) {
+                    $onWarn($className, $failure);
+                }
+
                 continue;
             }
 
@@ -123,7 +130,7 @@ class ResourceExtractor
                 $entry = $this->extract($className);
                 if ($entry === null) {
                     if ($onWarn !== null) {
-                        $onWarn($className, new \RuntimeException(
+                        $onWarn($className, new RuntimeException(
                             'No #[TypefinderResource] attribute and class name does not match any discovered model. Add a shape or model attribute to include this resource.',
                         ));
                     }
@@ -173,20 +180,5 @@ class ResourceExtractor
         }
 
         return $this->modelShortNameMap[$shortName] ?? null;
-    }
-
-    protected function resolveClassName(string $filePath): ?string
-    {
-        $contents = file_get_contents($filePath);
-
-        if (! preg_match('/namespace\s+(.+?);/', (string) $contents, $ns)) {
-            return null;
-        }
-
-        if (! preg_match('/class\s+(\w+)/', (string) $contents, $cls)) {
-            return null;
-        }
-
-        return $ns[1].'\\'.$cls[1];
     }
 }

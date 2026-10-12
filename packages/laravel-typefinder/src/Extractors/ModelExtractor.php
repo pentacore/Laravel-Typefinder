@@ -24,10 +24,12 @@ use Pentacore\Typefinder\Attributes\TypefinderOverrides;
 use Pentacore\Typefinder\Attributes\TypefinderWriteShape;
 use Pentacore\Typefinder\Resolvers\CastTypeResolver;
 use Pentacore\Typefinder\Resolvers\ColumnTypeResolver;
+use Pentacore\Typefinder\Support\ClassNameResolver;
 use ReflectionAttribute;
 use ReflectionClass;
 use ReflectionMethod;
 use ReflectionNamedType;
+use RuntimeException;
 use Symfony\Component\Finder\Finder;
 
 class ModelExtractor
@@ -68,7 +70,7 @@ class ModelExtractor
      *
      * @return list<array{name: string, fqcn: class-string, columns: list<array>, relationships: list<array>}>
      */
-    public function extractFromDirectory(string $path, ?callable $onExtract = null): array
+    public function extractFromDirectory(string $path, ?callable $onExtract = null, ?callable $onWarn = null): array
     {
         if (! is_dir($path)) {
             return [];
@@ -78,12 +80,17 @@ class ModelExtractor
         $finder = Finder::create()->files()->name('*.php')->in($path);
 
         foreach ($finder as $file) {
-            $className = $this->resolveClassName($file->getRealPath());
+            $className = ClassNameResolver::fromFile($file->getRealPath());
             if ($className === null) {
                 continue;
             }
 
             if (! class_exists($className)) {
+                $failure = ClassNameResolver::autoloadFailure($className, $file->getRealPath());
+                if ($failure instanceof RuntimeException && $onWarn !== null) {
+                    $onWarn($className, $failure);
+                }
+
                 continue;
             }
 
@@ -365,20 +372,5 @@ class ModelExtractor
     {
         return new ReflectionClass($className)
             ->getAttributes(TypefinderIgnore::class, ReflectionAttribute::IS_INSTANCEOF) !== [];
-    }
-
-    protected function resolveClassName(string $filePath): ?string
-    {
-        $contents = file_get_contents($filePath);
-
-        if (! preg_match('/namespace\s+(.+?);/', $contents, $nsMatch)) {
-            return null;
-        }
-
-        if (! preg_match('/class\s+(\w+)/', $contents, $classMatch)) {
-            return null;
-        }
-
-        return $nsMatch[1].'\\'.$classMatch[1];
     }
 }
