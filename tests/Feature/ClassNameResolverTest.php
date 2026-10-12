@@ -33,6 +33,9 @@ final class ClassNameResolverTest extends TestCase
 
         yield 'no declaration' => ["<?php\nnamespace App;\nfunction helper() {}", null];
 
+        // A half-written file, e.g. mid-edit under typefinder:watch.
+        yield 'truncated after the class keyword' => ["<?php\nnamespace App;\nclass", null];
+
         yield '"enum <word>" in a docblock' => [
             "<?php\nnamespace App\\Enums;\n/**\n * Mirrored to TypeScript as a\n * backed enum as well as kept in sync.\n */\nenum Ability: string {}",
             'App\\Enums\\Ability',
