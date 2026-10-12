@@ -11,10 +11,12 @@ use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Pentacore\Typefinder\Attributes\TypefinderBroadcast;
 use Pentacore\Typefinder\Attributes\TypefinderIgnore;
+use Pentacore\Typefinder\Support\ClassNameResolver;
 use ReflectionAttribute;
 use ReflectionClass;
 use ReflectionNamedType;
 use ReflectionProperty;
+use RuntimeException;
 use Symfony\Component\Finder\Finder;
 use Throwable;
 
@@ -57,7 +59,7 @@ class BroadcastExtractor
             }
 
             if ($channels === null) {
-                throw new \RuntimeException('Could not resolve channels for '.$eventClass);
+                throw new RuntimeException('Could not resolve channels for '.$eventClass);
             }
         }
 
@@ -86,12 +88,17 @@ class BroadcastExtractor
         $finder = Finder::create()->files()->name('*.php')->in($path);
 
         foreach ($finder as $file) {
-            $className = $this->resolveClassName($file->getRealPath());
+            $className = ClassNameResolver::fromFile($file->getRealPath());
             if ($className === null) {
                 continue;
             }
 
             if (! class_exists($className)) {
+                $failure = ClassNameResolver::autoloadFailure($className, $file->getRealPath());
+                if ($failure instanceof RuntimeException && $onWarn !== null) {
+                    $onWarn($className, $failure);
+                }
+
                 continue;
             }
 
@@ -347,20 +354,5 @@ class BroadcastExtractor
             'array' => 'unknown[]',
             default => $reflectionType->getName(),
         };
-    }
-
-    protected function resolveClassName(string $filePath): ?string
-    {
-        $contents = file_get_contents($filePath);
-
-        if (! preg_match('/namespace\s+(.+?);/', (string) $contents, $ns)) {
-            return null;
-        }
-
-        if (! preg_match('/class\s+(\w+)/', (string) $contents, $cls)) {
-            return null;
-        }
-
-        return $ns[1].'\\'.$cls[1];
     }
 }

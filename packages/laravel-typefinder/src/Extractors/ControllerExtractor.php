@@ -6,9 +6,11 @@ namespace Pentacore\Typefinder\Extractors;
 
 use Pentacore\Typefinder\Attributes\TypefinderIgnore;
 use Pentacore\Typefinder\Attributes\TypefinderPage;
+use Pentacore\Typefinder\Support\ClassNameResolver;
 use ReflectionAttribute;
 use ReflectionClass;
 use ReflectionMethod;
+use RuntimeException;
 use Symfony\Component\Finder\Finder;
 use Throwable;
 
@@ -54,7 +56,7 @@ class ControllerExtractor
     /**
      * @return list<array{component: string, props: array<string, string>, optional: list<string>, source: string}>
      */
-    public function extractFromDirectory(string $path, ?callable $onExtract = null): array
+    public function extractFromDirectory(string $path, ?callable $onExtract = null, ?callable $onWarn = null): array
     {
         if (! is_dir($path)) {
             return [];
@@ -64,12 +66,17 @@ class ControllerExtractor
         $finder = Finder::create()->files()->name('*.php')->in($path);
 
         foreach ($finder as $file) {
-            $className = $this->resolveClassName($file->getRealPath());
+            $className = ClassNameResolver::fromFile($file->getRealPath());
             if ($className === null) {
                 continue;
             }
 
             if (! class_exists($className)) {
+                $failure = ClassNameResolver::autoloadFailure($className, $file->getRealPath());
+                if ($failure instanceof RuntimeException && $onWarn !== null) {
+                    $onWarn($className, $failure);
+                }
+
                 continue;
             }
 
@@ -87,20 +94,5 @@ class ControllerExtractor
         }
 
         return $results;
-    }
-
-    protected function resolveClassName(string $filePath): ?string
-    {
-        $contents = file_get_contents($filePath);
-
-        if (! preg_match('/namespace\s+(.+?);/', (string) $contents, $nsMatch)) {
-            return null;
-        }
-
-        if (! preg_match('/class\s+(\w+)/', (string) $contents, $classMatch)) {
-            return null;
-        }
-
-        return $nsMatch[1].'\\'.$classMatch[1];
     }
 }

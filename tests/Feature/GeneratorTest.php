@@ -341,6 +341,24 @@ final class GeneratorTest extends TestCase
         }
     }
 
+    public function test_generate_full_warns_about_enum_files_that_cannot_be_autoloaded(): void
+    {
+        $dir = sys_get_temp_dir().'/typefinder-ghost-enums-'.uniqid('', true);
+        mkdir($dir);
+        file_put_contents($dir.'/Ghost.php', "<?php\nnamespace App\\Enums;\nenum Ghost: string { case A = 'a'; }\n");
+        config(['typefinder.enums.paths' => [workbench_path('app/Enums'), $dir]]);
+
+        try {
+            $regenResult = app(Generator::class)->generateFull();
+        } finally {
+            @unlink($dir.'/Ghost.php');
+            @rmdir($dir);
+        }
+
+        $matching = array_filter($regenResult->warnings, fn (string $w): bool => str_contains($w, 'skipped App\Enums\Ghost'));
+        $this->assertCount(1, $matching, 'warnings: '.implode(' | ', $regenResult->warnings));
+    }
+
     // ── Failed extraction in incremental mode ──────────────────────────
 
     public function test_generate_paths_captures_failed_extractions(): void

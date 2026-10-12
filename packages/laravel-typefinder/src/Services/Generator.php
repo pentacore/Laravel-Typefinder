@@ -18,6 +18,7 @@ use Pentacore\Typefinder\Renderers\TypeScriptRenderer;
 use Pentacore\Typefinder\Resolvers\CastTypeResolver;
 use Pentacore\Typefinder\Resolvers\ColumnTypeResolver;
 use Pentacore\Typefinder\Resolvers\MorphToResolver;
+use Pentacore\Typefinder\Support\ClassNameResolver;
 use Pentacore\Typefinder\TypefinderRegistry;
 use ReflectionAttribute;
 use ReflectionClass;
@@ -145,12 +146,16 @@ final class Generator
             }
         };
 
+        $onSkip = function (string $cls, \Throwable $throwable) use ($warn): void {
+            $warn(sprintf('skipped %s: ', $cls).$throwable->getMessage());
+        };
+
         if (config('typefinder.enums.enabled', true)) {
             $enumExtractor = new EnumExtractor;
             $paths = config('typefinder.enums.paths', []);
 
             foreach ($paths as $path) {
-                $allEnums = array_merge($allEnums, $enumExtractor->extractFromDirectory($path));
+                $allEnums = array_merge($allEnums, $enumExtractor->extractFromDirectory($path, null, $onSkip));
             }
 
             foreach ($allEnums as $allEnum) {
@@ -177,7 +182,7 @@ final class Generator
             $paths = config('typefinder.models.paths', []);
 
             foreach ($paths as $path) {
-                $allModels = array_merge($allModels, $modelExtractor->extractFromDirectory($path));
+                $allModels = array_merge($allModels, $modelExtractor->extractFromDirectory($path, null, $onSkip));
             }
 
             $morphToResolver = new MorphToResolver;
@@ -202,11 +207,8 @@ final class Generator
             $requestExtractor = new RequestExtractor;
             $paths = config('typefinder.requests.paths', []);
 
-            $onRequestWarn = function (string $cls, \Throwable $throwable) use ($warn): void {
-                $warn(sprintf('skipped %s: ', $cls).$throwable->getMessage());
-            };
             foreach ($paths as $path) {
-                $allRequests = array_merge($allRequests, $requestExtractor->extractFromDirectory($path, null, $onRequestWarn));
+                $allRequests = array_merge($allRequests, $requestExtractor->extractFromDirectory($path, null, $onSkip));
             }
 
             foreach ($allRequests as $allRequest) {
@@ -228,12 +230,8 @@ final class Generator
             $resourceExtractor = new ResourceExtractor;
             $paths = config('typefinder.resources.paths', []);
 
-            $onResourceWarn = function (string $cls, \Throwable $throwable) use ($warn): void {
-                $warn(sprintf('skipped %s: ', $cls).$throwable->getMessage());
-            };
-
             foreach ($paths as $path) {
-                $allResources = array_merge($allResources, $resourceExtractor->extractFromDirectory($path, null, $onResourceWarn));
+                $allResources = array_merge($allResources, $resourceExtractor->extractFromDirectory($path, null, $onSkip));
             }
 
             foreach ($allResources as $allResource) {
@@ -255,7 +253,7 @@ final class Generator
 
             $allPages = [];
             foreach ($paths as $path) {
-                $allPages = array_merge($allPages, $controllerExtractor->extractFromDirectory($path));
+                $allPages = array_merge($allPages, $controllerExtractor->extractFromDirectory($path, null, $onSkip));
             }
 
             $this->assertNoPageCollisions($allPages);
@@ -270,13 +268,9 @@ final class Generator
             $broadcastExtractor = new BroadcastExtractor;
             $paths = config('typefinder.broadcasting.paths', []);
 
-            $onBroadcastWarn = function (string $cls, \Throwable $throwable) use ($warn): void {
-                $warn(sprintf('skipped %s: ', $cls).$throwable->getMessage());
-            };
-
             $allBroadcasts = [];
             foreach ($paths as $path) {
-                $allBroadcasts = array_merge($allBroadcasts, $broadcastExtractor->extractFromDirectory($path, null, $onBroadcastWarn));
+                $allBroadcasts = array_merge($allBroadcasts, $broadcastExtractor->extractFromDirectory($path, null, $onSkip));
             }
 
             $this->assertNoBroadcastCollisions($allBroadcasts);
@@ -669,32 +663,11 @@ final class Generator
     }
 
     /**
-     * Resolve the fully-qualified class name from a PHP file.
-     */
-    private function resolveClassName(string $filePath): ?string
-    {
-        $contents = @file_get_contents($filePath);
-        if ($contents === false) {
-            return null;
-        }
-
-        if (! preg_match('/namespace\s+(.+?);/', $contents, $nsMatch)) {
-            return null;
-        }
-
-        if (! preg_match('/(class|enum)\s+(\w+)/', $contents, $classMatch)) {
-            return null;
-        }
-
-        return $nsMatch[1].'\\'.$classMatch[2];
-    }
-
-    /**
      * Extract metadata from a single PHP file using the appropriate extractor.
      */
     private function extractSingleFile(string $path, string $category, array $config, array &$warnings): ?array
     {
-        $className = $this->resolveClassName($path);
+        $className = ClassNameResolver::fromFile($path);
         if ($className === null || ! class_exists($className)) {
             $warnings[] = $path.': could not resolve class name — skipped';
 
