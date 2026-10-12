@@ -60,4 +60,41 @@ final class EnumExtractorTest extends TestCase
             $this->assertContains($result['backingType'], ['string', 'int']);
         }
     }
+
+    public function test_does_not_warn_for_a_loadable_class_that_is_not_an_enum(): void
+    {
+        $dir = $this->tempDirWith([
+            'User.php' => "<?php\nnamespace App\\Models;\nclass User {}\n",
+        ]);
+
+        $warnings = [];
+        $results = $this->enumExtractor->extractFromDirectory($dir, null, function (string $cls) use (&$warnings): void {
+            $warnings[] = $cls;
+        });
+
+        $this->assertSame([], $results);
+        $this->assertSame([], $warnings);
+    }
+
+    /**
+     * @param  array<string, string>  $files
+     */
+    private function tempDirWith(array $files): string
+    {
+        $dir = sys_get_temp_dir().'/typefinder-enums-'.uniqid('', true);
+        mkdir($dir);
+        foreach ($files as $name => $contents) {
+            file_put_contents($dir.'/'.$name, $contents);
+        }
+
+        $this->beforeApplicationDestroyed(function () use ($dir, $files): void {
+            foreach (array_keys($files) as $name) {
+                @unlink($dir.'/'.$name);
+            }
+
+            @rmdir($dir);
+        });
+
+        return $dir;
+    }
 }

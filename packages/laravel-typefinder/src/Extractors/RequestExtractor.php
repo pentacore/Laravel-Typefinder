@@ -10,9 +10,11 @@ use Illuminate\Validation\Rules\Enum;
 use Illuminate\Validation\Rules\In;
 use Pentacore\Typefinder\Attributes\TypefinderIgnore;
 use Pentacore\Typefinder\Attributes\TypefinderOverrides;
+use Pentacore\Typefinder\Support\ClassNameResolver;
 use Pentacore\Typefinder\Support\NullSafeProxy;
 use ReflectionAttribute;
 use ReflectionClass;
+use RuntimeException;
 use Symfony\Component\Finder\Finder;
 
 class RequestExtractor
@@ -143,12 +145,17 @@ class RequestExtractor
         $finder = Finder::create()->files()->name('*.php')->in($path);
 
         foreach ($finder as $file) {
-            $className = $this->resolveClassName($file->getRealPath());
+            $className = ClassNameResolver::fromFile($file->getRealPath());
             if ($className === null) {
                 continue;
             }
 
             if (! class_exists($className)) {
+                $failure = ClassNameResolver::autoloadFailure($className, $file->getRealPath());
+                if ($failure instanceof RuntimeException && $onWarn !== null) {
+                    $onWarn($className, $failure);
+                }
+
                 continue;
             }
 
@@ -563,20 +570,5 @@ class RequestExtractor
         }
 
         return $attrs[0]->newInstance()->overrides;
-    }
-
-    protected function resolveClassName(string $filePath): ?string
-    {
-        $contents = file_get_contents($filePath);
-
-        if (! preg_match('/namespace\s+(.+?);/', $contents, $nsMatch)) {
-            return null;
-        }
-
-        if (! preg_match('/class\s+(\w+)/', $contents, $classMatch)) {
-            return null;
-        }
-
-        return $nsMatch[1].'\\'.$classMatch[1];
     }
 }
