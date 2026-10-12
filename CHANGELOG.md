@@ -1,3 +1,9 @@
+## [5.0.2](https://github.com/pentacore/Laravel-Typefinder/compare/v5.0.1...v5.0.2) (2026-10-12)
+
+### Bug Fixes
+
+* resolve class names from tokens so comments can't hijack them ([#60](https://github.com/pentacore/Laravel-Typefinder/issues/60)) ([e866d5a](https://github.com/pentacore/Laravel-Typefinder/commit/e866d5af4f9bac5a212cceb2162800e25d412c8f))
+
 ## [5.0.1](https://github.com/pentacore/Laravel-Typefinder/compare/v5.0.0...v5.0.1) (2026-10-05)
 
 ### Dependencies and Other Build Updates
