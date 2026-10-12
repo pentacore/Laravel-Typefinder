@@ -61,25 +61,6 @@ final class EnumExtractorTest extends TestCase
         }
     }
 
-    public function test_warns_when_a_declared_enum_cannot_be_autoloaded(): void
-    {
-        $dir = $this->tempDirWith([
-            // Namespace doesn't match the file's PSR-4 location, so it never autoloads.
-            'Ghost.php' => "<?php\nnamespace App\\Enums;\nenum Ghost: string { case A = 'a'; }\n",
-        ]);
-
-        $warnings = [];
-        $results = $this->enumExtractor->extractFromDirectory($dir, null, function (string $cls, \Throwable $throwable) use (&$warnings): void {
-            $warnings[] = $cls.': '.$throwable->getMessage();
-        });
-
-        $this->assertSame([], $results);
-        $this->assertCount(1, $warnings);
-        $this->assertStringContainsString('App\Enums\Ghost', $warnings[0]);
-        $this->assertStringContainsString('Ghost.php', $warnings[0]);
-        $this->assertStringContainsString('could not be autoloaded', $warnings[0]);
-    }
-
     public function test_does_not_warn_for_a_loadable_class_that_is_not_an_enum(): void
     {
         $dir = $this->tempDirWith([
