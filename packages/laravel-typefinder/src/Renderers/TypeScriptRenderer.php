@@ -388,6 +388,12 @@ TS;
                 return $enumName.'[]';
             }
 
+            if (array_key_exists('arrayOf', $type)) {
+                $itemType = $this->resolveTypeString($type['arrayOf'], false, $allEnums, $imports);
+
+                return (str_contains($itemType, ' | ') ? '('.$itemType.')' : $itemType).'[]';
+            }
+
             if (isset($type['in'])) {
                 $values = array_map(fn (string $v): string => sprintf("'%s'", $v), $type['in']);
 
