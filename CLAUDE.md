@@ -95,7 +95,7 @@ All under `Pentacore\Typefinder\Attributes\`. Detected via reflection; no trait 
 - `#[TypefinderIgnore]` — skip any model/enum/request/resource/controller/event.
 - `#[TypefinderOverrides(['col' => 'TSType'])]` — override or add fields on a model or form request.
 - `#[TypefinderWriteShape(serverFilled: [...], respectMassAssignment: null, immutableOnUpdate: [...])]` — tune the Create/Update companion shapes.
-- `#[TypefinderResource(shape / model / omit / extend)]` — declare a JSON resource's shape. Class-name convention (`UserResource` → `User`) is used when no attribute is present.
+- `#[TypefinderResource(shape / model / omit / extend)]` — declare a JSON resource's shape. Without the attribute, a PHPDoc `@return array{…}` on `toArray()` declares it (beats the name convention, applies even with `infer_from_model_name` off); then the class-name convention (`UserResource` → `User`).
 - `#[TypefinderPage(component, props, optional)]` — tag a controller action method as an Inertia page (repeatable).
 - `#[TypefinderBroadcast(payload, as, channel, channelType)]` — override reflection for broadcast events with dynamic `broadcastOn()`/`broadcastWith()`.
 - `#[TypefinderCast('{ … }')]` — declare the TS shape for a custom cast class you own. For third-party casts, use `Typefinder::registerCast()` from a service provider instead.

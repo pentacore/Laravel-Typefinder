@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Pentacore\Typefinder\Attributes\TypefinderIgnore;
 use Pentacore\Typefinder\Attributes\TypefinderResource;
+use Pentacore\Typefinder\Resolvers\PhpDocShapeResolver;
 use Pentacore\Typefinder\Support\ClassNameResolver;
 use Pentacore\Typefinder\Support\GeneratedClasses;
 use ReflectionAttribute;
@@ -20,22 +21,27 @@ class ResourceExtractor
 {
     private readonly GeneratedClasses $generatedClasses;
 
+    private readonly PhpDocShapeResolver $phpDocShapeResolver;
+
     /**
      * @param  bool  $inferFromModelName  Fall back to the `UserResource` → `User` name
-     *                                    convention when a resource has no attribute.
+     *                                    convention when a resource has no attribute or PHPDoc shape.
      * @param  ?list<class-string>  $modelClasses  Models the convention may match. These should
      *                                             be the models that get a generated type. When
      *                                             null, they are discovered from `typefinder.models.paths`.
      * @param  ?list<class-string>  $enumClasses  Enums that get a generated type; null discovers them from config.
      * @param  ?list<class-string>  $resourceClasses  Resources that get a generated type; null discovers them from config.
+     * @param  null|callable(string): void  $onWarn  Receives warnings about PHPDoc shapes (unmappable types, unparsable docs).
      */
     public function __construct(
         private readonly bool $inferFromModelName = true,
         ?array $modelClasses = null,
         ?array $enumClasses = null,
         ?array $resourceClasses = null,
+        ?callable $onWarn = null,
     ) {
         $this->generatedClasses = new GeneratedClasses($modelClasses, $enumClasses, $resourceClasses);
+        $this->phpDocShapeResolver = new PhpDocShapeResolver($this->generatedClasses, $onWarn);
     }
 
     /**
@@ -84,6 +90,20 @@ class ResourceExtractor
                     'extend' => $attribute->extend,
                 ],
             ];
+        }
+
+        // A documented toArray() shape is a declaration, so it applies even
+        // with name-convention inference off. Abstract resources are never
+        // returned by an API and fall through as before.
+        if (! $reflectionClass->isAbstract()) {
+            $type = $this->phpDocShapeResolver->resolve($reflectionClass);
+            if ($type !== null) {
+                return [
+                    'name' => $reflectionClass->getShortName(),
+                    'fqcn' => $resourceClass,
+                    'shape' => ['kind' => 'phpdoc', 'type' => $type],
+                ];
+            }
         }
 
         $short = $reflectionClass->getShortName();
@@ -183,11 +203,12 @@ class ResourceExtractor
         if (! $this->inferFromModelName) {
             return 'No #[TypefinderResource] attribute, and name-convention inference is off '
                 .'(typefinder.resources.infer_from_model_name). Add a shape or model attribute, '
+                .'or a PHPDoc @return array{…} on toArray(), '
                 .'or #[TypefinderIgnore] to skip this resource.';
         }
 
         return 'No #[TypefinderResource] attribute and class name does not match any discovered model. '
-            .'Add a shape or model attribute to include this resource.';
+            .'Add a shape or model attribute, or a PHPDoc @return array{…} on toArray(), to include this resource.';
     }
 
     /** @var ?array<string, class-string> */

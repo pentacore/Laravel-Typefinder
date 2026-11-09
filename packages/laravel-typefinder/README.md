@@ -223,15 +223,58 @@ export type UserRolePivot = {
 
 ### Resources (default-on)
 
-Classes extending `JsonResource`. Three declaration tiers are tried in order:
+Classes extending `JsonResource`. The type comes from the first of these that applies:
 
 1. **Explicit shape** via `#[TypefinderResource(shape: [...])]`.
 2. **Model extension** via `#[TypefinderResource(model: User::class, omit: [...], extend: [...])]` → `Omit<User, ...> & { ... }`.
-3. **Name convention** — `UserResource` → `User` automatically, when `User` is one of the models typefinder generates (found under `models.paths` and not ignored). Models from other packages and models outside `models.paths` are never matched.
+3. **PHPDoc array shape** on `toArray()` — `@return array{…}` (or `@phpstan-return` / `@psalm-return`, which take precedence). Applies whether or not the name convention is on.
+4. **Name convention** — `UserResource` → `User` automatically, when `User` is one of the models typefinder generates (found under `models.paths` and not ignored). Models from other packages and models outside `models.paths` are never matched.
+5. Otherwise the resource is skipped with a warning.
 
-Resources that match none of the above are skipped with a warning.
+`#[TypefinderIgnore]` skips a resource before any of these run.
 
-The name convention assumes the resource returns the model's attributes. If your resources rename fields, flatten relations or add computed keys, the inferred type is wrong and nothing flags it. Set `'resources.infer_from_model_name' => false` to turn the convention off; every resource then needs an attribute (or `#[TypefinderIgnore]`), and undeclared ones are reported as warnings.
+A documented shape is what the API returns, so it beats the name convention:
+
+```php
+class CommentResource extends JsonResource
+{
+    /**
+     * @return array{
+     *     id: int,
+     *     body: non-empty-string,
+     *     author: UserResource,
+     *     status: CommentStatus,
+     *     replies: list<CommentResource>|MissingValue,
+     *     created_at: string|null,
+     * }
+     */
+    public function toArray(Request $request): array { /* … */ }
+}
+```
+
+```typescript
+import type { CommentStatus } from '../enums';
+import type { UserResource } from './UserResource';
+
+export type CommentResource = {
+  id: number;
+  body: string;
+  author: UserResource;
+  status: CommentStatus;
+  replies?: CommentResource[];
+  created_at: string | null;
+};
+```
+
+Only an `array{…}` (or `object{…}`) shape counts. The `make:resource` stub's `@return array<string, mixed>`, a plain `array`, `list<…>` and other generics fall through to the name convention, unchanged. Nested shapes, lists, `array<string, T>`, unions, literals, `?T`, collections (`Collection<int, X>` → `X[]`), Carbon/`DateTimeInterface` (→ `string`), `@phpstan-type` aliases and `@phpstan-import-type` are understood. A `X|MissingValue` field (the `whenLoaded()` / `when()` idiom) becomes optional. A subclass that does not override `toArray()`, or whose doc is only `{@inheritDoc}`, uses its parent's doc; `static` in it refers to the subclass. An abstract resource never takes a PHPDoc shape (it falls through to the attribute/name-convention tiers as before).
+
+Only types typefinder generates resolve: models it generates, backed enums under `enums.paths`, and resources under `resources.paths`. Any other class (a vendor model, a plain value object), and types with no JSON equivalent (`callable`, `Closure`, …), become `unknown` with a warning naming the resource and field.
+
+The name convention assumes the resource returns the model's attributes. If your resources rename fields, flatten relations or add computed keys, the inferred type is wrong and nothing flags it. Set `'resources.infer_from_model_name' => false` to turn the convention off; every resource then needs an attribute or a PHPDoc shape (or `#[TypefinderIgnore]`), and undeclared ones are reported as warnings.
+
+**Upgrading:** a resource that already documents `@return array{…}` on `toArray()` and has no `#[TypefinderResource]` attribute now gets that shape instead of the same-named model. To keep the old type, add `#[TypefinderResource(model: User::class)]`. This release also adds `nikic/php-parser` ^5 and `phpstan/phpdoc-parser` ^2 as dependencies; apps pinned to phpdoc-parser ^1 must upgrade.
+
+**Known limits:** in watch / `--only` runs, editing a parent resource's `toArray()` doc, or a class that defines an imported `@phpstan-type` alias, does not re-render the resources that use it; run a full `typefinder:generate` to refresh. A `toArray()` provided by a trait is not read (the resource falls through to the next tier).
 
 ### Pages (opt-in, `typefinder.inertia.enabled`)
 
@@ -281,7 +324,7 @@ All attributes live under `Pentacore\Typefinder\Attributes\`.
 | `#[TypefinderIgnore]` | class | Skip any model, enum, form request, resource, controller, or event. |
 | `#[TypefinderOverrides(['col' => 'T'])]` | model, form request | Override or add fields. Highest priority in type resolution. |
 | `#[TypefinderWriteShape(serverFilled, respectMassAssignment, immutableOnUpdate)]` | model | Tune the Create/Update companions. |
-| `#[TypefinderResource(shape / model / omit / extend)]` | `JsonResource` subclass | Declare a resource's TS shape or model extension. |
+| `#[TypefinderResource(shape / model / omit / extend)]` | `JsonResource` subclass | Declare a resource's TS shape or model extension. Takes precedence over a PHPDoc `@return array{…}` on `toArray()` and the name convention. |
 | `#[TypefinderPage(component, props, optional)]` | controller action method | Map the method to an Inertia page component. Repeatable. |
 | `#[TypefinderBroadcast(payload, as, channel, channelType)]` | broadcast event class | Override reflection for events with dynamic `broadcastOn()`/`broadcastWith()`. |
 | `#[TypefinderCast('T')]` | custom cast class | Declare the TS shape for a cast you own. |
@@ -380,7 +423,7 @@ return [
     'resources' => [
         'enabled' => true,                              // default-on; ships with Laravel core
         'paths' => [app_path('Http/Resources')],
-        'infer_from_model_name' => true,                // UserResource → User when no attribute
+        'infer_from_model_name' => true,                // UserResource → User when no attribute or PHPDoc shape
     ],
 
     'inertia' => [

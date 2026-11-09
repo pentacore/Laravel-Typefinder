@@ -7,8 +7,9 @@ namespace Pentacore\Typefinder\Renderers\Concerns;
 use Pentacore\Typefinder\Renderers\TypeScriptRenderer;
 
 /**
- * Resource type rendering across the three declaration tiers: explicit shape,
- * model extension (`Omit<…> & { … }`), and name-convention passthrough.
+ * Resource type rendering across the declaration kinds: explicit shape,
+ * PHPDoc-derived shape tree, model extension (`Omit<…> & { … }`), and
+ * name-convention passthrough.
  *
  * Class-strings in `shape` and `extend` resolve through the host class's
  * `resolveClassString`, imported relative to `resources/`.

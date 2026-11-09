@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Http\Resources\UnmappableShapeResource;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\File;
+use Pentacore\Typefinder\Services\Generator;
 use Tests\TestCase;
 
 use function Orchestra\Testbench\workbench_path;
@@ -448,12 +450,78 @@ PHP);
         $this->assertFileExists($this->outputPath.'/resources/UserResource.d.ts');
         $this->assertFileExists($this->outputPath.'/resources/AdminUserResource.d.ts');
         $this->assertFileExists($this->outputPath.'/resources/PostResource.d.ts');
+        $this->assertFileExists($this->outputPath.'/resources/CommentResource.d.ts');
+        $this->assertFileExists($this->outputPath.'/resources/ProductResource.d.ts');
+        $this->assertFileExists($this->outputPath.'/resources/ShapeShowcaseResource.d.ts');
+        $this->assertFileExists($this->outputPath.'/resources/UnmappableShapeResource.d.ts');
+        $this->assertFileExists($this->outputPath.'/resources/InheritedShapeResource.d.ts');
+        $this->assertFileDoesNotExist($this->outputPath.'/resources/BaseShapeResource.d.ts');
         $this->assertFileDoesNotExist($this->outputPath.'/resources/LegacyResource.d.ts');
         $this->assertFileDoesNotExist($this->outputPath.'/resources/OrphanResource.d.ts');
         $this->assertFileDoesNotExist($this->outputPath.'/resources/InvalidResource.d.ts');
 
         $adminContent = File::get($this->outputPath.'/resources/AdminUserResource.d.ts');
         $this->assertStringContainsString("export type AdminUserResource = Omit<User, 'password'> & { roles: string[] };", $adminContent);
+    }
+
+    public function test_phpdoc_resources_rendered(): void
+    {
+        $regenResult = app(Generator::class)->generateFull();
+        $dir = $this->outputPath.'/resources';
+
+        $comment = File::get($dir.'/CommentResource.d.ts');
+        $this->assertStringContainsString("import type { UserResource } from './UserResource';", $comment);
+        $this->assertStringContainsString('export type CommentResource = {', $comment);
+        $this->assertStringContainsString('  id: number;', $comment);
+        $this->assertStringContainsString('  body: string;', $comment);
+        $this->assertStringContainsString('  author: UserResource;', $comment);
+        $this->assertStringContainsString('  created_at: string | null;', $comment);
+        $this->assertStringNotContainsString("from '../models'", $comment);
+
+        // The make:resource stub docblock is not a shape: unchanged output.
+        $product = File::get($dir.'/ProductResource.d.ts');
+        $this->assertStringContainsString("import type { Product } from '../models';", $product);
+        $this->assertStringContainsString("export type ProductResource = Product;\n", $product);
+
+        $showcase = File::get($dir.'/ShapeShowcaseResource.d.ts');
+        $this->assertStringContainsString("import type { PostStatus } from '../enums';", $showcase);
+        $this->assertStringContainsString("import type { User } from '../models';", $showcase);
+        $this->assertStringContainsString("import type { CommentResource } from './CommentResource';", $showcase);
+        $this->assertStringContainsString("import type { PostResource } from './PostResource';", $showcase);
+        $this->assertStringContainsString('  meta: { total: number; tags: string[] };', $showcase);
+        $this->assertStringContainsString('  comments: CommentResource[];', $showcase);
+        $this->assertStringContainsString('  scores: Record<string, number>;', $showcase);
+        $this->assertStringContainsString('  status: PostStatus;', $showcase);
+        $this->assertStringContainsString('  editor: User | null;', $showcase);
+        $this->assertStringContainsString('  posts?: PostResource[];', $showcase);
+        $this->assertStringContainsString('  pair: [number, string];', $showcase);
+        $this->assertStringContainsString("  stage: 'draft' | 'published';", $showcase);
+        $this->assertStringContainsString('  replies: CommentResource[];', $showcase);
+        $this->assertStringContainsString('  published_at: string;', $showcase);
+        $this->assertStringContainsString('  extra: { source: string; [key: string]: unknown };', $showcase);
+        $this->assertStringContainsString("  'foo-bar': boolean;", $showcase);
+
+        $this->assertStringContainsString('  handler: unknown;', File::get($dir.'/UnmappableShapeResource.d.ts'));
+
+        // Abstract parent: no file of its own; the child inherits its doc.
+        $this->assertFileDoesNotExist($dir.'/BaseShapeResource.d.ts');
+        $inherited = File::get($dir.'/InheritedShapeResource.d.ts');
+        $this->assertStringContainsString("import type { User } from '../models';", $inherited);
+        $this->assertStringContainsString('  owner: User;', $inherited);
+        $this->assertStringContainsString('  self: InheritedShapeResource | null;', $inherited);
+
+        $barrel = File::get($dir.'/index.d.ts');
+        $this->assertStringContainsString('CommentResource', $barrel);
+        $this->assertStringNotContainsString('BaseShapeResource', $barrel);
+
+        $unmappable = array_filter(
+            $regenResult->warnings,
+            static fn (string $warning): bool => str_contains($warning, UnmappableShapeResource::class),
+        );
+        $this->assertSame(
+            [UnmappableShapeResource::class.'::toArray() @return: "handler" has unsupported type callable — emitted as unknown'],
+            array_values($unmappable),
+        );
     }
 
     public function test_helpers_file_is_always_emitted(): void

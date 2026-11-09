@@ -56,6 +56,17 @@ When multiple sources could provide a type for a model attribute, priority (high
 4. Relationship introspection.
 5. DB schema column type.
 
+## Type resolution precedence — resources
+
+For a `JsonResource` subclass, the first match wins:
+
+1. `#[TypefinderIgnore]` → no file.
+2. `#[TypefinderResource(shape: [...])]`.
+3. `#[TypefinderResource(model: X::class, omit: [...], extend: [...])]`.
+4. PHPDoc `@return array{…}` on `toArray()` (`@phpstan-return` > `@psalm-return` > `@return`). Applies even with `infer_from_model_name` off; never to abstract classes. `array<string, mixed>` (the `make:resource` stub), plain `array` and `list<…>` are not shapes and fall through. Classes inside the shape resolve only to generated models, enums and resources; `Carbon`/`DateTimeInterface` become `string`, collections become arrays, `stdClass` becomes `Record<string, unknown>`; any other class becomes `unknown` with a warning.
+5. Name convention `{Model}Resource` → `{Model}` (only when `infer_from_model_name` is true).
+6. Otherwise skipped with a warning.
+
 ## Type resolution precedence — casts
 
 Inside the cast resolver, priority (highest first):

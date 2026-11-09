@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Http\Resources\ShapeShowcaseResource;
 use App\Models\User;
 use Illuminate\Support\Facades\File;
 use Pentacore\Typefinder\Services\Generator;
@@ -120,6 +121,68 @@ final class IncrementalRegenTest extends TestCase
 
         $this->assertSame($postMtimeBefore, filemtime($postPath));
         $this->assertGreaterThanOrEqual($userMtimeBefore, filemtime($userPath));
+    }
+
+    public function test_incremental_phpdoc_resource_matches_full_run(): void
+    {
+        $generator = app(Generator::class);
+        $generator->generateFull();
+
+        $output = $this->output.'/resources/ShapeShowcaseResource.d.ts';
+        $full = File::get($output);
+        File::delete($output);
+
+        $regenResult = $generator->generatePaths([
+            (string) new ReflectionClass(ShapeShowcaseResource::class)->getFileName(),
+        ]);
+
+        $this->assertSame([], $regenResult->failed);
+        $this->assertSame($full, File::get($output));
+    }
+
+    public function test_phpdoc_change_is_picked_up_while_class_stays_loaded(): void
+    {
+        $id = uniqid();
+        $dir = sys_get_temp_dir().'/typefinder-inc-doc-'.$id;
+        File::ensureDirectoryExists($dir);
+        $class = 'IncDoc'.$id.'Resource';
+        $file = $dir.'/'.$class.'.php';
+        $source = static fn (string $shape): string => <<<PHP
+            <?php
+            namespace Scratch\\Doc{$id};
+            class {$class} extends \\Illuminate\\Http\\Resources\\Json\\JsonResource
+            {
+                /**
+                 * @return {$shape}
+                 */
+                public function toArray(\\Illuminate\\Http\\Request \$request): array
+                {
+                    return [];
+                }
+            }
+            PHP;
+
+        config(['typefinder.resources.paths' => [workbench_path('app/Http/Resources'), $dir]]);
+
+        try {
+            File::put($file, $source('array{id: int}'));
+            $real = (string) realpath($file);
+            require $real;
+
+            $generator = app(Generator::class);
+            $generator->generatePaths([$real]);
+            $output = $this->output.'/resources/'.$class.'.d.ts';
+            $this->assertStringNotContainsString('title', File::get($output));
+
+            // The class stays loaded with its old docblock in reflection;
+            // the doc must be re-read from disk.
+            File::put($file, $source('array{id: int, title: string}'));
+            $generator->generatePaths([$real]);
+
+            $this->assertStringContainsString('  title: string;', File::get($output));
+        } finally {
+            File::deleteDirectory($dir);
+        }
     }
 
     public function test_generate_paths_warns_and_drops_output_when_resource_stops_resolving(): void
