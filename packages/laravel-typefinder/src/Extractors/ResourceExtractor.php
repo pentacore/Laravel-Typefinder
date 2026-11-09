@@ -9,6 +9,7 @@ use Illuminate\Http\Resources\Json\JsonResource;
 use Pentacore\Typefinder\Attributes\TypefinderIgnore;
 use Pentacore\Typefinder\Attributes\TypefinderResource;
 use Pentacore\Typefinder\Support\ClassNameResolver;
+use Pentacore\Typefinder\Support\GeneratedClasses;
 use ReflectionAttribute;
 use ReflectionClass;
 use RuntimeException;
@@ -17,17 +18,25 @@ use Throwable;
 
 class ResourceExtractor
 {
+    private readonly GeneratedClasses $generatedClasses;
+
     /**
      * @param  bool  $inferFromModelName  Fall back to the `UserResource` → `User` name
      *                                    convention when a resource has no attribute.
      * @param  ?list<class-string>  $modelClasses  Models the convention may match. These should
      *                                             be the models that get a generated type. When
      *                                             null, they are discovered from `typefinder.models.paths`.
+     * @param  ?list<class-string>  $enumClasses  Enums that get a generated type; null discovers them from config.
+     * @param  ?list<class-string>  $resourceClasses  Resources that get a generated type; null discovers them from config.
      */
     public function __construct(
         private readonly bool $inferFromModelName = true,
-        private readonly ?array $modelClasses = null,
-    ) {}
+        ?array $modelClasses = null,
+        ?array $enumClasses = null,
+        ?array $resourceClasses = null,
+    ) {
+        $this->generatedClasses = new GeneratedClasses($modelClasses, $enumClasses, $resourceClasses);
+    }
 
     /**
      * @return ?array{name: string, fqcn: class-string, shape: array}
@@ -195,51 +204,11 @@ class ResourceExtractor
     {
         if ($this->modelShortNameMap === null) {
             $this->modelShortNameMap = [];
-            foreach ($this->modelClasses ?? $this->discoverModelClasses() as $class) {
+            foreach ($this->generatedClasses->models() as $class) {
                 $this->modelShortNameMap[new ReflectionClass($class)->getShortName()] ??= $class;
             }
         }
 
         return $this->modelShortNameMap[$shortName] ?? null;
-    }
-
-    /**
-     * The models a full run would emit: concrete Model subclasses under
-     * `typefinder.models.paths` without #[TypefinderIgnore].
-     *
-     * @return list<class-string>
-     */
-    protected function discoverModelClasses(): array
-    {
-        if (! config('typefinder.models.enabled', true)) {
-            return [];
-        }
-
-        $classes = [];
-        foreach ((array) config('typefinder.models.paths', []) as $path) {
-            if (! is_dir((string) $path)) {
-                continue;
-            }
-
-            foreach (Finder::create()->files()->name('*.php')->in((string) $path)->sortByName() as $file) {
-                $className = ClassNameResolver::fromFile($file->getRealPath());
-                if ($className === null || ! class_exists($className) || ! is_subclass_of($className, Model::class)) {
-                    continue;
-                }
-
-                $reflection = new ReflectionClass($className);
-                if ($reflection->isAbstract()) {
-                    continue;
-                }
-
-                if ($reflection->getAttributes(TypefinderIgnore::class, ReflectionAttribute::IS_INSTANCEOF) !== []) {
-                    continue;
-                }
-
-                $classes[] = $className;
-            }
-        }
-
-        return $classes;
     }
 }
