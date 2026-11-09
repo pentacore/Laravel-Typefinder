@@ -18,6 +18,8 @@ use App\Models\User;
 use Pentacore\Typefinder\Extractors\ModelExtractor;
 use Pentacore\Typefinder\Resolvers\CastTypeResolver;
 use Pentacore\Typefinder\Resolvers\ColumnTypeResolver;
+use Tests\Fixtures\Casts\UnmappedCast;
+use Tests\Fixtures\Models\UnmappedCastQuest;
 use Tests\TestCase;
 
 use function Orchestra\Testbench\workbench_path;
@@ -159,6 +161,47 @@ final class ModelExtractorTest extends TestCase
         $this->assertStringContainsString('QuirkyThing', $warnings[0]);
         $this->assertStringContainsString('shape', $warnings[0]);
         $this->assertStringContainsString('geometry', $warnings[0]);
+    }
+
+    public function test_unknown_cast_emits_warning(): void
+    {
+        $warnings = [];
+        $modelExtractor = new ModelExtractor(
+            new ColumnTypeResolver,
+            new CastTypeResolver,
+            function (string $message) use (&$warnings): void {
+                $warnings[] = $message;
+            },
+        );
+
+        $result = $modelExtractor->extract(UnmappedCastQuest::class);
+
+        $this->assertSame('unknown', $this->findColumn($result, 'rewards')['type']);
+        $this->assertCount(1, $warnings);
+        $this->assertStringContainsString(UnmappedCastQuest::class, $warnings[0]);
+        $this->assertStringContainsString('rewards', $warnings[0]);
+        $this->assertStringContainsString(UnmappedCast::class, $warnings[0]);
+        $this->assertStringContainsString('#[TypefinderCast]', $warnings[0]);
+        $this->assertStringContainsString('Typefinder::registerCast()', $warnings[0]);
+        $this->assertStringContainsString('typefinder.casts.type_map', $warnings[0]);
+    }
+
+    public function test_resolvable_casts_emit_no_warning(): void
+    {
+        $warnings = [];
+        $modelExtractor = new ModelExtractor(
+            new ColumnTypeResolver,
+            new CastTypeResolver,
+            function (string $message) use (&$warnings): void {
+                $warnings[] = $message;
+            },
+        );
+
+        // datetime + BackedEnum + #[TypefinderCast] class
+        $modelExtractor->extract(Post::class);
+        $modelExtractor->extract(User::class);
+
+        $this->assertSame([], $warnings);
     }
 
     public function test_extracts_has_many_relationship(): void
