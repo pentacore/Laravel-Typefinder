@@ -6,6 +6,7 @@ namespace Tests\Feature;
 
 use App\Enums\PostStatus;
 use App\Models\Article;
+use App\Models\Category;
 use App\Models\Comment;
 use App\Models\Invoice;
 use App\Models\Post;
@@ -133,8 +134,9 @@ final class ModelExtractorTest extends TestCase
         $this->assertContains('Invoice', $names);
         $this->assertContains('QuirkyThing', $names);
         $this->assertContains('Quest', $names);
+        $this->assertContains('Category', $names);
         $this->assertNotContains('LegacyModel', $names);
-        $this->assertCount(10, $results);
+        $this->assertCount(11, $results);
     }
 
     public function test_unknown_column_type_emits_warning_and_falls_back_to_unknown(): void
@@ -214,6 +216,14 @@ final class ModelExtractorTest extends TestCase
         $this->assertSame('manyWithPivot', $rel['type']);
         $this->assertSame(Tag::class, $rel['related']);
         $this->assertArrayHasKey('morphType', $rel['pivot']);
+    }
+
+    public function test_extracts_self_referencing_relations(): void
+    {
+        $result = $this->modelExtractor->extract(Category::class);
+
+        $this->assertSame(Category::class, $this->findRelationship($result, 'parent')['related']);
+        $this->assertSame(Category::class, $this->findRelationship($result, 'children')['related']);
     }
 
     public function test_extracts_morphed_by_many(): void

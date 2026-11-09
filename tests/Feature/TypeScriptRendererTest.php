@@ -7,6 +7,7 @@ namespace Tests\Feature;
 use App\Enums\PostStatus;
 use App\Http\Requests\StorePostRequest;
 use App\Http\Requests\StoreScheduleRequest;
+use App\Models\Category;
 use App\Models\Comment;
 use App\Models\Post;
 use App\Models\QuirkyThing;
@@ -238,6 +239,42 @@ final class TypeScriptRendererTest extends TestCase
         $this->assertStringContainsString("import type { RoleUserPivot } from './RoleUserPivot';", $output);
         $this->assertStringContainsString('posts?: Post[];', $output);
         $this->assertStringContainsString('roles?: (Role & { pivot: RoleUserPivot })[];', $output);
+    }
+
+    public function test_self_referencing_relations_do_not_import_own_model(): void
+    {
+        $model = [
+            'name' => 'Category',
+            'fqcn' => Category::class,
+            'columns' => [
+                ['name' => 'id', 'type' => 'number', 'nullable' => false],
+                ['name' => 'parent_id', 'type' => 'number', 'nullable' => true],
+            ],
+            'assignable_columns' => [
+                ['name' => 'parent_id', 'type' => 'number', 'nullable' => true],
+            ],
+            'relationships' => [
+                ['name' => 'parent', 'type' => 'belongsTo', 'related' => Category::class, 'relationType' => 'BelongsTo'],
+                ['name' => 'children', 'type' => 'many', 'related' => Category::class, 'relationType' => 'HasMany'],
+                ['name' => 'related', 'type' => 'manyWithPivot', 'related' => Category::class, 'relationType' => 'BelongsToMany', 'pivot' => [
+                    'table' => 'category_category',
+                    'foreignKey' => 'category_id',
+                    'relatedKey' => 'related_id',
+                    'withPivot' => [],
+                    'withTimestamps' => false,
+                ]],
+            ],
+        ];
+
+        $allModels = [['name' => 'Category', 'fqcn' => Category::class]];
+
+        $output = $this->typeScriptRenderer->renderModelFile($model, [], $allModels, true, []);
+
+        $this->assertStringNotContainsString("import type { Category } from './Category';", $output);
+        $this->assertStringContainsString("import type { CategoryCategoryPivot } from './CategoryCategoryPivot';", $output);
+        $this->assertStringContainsString('parent?: Category | null;', $output);
+        $this->assertStringContainsString('children?: Category[];', $output);
+        $this->assertStringContainsString('related?: (Category & { pivot: CategoryCategoryPivot })[];', $output);
     }
 
     public function test_renders_morph_to_with_generics(): void
