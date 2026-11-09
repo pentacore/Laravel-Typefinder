@@ -4,19 +4,17 @@ declare(strict_types=1);
 
 namespace Pentacore\Typefinder\Renderers\Concerns;
 
-use Illuminate\Http\Resources\Json\JsonResource;
 use Pentacore\Typefinder\Renderers\TypeScriptRenderer;
 
 /**
  * Resource type rendering across the three declaration tiers: explicit shape,
  * model extension (`Omit<…> & { … }`), and name-convention passthrough.
  *
- * Also provides `resolveAnyTypeString` — used by resources, pages, and
- * broadcasts — to resolve class-strings (models / enums / JsonResources)
- * to their generated short names with matching imports.
+ * Class-strings in `shape` and `extend` resolve through the host class's
+ * `resolveClassString`, imported relative to `resources/`.
  *
  * Mixed into {@see TypeScriptRenderer};
- * relies on the host class's `resolveModelName`, `resolvePagePropType`,
+ * relies on the host class's `resolveModelName`, `resolveClassString`,
  * and `FILE_HEADER`.
  */
 trait RendersResources
@@ -38,7 +36,7 @@ trait RendersResources
         if ($shape['kind'] === 'shape') {
             $lines = [];
             foreach ($shape['fields'] as $fieldName => $type) {
-                $resolved = $this->resolveAnyTypeString((string) $type, $allModels, $allEnums, $allResources, $imports, $resource['fqcn']);
+                $resolved = $this->resolveClassString((string) $type, 'resources', $allModels, $allEnums, $allResources, $imports, $resource['fqcn']);
                 $lines[] = sprintf('  %s: %s;', $fieldName, $resolved);
             }
 
@@ -63,7 +61,7 @@ trait RendersResources
         if ($extend !== []) {
             $parts = [];
             foreach ($extend as $fieldName => $type) {
-                $resolved = $this->resolveAnyTypeString((string) $type, $allModels, $allEnums, $allResources, $imports, $resource['fqcn']);
+                $resolved = $this->resolveClassString((string) $type, 'resources', $allModels, $allEnums, $allResources, $imports, $resource['fqcn']);
                 $parts[] = sprintf('%s: %s', $fieldName, $resolved);
             }
 
@@ -89,35 +87,6 @@ trait RendersResources
         }
 
         return $output.$body;
-    }
-
-    /**
-     * Like `resolvePagePropType`, but also recognises JsonResource subclasses
-     * and emits sibling-import statements for them.
-     *
-     * @param  list<array>  $allModels
-     * @param  list<array>  $allEnums
-     * @param  list<array>  $allResources
-     * @param  list<string>  $imports
-     */
-    protected function resolveAnyTypeString(
-        string $type,
-        array $allModels,
-        array $allEnums,
-        array $allResources,
-        array &$imports,
-        ?string $selfFqcn = null,
-    ): string {
-        if (class_exists($type) && is_subclass_of($type, JsonResource::class)) {
-            $short = $this->resolveResourceName($type, $allResources);
-            if ($type !== $selfFqcn) {
-                $imports[] = sprintf("import type { %s } from './%s';", $short, $short);
-            }
-
-            return $short;
-        }
-
-        return $this->resolvePagePropType($type, $allModels, $allEnums, $imports);
     }
 
     /**

@@ -13,7 +13,7 @@ use Pentacore\Typefinder\Renderers\TypeScriptRenderer;
  * visibility with per-channel event payload records.
  *
  * Mixed into {@see TypeScriptRenderer};
- * relies on the host class's `resolvePagePropType` for payload
+ * relies on the host class's `resolveClassString` for payload
  * class-string resolution and `FILE_HEADER`.
  */
 trait RendersBroadcasting
@@ -25,7 +25,7 @@ trait RendersBroadcasting
      * @param  list<array>  $allModels
      * @param  list<array>  $allEnums
      */
-    public function renderBroadcasting(array $events, array $allModels, array $allEnums): string
+    public function renderBroadcasting(array $events, array $allModels, array $allEnums, array $allResources = []): string
     {
         $imports = [];
 
@@ -35,7 +35,7 @@ trait RendersBroadcasting
         usort($events, fn (array $a, array $b): int => strcmp((string) $a['broadcast_name'], (string) $b['broadcast_name']));
 
         foreach ($events as $event) {
-            $payloadStr = $this->renderPayloadRecord($event['payload'], $allModels, $allEnums, $imports);
+            $payloadStr = $this->renderPayloadRecord($event['payload'], $allModels, $allEnums, $allResources, $imports);
             $flatEvents[] = sprintf("  '%s': %s;", $event['broadcast_name'], $payloadStr);
 
             foreach ($event['channels'] as $channel) {
@@ -85,7 +85,7 @@ trait RendersBroadcasting
      * @param  list<array>  $allEnums
      * @param  list<string>  $imports
      */
-    protected function renderPayloadRecord(array $payload, array $allModels, array $allEnums, array &$imports): string
+    protected function renderPayloadRecord(array $payload, array $allModels, array $allEnums, array $allResources, array &$imports): string
     {
         if ($payload === []) {
             return 'Record<string, never>';
@@ -93,7 +93,7 @@ trait RendersBroadcasting
 
         $parts = [];
         foreach ($payload as $name => $type) {
-            $resolved = $this->resolvePagePropType((string) $type, $allModels, $allEnums, $imports);
+            $resolved = $this->resolveClassString((string) $type, '', $allModels, $allEnums, $allResources, $imports);
             $parts[] = sprintf('%s: %s', $name, $resolved);
         }
 
