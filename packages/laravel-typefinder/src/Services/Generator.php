@@ -270,7 +270,7 @@ final class Generator
             $this->assertNoPageCollisions($allPages);
 
             if ($allPages !== []) {
-                $this->writePages($allPages, $allModels, $allEnums, $outputPath, $changed);
+                $this->writePages($allPages, $allModels, $allEnums, $allResources, $outputPath, $changed);
                 $categories[] = 'pages';
             }
         }
@@ -287,7 +287,7 @@ final class Generator
             $this->assertNoBroadcastCollisions($allBroadcasts);
 
             if ($allBroadcasts !== []) {
-                $this->writeBroadcasting($allBroadcasts, $allModels, $allEnums, $outputPath, $changed);
+                $this->writeBroadcasting($allBroadcasts, $allModels, $allEnums, $allResources, $outputPath, $changed);
                 $categories[] = 'broadcasting';
             }
         }
@@ -478,11 +478,11 @@ final class Generator
         }
     }
 
-    private function writePages(array $pages, array $allModels, array $allEnums, string $outputPath, array &$changed): void
+    private function writePages(array $pages, array $allModels, array $allEnums, array $allResources, string $outputPath, array &$changed): void
     {
         File::ensureDirectoryExists($outputPath);
 
-        $content = $this->typeScriptRenderer->renderPages($pages, $allModels, $allEnums);
+        $content = $this->typeScriptRenderer->renderPages($pages, $allModels, $allEnums, $allResources);
         $wrote = $this->writeIfChanged($outputPath.'/pages.d.ts', $content);
         if ($wrote) {
             $changed[] = 'pages.d.ts';
@@ -512,11 +512,11 @@ final class Generator
         throw new \RuntimeException("Duplicate TypefinderPage components:\n".implode("\n", $lines));
     }
 
-    private function writeBroadcasting(array $events, array $allModels, array $allEnums, string $outputPath, array &$changed): void
+    private function writeBroadcasting(array $events, array $allModels, array $allEnums, array $allResources, string $outputPath, array &$changed): void
     {
         File::ensureDirectoryExists($outputPath);
 
-        $content = $this->typeScriptRenderer->renderBroadcasting($events, $allModels, $allEnums);
+        $content = $this->typeScriptRenderer->renderBroadcasting($events, $allModels, $allEnums, $allResources);
         $wrote = $this->writeIfChanged($outputPath.'/broadcasting.d.ts', $content);
         if ($wrote) {
             $changed[] = 'broadcasting.d.ts';

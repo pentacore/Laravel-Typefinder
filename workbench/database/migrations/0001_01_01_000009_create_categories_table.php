@@ -12,6 +12,10 @@ return new class extends Migration
             $table->id();
             $table->foreignId('parent_id')->nullable()->constrained('categories');
             $table->string('name');
+            // Typed through class-string overrides on the model (#75).
+            $table->string('featured_status')->nullable();
+            $table->json('owner_snapshot')->nullable();
+            $table->json('root_snapshot')->nullable();
             $table->timestamps();
         });
     }

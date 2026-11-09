@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Pentacore\Typefinder\Renderers;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Http\Resources\Json\JsonResource;
 use Pentacore\Typefinder\Renderers\Concerns\RendersBroadcasting;
 use Pentacore\Typefinder\Renderers\Concerns\RendersModels;
 use Pentacore\Typefinder\Renderers\Concerns\RendersResources;
@@ -136,7 +137,7 @@ class TypeScriptRenderer
      * @param  list<array>  $allModels
      * @param  list<array>  $allEnums
      */
-    public function renderPages(array $pages, array $allModels, array $allEnums): string
+    public function renderPages(array $pages, array $allModels, array $allEnums, array $allResources = []): string
     {
         $imports = [];
         $entries = [];
@@ -146,7 +147,7 @@ class TypeScriptRenderer
         foreach ($pages as $page) {
             $propLines = [];
             foreach ($page['props'] as $name => $type) {
-                $resolved = $this->resolvePagePropType((string) $type, $allModels, $allEnums, $imports);
+                $resolved = $this->resolveClassString((string) $type, '', $allModels, $allEnums, $allResources, $imports);
                 $optional = in_array($name, $page['optional'], true) ? '?' : '';
                 $propLines[] = sprintf('%s%s: %s', $name, $optional, $resolved);
             }
@@ -170,27 +171,65 @@ class TypeScriptRenderer
     }
 
     /**
+     * Replace class-strings in a type string with the generated type names and
+     * record the import each one needs.
+     *
+     * Every namespaced class name in the string is checked, so unions, `[]`
+     * suffixes and generics keep their exact text (`App\Models\User | null`
+     * becomes `User | null`). Names that are not a model, enum or resource
+     * are left as written.
+     *
+     * @param  string  $fromDir  Directory of the file being written, relative to
+     *                           the output path: '' for root files (pages.d.ts,
+     *                           broadcasting.d.ts), else 'models', 'resources'
+     *                           or 'requests'.
      * @param  list<array>  $allModels
      * @param  list<array>  $allEnums
+     * @param  list<array>  $allResources
      * @param  list<string>  $imports
+     * @param  ?string  $selfFqcn  The class the file declares; never imported.
      */
-    protected function resolvePagePropType(string $type, array $allModels, array $allEnums, array &$imports): string
-    {
-        if (class_exists($type) && is_subclass_of($type, Model::class)) {
-            $short = $this->resolveModelName($type, $allModels);
-            $imports[] = sprintf("import type { %s } from './models';", $short);
-
-            return $short;
+    protected function resolveClassString(
+        string $type,
+        string $fromDir,
+        array $allModels,
+        array $allEnums,
+        array $allResources,
+        array &$imports,
+        ?string $selfFqcn = null,
+    ): string {
+        if (! str_contains($type, '\\')) {
+            return $type;
         }
 
-        if (enum_exists($type)) {
-            $short = $this->resolveEnumName($type, $allEnums);
-            $imports[] = sprintf("import type { %s } from './enums';", $short);
+        $prefix = $fromDir === '' ? './' : '../';
 
-            return $short;
-        }
+        return (string) preg_replace_callback(
+            '/\\\\?[A-Za-z_][A-Za-z0-9_]*(?:\\\\[A-Za-z_][A-Za-z0-9_]*)+/',
+            function (array $match) use ($fromDir, $prefix, $allModels, $allEnums, $allResources, &$imports, $selfFqcn): string {
+                $class = ltrim($match[0], '\\');
 
-        return $type;
+                if (class_exists($class) && is_subclass_of($class, JsonResource::class)) {
+                    $short = $this->resolveResourceName($class, $allResources);
+                    $from = $fromDir === 'resources' ? './'.$short : $prefix.'resources';
+                } elseif (class_exists($class) && is_subclass_of($class, Model::class)) {
+                    $short = $this->resolveModelName($class, $allModels);
+                    $from = $fromDir === 'models' ? './'.$short : $prefix.'models';
+                } elseif (enum_exists($class)) {
+                    $short = $this->resolveEnumName($class, $allEnums);
+                    $from = $prefix.'enums';
+                } else {
+                    return $match[0];
+                }
+
+                if ($class !== $selfFqcn) {
+                    $imports[] = sprintf("import type { %s } from '%s';", $short, $from);
+                }
+
+                return $short;
+            },
+            $type,
+        );
     }
 
     /**
@@ -384,10 +423,18 @@ TS;
      * @param  list<array>  $allEnums
      * @param  list<string>  $imports  (passed by reference)
      */
-    protected function resolveTypeString(mixed $type, bool $nullable, array $allEnums, array &$imports): string
-    {
+    protected function resolveTypeString(
+        mixed $type,
+        bool $nullable,
+        array $allEnums,
+        array &$imports,
+        string $fromDir,
+        ?string $selfFqcn = null,
+        array $allModels = [],
+    ): string {
         if (is_string($type)) {
-            return $type;
+            // Overrides (#[TypefinderOverrides]) may carry class-strings.
+            return $this->resolveClassString($type, $fromDir, $allModels, $allEnums, [], $imports, $selfFqcn);
         }
 
         if (is_array($type)) {
@@ -406,7 +453,7 @@ TS;
             }
 
             if (array_key_exists('arrayOf', $type)) {
-                $itemType = $this->resolveTypeString($type['arrayOf'], false, $allEnums, $imports);
+                $itemType = $this->resolveTypeString($type['arrayOf'], false, $allEnums, $imports, $fromDir, $selfFqcn, $allModels);
 
                 return (str_contains($itemType, ' | ') ? '('.$itemType.')' : $itemType).'[]';
             }
@@ -487,7 +534,7 @@ TS;
                 $nestedLines = [];
                 foreach ($field['children'] as $child) {
                     $childOptional = $child['required'] ? '' : '?';
-                    $childType = $this->resolveTypeString($child['type'], $child['nullable'], $allEnums, $imports);
+                    $childType = $this->resolveTypeString($child['type'], $child['nullable'], $allEnums, $imports, 'requests');
                     $nestedLines[] = sprintf('  %s%s: %s;', $child['name'], $childOptional, self::appendNullable($childType, (bool) $child['nullable']));
                 }
 
@@ -498,7 +545,7 @@ TS;
                 $lines[] = sprintf('%s%s%s: {', $prefix, $field['name'], $optional);
                 foreach ($field['children'] as $child) {
                     $childOptional = $child['required'] ? '' : '?';
-                    $childType = $this->resolveTypeString($child['type'], $child['nullable'], $allEnums, $imports);
+                    $childType = $this->resolveTypeString($child['type'], $child['nullable'], $allEnums, $imports, 'requests');
                     $lines[] = sprintf('%s  %s%s: %s;', $prefix, $child['name'], $childOptional, self::appendNullable($childType, (bool) $child['nullable']));
                 }
 
@@ -506,7 +553,7 @@ TS;
                 $lines[] = sprintf('%s%s%s;', $prefix, $closer, $nullable ? ' | null' : '');
             }
         } else {
-            $typeStr = $this->resolveTypeString($field['type'], $field['nullable'], $allEnums, $imports);
+            $typeStr = $this->resolveTypeString($field['type'], $field['nullable'], $allEnums, $imports, 'requests');
             $lines[] = sprintf('%s%s%s: %s;', $prefix, $field['name'], $optional, self::appendNullable($typeStr, $nullable));
         }
     }

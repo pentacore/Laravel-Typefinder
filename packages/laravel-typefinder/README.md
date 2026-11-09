@@ -278,6 +278,18 @@ All attributes live under `Pentacore\Typefinder\Attributes\`.
 | `#[TypefinderBroadcast(payload, as, channel, channelType)]` | broadcast event class | Override reflection for events with dynamic `broadcastOn()`/`broadcastWith()`. |
 | `#[TypefinderCast('T')]` | custom cast class | Declare the TS shape for a cast you own. |
 
+Type values in `TypefinderOverrides`, `TypefinderResource` (`shape` and `extend`), `TypefinderPage` and `TypefinderBroadcast` can be TypeScript strings or class-strings. A model, enum or `JsonResource` class-string resolves to its generated type, with the import added for you, also inside unions and arrays:
+
+```php
+#[TypefinderPage(component: 'Posts/Show', props: [
+    'post' => PostResource::class,
+    'author' => User::class.' | null',  // → author: User | null
+    'tags' => Tag::class.'[]',          // → tags: Tag[]
+])]
+```
+
+Class names that are none of these are written as-is.
+
 ## Custom casts
 
 ### Your own casts — `#[TypefinderCast]`

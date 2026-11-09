@@ -93,7 +93,7 @@ trait RendersModels
         }
 
         foreach ($model['columns'] as $column) {
-            $typeStr = $this->resolveTypeString($column['type'], $column['nullable'], $allEnums, $imports);
+            $typeStr = $this->resolveTypeString($column['type'], $column['nullable'], $allEnums, $imports, 'models', $model['fqcn'] ?? null, $allModels);
             $lines[] = sprintf('  %s: %s;', $column['name'], TypeScriptRenderer::appendNullable($typeStr, (bool) $column['nullable']));
         }
 
@@ -130,7 +130,7 @@ trait RendersModels
         ));
 
         foreach ($eligible as $column) {
-            $typeStr = $this->resolveTypeString($column['type'], $column['nullable'], $allEnums, $imports);
+            $typeStr = $this->resolveTypeString($column['type'], $column['nullable'], $allEnums, $imports, 'models', $model['fqcn'] ?? null, $allModels);
             $optional = $column['nullable'] ? '?' : '';
             $lines[] = sprintf('  %s%s: %s;', $column['name'], $optional, TypeScriptRenderer::appendNullable($typeStr, (bool) $column['nullable']));
         }
@@ -159,7 +159,7 @@ trait RendersModels
         ));
 
         foreach ($eligible as $column) {
-            $typeStr = $this->resolveTypeString($column['type'], $column['nullable'], $allEnums, $imports);
+            $typeStr = $this->resolveTypeString($column['type'], $column['nullable'], $allEnums, $imports, 'models', $model['fqcn'] ?? null, $allModels);
             $lines[] = sprintf('  %s?: %s;', $column['name'], TypeScriptRenderer::appendNullable($typeStr, (bool) $column['nullable']));
         }
 
