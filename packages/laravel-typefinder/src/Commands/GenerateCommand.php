@@ -66,6 +66,7 @@ class GenerateCommand extends Command
                 : $generator->generatePaths($onlyPaths);
 
             $this->warnings = $result->warnings;
+            $this->printWarnings($useJson);
             $this->files = array_map(fn (string $p): array => ['path' => $p, 'written' => true], $result->changed);
 
             // Emit per-category info lines for non-JSON mode
@@ -183,6 +184,20 @@ class GenerateCommand extends Command
             $label = $labelMap[$category] ?? $category;
             $this->counts[$category] = $count;
             $this->printInfo('Generated '.$count.' '.$label.' type(s)', $useJson);
+        }
+    }
+
+    /**
+     * Print collected warnings unless JSON mode is active (JSON carries them in its payload).
+     */
+    private function printWarnings(bool $useJson): void
+    {
+        if ($useJson) {
+            return;
+        }
+
+        foreach ($this->warnings as $message) {
+            $this->warn('[typefinder] warning: '.$message);
         }
     }
 

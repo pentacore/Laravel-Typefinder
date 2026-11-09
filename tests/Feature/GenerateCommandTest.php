@@ -35,6 +35,24 @@ final class GenerateCommandTest extends TestCase
         parent::tearDown();
     }
 
+    public function test_plain_mode_prints_warnings(): void
+    {
+        config(['typefinder.resources.paths' => [workbench_path('app/Http/Resources')]]);
+
+        $this->artisan('typefinder:generate')
+            ->expectsOutputToContain('[typefinder] warning: skipped App\Http\Resources\OrphanResource')
+            ->assertSuccessful();
+    }
+
+    public function test_json_mode_does_not_print_plain_warnings(): void
+    {
+        config(['typefinder.resources.paths' => [workbench_path('app/Http/Resources')]]);
+
+        $this->artisan('typefinder:generate --json')
+            ->doesntExpectOutputToContain('[typefinder] warning:')
+            ->assertSuccessful();
+    }
+
     public function test_command_runs_successfully(): void
     {
         $this->artisan('typefinder:generate')

@@ -66,7 +66,7 @@ This copies `config/typefinder.php` into your application's `config/` directory.
 php artisan typefinder:generate
 ```
 
-Scans configured directories, resolves types, and writes `.d.ts` files to `output_path`. Only files whose content has changed are rewritten; stale generated files are pruned automatically. By default the `output_path` is added to your project `.gitignore` on first run (`gitignore_generated`). Decide whether to commit the output before setting up CI; see [Using typefinder in CI](#using-typefinder-in-ci).
+Scans configured directories, resolves types, and writes `.d.ts` files to `output_path`. Only files whose content has changed are rewritten; stale generated files are pruned automatically. By default the `output_path` is added to your project `.gitignore` on first run (`gitignore_generated`). Decide whether to commit the output before setting up CI; see [Using typefinder in CI](#using-typefinder-in-ci). Warnings from the run (unknown column types, skipped classes, and so on) are printed as `[typefinder] warning: …` lines.
 
 ### Flags
 
