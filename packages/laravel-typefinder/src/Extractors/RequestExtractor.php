@@ -6,6 +6,7 @@ namespace Pentacore\Typefinder\Extractors;
 
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rules\AnyOf;
+use Illuminate\Validation\Rules\ArrayRule;
 use Illuminate\Validation\Rules\Enum;
 use Illuminate\Validation\Rules\In;
 use Pentacore\Typefinder\Attributes\TypefinderIgnore;
@@ -64,9 +65,16 @@ class RequestExtractor
         'declined_if' => 'boolean',
         'file' => 'File',
         'image' => 'File',
-        'array' => 'array',
-        'list' => 'array',
+        'array' => self::ARRAY_TYPE,
+        'list' => self::LIST_TYPE,
     ];
+
+    /**
+     * An `array` rule accepts both lists and keyed arrays.
+     */
+    protected const ARRAY_TYPE = 'unknown[] | Record<string, unknown>';
+
+    protected const LIST_TYPE = 'unknown[]';
 
     /**
      * Rules that make a field optional (conditional required).
@@ -246,6 +254,7 @@ class RequestExtractor
             $required = $this->isRequired($fieldRules);
             $nullable = $this->isNullable($fieldRules);
             $type = $this->resolveType($fieldRules);
+            $isArray = $this->isArrayRule($fieldRules);
 
             // Check for 'confirmed' rule
             if ($this->hasRule($fieldRules, 'confirmed')) {
@@ -253,10 +262,10 @@ class RequestExtractor
             }
 
             // Handle array/list types with wildcard items
-            if ($type === 'array' && isset($unsafeWildcards[$fieldName])) {
+            if ($isArray && isset($unsafeWildcards[$fieldName])) {
                 // Nested wildcard we can't model precisely — emit a safe array type.
                 $type = 'unknown[]';
-            } elseif ($type === 'array' && isset($wildcardObjects[$fieldName])) {
+            } elseif ($isArray && isset($wildcardObjects[$fieldName])) {
                 // Array-of-objects: rate_limits.*.metric etc.
                 $children = $this->parseNestedFields($wildcardObjects[$fieldName]);
                 $fields[] = [
@@ -268,10 +277,9 @@ class RequestExtractor
                 ];
 
                 continue;
-            } elseif ($type === 'array' && isset($wildcardTypes[$fieldName])) {
-                $itemType = $wildcardTypes[$fieldName];
-                $type = $itemType.'[]';
-            } elseif ($type === 'array' && isset($nested[$fieldName])) {
+            } elseif ($isArray && isset($wildcardTypes[$fieldName])) {
+                $type = $this->arrayOf($wildcardTypes[$fieldName]);
+            } elseif ($isArray && isset($nested[$fieldName])) {
                 // Nested object
                 $children = $this->parseNestedFields($nested[$fieldName]);
                 $fields[] = [
@@ -365,6 +373,11 @@ class RequestExtractor
                 }
             }
 
+            // Handle Rule::array() / Rule::array([...keys])
+            if ($rule instanceof ArrayRule) {
+                $rule = explode('|', (string) $rule)[0];
+            }
+
             // Handle string rules
             if (is_string($rule)) {
                 // Handle 'in:foo,bar,baz' string format
@@ -372,6 +385,11 @@ class RequestExtractor
                     $values = explode(',', substr($rule, 3));
 
                     return ['in' => $values];
+                }
+
+                // Handle 'array:name,email' — only the listed keys are allowed
+                if (str_starts_with($rule, 'array:')) {
+                    return $this->keyedArrayType(explode(',', substr($rule, 6)));
                 }
 
                 // Handle rules with parameters like 'digits:4'
@@ -384,6 +402,72 @@ class RequestExtractor
         }
 
         return 'unknown';
+    }
+
+    /**
+     * Whether the rules declare the field an array (`array`, `array:keys`,
+     * `list` or `Rule::array()`), wherever the rule sits in the list.
+     *
+     * @param  list<mixed>  $rules
+     */
+    protected function isArrayRule(array $rules): bool
+    {
+        foreach ($rules as $rule) {
+            if ($rule instanceof ArrayRule) {
+                return true;
+            }
+
+            if (is_string($rule) && in_array(explode(':', $rule)[0], ['array', 'list'], true)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Wrap a wildcard item type as an array type. Structured item types
+     * (enum, in, anyOf) are rendered later, so they are wrapped as `arrayOf`.
+     *
+     * @return string|array{arrayOf: mixed}
+     */
+    protected function arrayOf(mixed $itemType): string|array
+    {
+        if (! is_string($itemType)) {
+            return ['arrayOf' => $itemType];
+        }
+
+        return (str_contains($itemType, ' | ') ? '('.$itemType.')' : $itemType).'[]';
+    }
+
+    /**
+     * Object type for `array:a,b` — only the listed keys are allowed, and
+     * none of them is required by the rule itself.
+     *
+     * @param  list<string>  $keys
+     */
+    protected function keyedArrayType(array $keys): string
+    {
+        $members = [];
+
+        foreach ($keys as $key) {
+            $key = trim($key);
+            if ($key === '') {
+                continue;
+            }
+
+            $name = preg_match('/^[A-Za-z_$][A-Za-z0-9_$]*$/', $key) === 1
+                ? $key
+                : "'".str_replace(['\\', "'"], ['\\\\', "\\'"], $key)."'";
+
+            $members[] = $name.'?: unknown';
+        }
+
+        if ($members === []) {
+            return self::ARRAY_TYPE;
+        }
+
+        return '{ '.implode('; ', $members).' }';
     }
 
     /**
