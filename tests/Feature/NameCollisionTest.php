@@ -122,6 +122,23 @@ final class NameCollisionTest extends TestCase
         $this->assertSame($before, File::get($this->output.'/requests/StoreWidgetRequest.d.ts'));
     }
 
+    public function test_incremental_run_of_the_same_file_is_not_a_collision(): void
+    {
+        $dir = $this->scratch.'/same';
+        $this->writeClass('Same', 'UpdateWidgetRequest', 'class UpdateWidgetRequest extends \Illuminate\Foundation\Http\FormRequest { public function rules(): array { return ["x" => "string"]; } }', $dir);
+        config(['typefinder.requests.paths' => [$this->scratch]]);
+
+        $generator = app(Generator::class);
+        $generator->generateFull();
+
+        // The cache already holds this file under the same name: regenerating
+        // it must not count as a second class taking the name.
+        $regenResult = $generator->generatePaths([(string) realpath($dir.'/UpdateWidgetRequest.php')]);
+
+        $this->assertSame([], $regenResult->failed);
+        $this->assertFileExists($this->output.'/requests/UpdateWidgetRequest.d.ts');
+    }
+
     /**
      * @param  list<string>  $fqcns
      */
