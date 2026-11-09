@@ -18,6 +18,18 @@ use Throwable;
 class ResourceExtractor
 {
     /**
+     * @param  bool  $inferFromModelName  Fall back to the `UserResource` → `User` name
+     *                                    convention when a resource has no attribute.
+     * @param  ?list<class-string>  $modelClasses  Models the convention may match. These should
+     *                                             be the models that get a generated type. When
+     *                                             null, they are discovered from `typefinder.models.paths`.
+     */
+    public function __construct(
+        private readonly bool $inferFromModelName = true,
+        private readonly ?array $modelClasses = null,
+    ) {}
+
+    /**
      * @return ?array{name: string, fqcn: class-string, shape: array}
      */
     public function extract(string $resourceClass): ?array
@@ -66,7 +78,7 @@ class ResourceExtractor
         }
 
         $short = $reflectionClass->getShortName();
-        if (str_ends_with($short, 'Resource')) {
+        if ($this->inferFromModelName && str_ends_with($short, 'Resource')) {
             $modelShort = substr($short, 0, -strlen('Resource'));
             $modelFqcn = $this->resolveModelFqcn($modelShort);
             if ($modelFqcn !== null) {
@@ -130,9 +142,7 @@ class ResourceExtractor
                 $entry = $this->extract($className);
                 if ($entry === null) {
                     if ($onWarn !== null) {
-                        $onWarn($className, new RuntimeException(
-                            'No #[TypefinderResource] attribute and class name does not match any discovered model. Add a shape or model attribute to include this resource.',
-                        ));
+                        $onWarn($className, new RuntimeException($this->unresolvedMessage()));
                     }
 
                     continue;
@@ -156,29 +166,80 @@ class ResourceExtractor
         return $attrs === [] ? null : $attrs[0]->newInstance();
     }
 
+    /**
+     * Why a resource produced no type. Shared by full and incremental runs.
+     */
+    public function unresolvedMessage(): string
+    {
+        if (! $this->inferFromModelName) {
+            return 'No #[TypefinderResource] attribute, and name-convention inference is off '
+                .'(typefinder.resources.infer_from_model_name). Add a shape or model attribute, '
+                .'or #[TypefinderIgnore] to skip this resource.';
+        }
+
+        return 'No #[TypefinderResource] attribute and class name does not match any discovered model. '
+            .'Add a shape or model attribute to include this resource.';
+    }
+
     /** @var ?array<string, class-string> */
     protected ?array $modelShortNameMap = null;
 
     /**
-     * Best-effort lookup of a Model FQCN by short name.
+     * Look up a model FQCN by short name for the name convention.
      *
-     * Walks `get_declared_classes()` once per extractor instance and caches
-     * the short-name → FQCN map, so subsequent orphan resources resolve in
-     * O(1) instead of scanning every declared class.
+     * Only models that get a generated type are candidates: a match on any
+     * other Model subclass (a vendor model, or one not autoloaded yet in an
+     * incremental run) would import a type that does not exist.
      */
     protected function resolveModelFqcn(string $shortName): ?string
     {
         if ($this->modelShortNameMap === null) {
             $this->modelShortNameMap = [];
-            foreach (get_declared_classes() as $class) {
-                if (! is_subclass_of($class, Model::class)) {
-                    continue;
-                }
-
-                $this->modelShortNameMap[new ReflectionClass($class)->getShortName()] = $class;
+            foreach ($this->modelClasses ?? $this->discoverModelClasses() as $class) {
+                $this->modelShortNameMap[new ReflectionClass($class)->getShortName()] ??= $class;
             }
         }
 
         return $this->modelShortNameMap[$shortName] ?? null;
+    }
+
+    /**
+     * The models a full run would emit: concrete Model subclasses under
+     * `typefinder.models.paths` without #[TypefinderIgnore].
+     *
+     * @return list<class-string>
+     */
+    protected function discoverModelClasses(): array
+    {
+        if (! config('typefinder.models.enabled', true)) {
+            return [];
+        }
+
+        $classes = [];
+        foreach ((array) config('typefinder.models.paths', []) as $path) {
+            if (! is_dir((string) $path)) {
+                continue;
+            }
+
+            foreach (Finder::create()->files()->name('*.php')->in((string) $path)->sortByName() as $file) {
+                $className = ClassNameResolver::fromFile($file->getRealPath());
+                if ($className === null || ! class_exists($className) || ! is_subclass_of($className, Model::class)) {
+                    continue;
+                }
+
+                $reflection = new ReflectionClass($className);
+                if ($reflection->isAbstract()) {
+                    continue;
+                }
+
+                if ($reflection->getAttributes(TypefinderIgnore::class, ReflectionAttribute::IS_INSTANCEOF) !== []) {
+                    continue;
+                }
+
+                $classes[] = $className;
+            }
+        }
+
+        return $classes;
     }
 }

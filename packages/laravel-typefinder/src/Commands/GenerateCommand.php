@@ -78,8 +78,12 @@ class GenerateCommand extends Command
                 $durationMs = (int) round((microtime(true) - $startedAt) * 1000);
 
                 if ($drift !== []) {
+                    $hint = File::isDirectory($realOutputPath) ? null : $this->missingOutputHint($realOutputPath);
+
                     if ($useJson) {
-                        $this->emitJson(false, $durationMs, $realOutputPath, $drift, []);
+                        $this->emitJson(false, $durationMs, $realOutputPath, [...$drift, ...($hint === null ? [] : [$hint])], []);
+                    } elseif ($hint !== null) {
+                        $this->warn('[typefinder] '.$hint);
                     } else {
                         $this->warn('[typefinder] drift detected — the following files would change:');
                         foreach ($drift as $path) {
@@ -220,6 +224,22 @@ class GenerateCommand extends Command
         ];
 
         $this->getOutput()->writeln(json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+    }
+
+    /**
+     * Explain a --check run against an output directory that does not exist.
+     * This is the usual result of running --check in a fresh CI checkout while
+     * the output is git-ignored, where listing every file as missing hides the
+     * actual cause.
+     */
+    private function missingOutputHint(string $outputPath): string
+    {
+        return sprintf(
+            'output path %s does not exist, so there is nothing to compare against. '
+            .'--check needs the generated output committed (`gitignore_generated` => false). '
+            .'If the output is git-ignored, run typefinder:generate in CI before the TypeScript build instead of --check.',
+            $outputPath,
+        );
     }
 
     /**

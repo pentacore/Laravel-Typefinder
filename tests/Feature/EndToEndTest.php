@@ -408,6 +408,29 @@ PHP);
             ->assertFailed();
     }
 
+    public function test_check_mode_explains_missing_output_directory(): void
+    {
+        // No prior generation: the output directory does not exist, as in a
+        // fresh CI checkout where the output is git-ignored.
+        $this->artisan('typefinder:generate', ['--check' => true])
+            ->expectsOutputToContain('does not exist, so there is nothing to compare against')
+            ->assertFailed();
+    }
+
+    public function test_check_mode_json_reports_missing_output_directory_as_warning(): void
+    {
+        $exitCode = Artisan::call('typefinder:generate', ['--check' => true, '--json' => true]);
+        $this->assertSame(1, $exitCode);
+
+        $decoded = json_decode(Artisan::output(), true);
+        $this->assertIsArray($decoded);
+        $this->assertFalse($decoded['success']);
+        $this->assertNotEmpty(array_filter(
+            $decoded['warnings'],
+            fn (string $w): bool => str_contains($w, 'does not exist'),
+        ));
+    }
+
     public function test_check_mode_fails_when_file_is_stale(): void
     {
         $this->artisan('typefinder:generate')->assertSuccessful();

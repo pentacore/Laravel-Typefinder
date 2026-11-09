@@ -119,6 +119,17 @@ final class ExtractionCache
         return $entry['extraction'];
     }
 
+    /**
+     * The last extraction recorded for a path, even if the file has changed
+     * since. Used to find the output a modified or removed file used to own.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function lastKnown(string $absolutePath): ?array
+    {
+        return $this->entries[$absolutePath]['extraction'] ?? null;
+    }
+
     public function forget(string $absolutePath): void
     {
         unset($this->entries[$absolutePath]);

@@ -12,7 +12,7 @@ php artisan typefinder:generate [--debug] [--json] [--check]
 |---|---|
 | `--json` | Emit a single structured JSON object to stdout. Suppresses human output. |
 | `--debug` | Emit `[typefinder]`-prefixed diagnostic lines, one per extracted class. |
-| `--check` | Dry-run: generate into a temp directory, diff against on-disk output, exit non-zero if they differ. CI-friendly; writes no files. |
+| `--check` | Dry-run: generate into a temp directory, diff against on-disk output, exit non-zero if they differ. Writes no files. Only meaningful when the output is committed (`gitignore_generated` => false); with ignored output, generate in CI instead. |
 
 ## Emitted categories
 
@@ -144,6 +144,7 @@ return [
     'resources' => [
         'enabled' => true,
         'paths' => [app_path('Http/Resources')],
+        'infer_from_model_name' => true, // false: undeclared resources warn instead of getting the model's type
     ],
 
     'inertia' => [
