@@ -41,7 +41,7 @@ final class ArrayRuleTypesTest extends TestCase
         yield 'array:name,email' => ['contact', '{ name?: unknown; email?: unknown }'];
         yield 'array keys that are not identifiers' => ['headers', "{ 'content-type'?: unknown; accept?: unknown }"];
         yield 'Rule::array()' => ['filters', self::ARRAY_OR_RECORD];
-        yield 'Rule::array([keys])->min()' => ['address', '{ street?: unknown; city?: unknown }'];
+        yield 'Rule::array([keys]), with ->min() on Laravel 13' => ['address', '{ street?: unknown; city?: unknown }'];
         yield 'list with wildcard after other rules' => ['counts', 'number[]'];
         yield 'Rule::array() with wildcard' => ['labels', 'string[]'];
         yield 'wildcard item is an array' => ['matrix', '('.self::ARRAY_OR_RECORD.')[]'];

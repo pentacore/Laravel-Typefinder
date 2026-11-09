@@ -5,6 +5,7 @@ namespace App\Http\Requests;
 use App\Enums\PostStatus;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\ArrayRule;
 
 /**
  * Covers every shape the `array` / `list` rules can take (issue #74).
@@ -26,7 +27,11 @@ class StoreArrayRulesRequest extends FormRequest
             'contact' => 'array:name,email',
             'headers' => ['array:content-type,accept'],
             'filters' => [Rule::array()],
-            'address' => [Rule::array(['street', 'city'])->min(1)],
+            // ArrayRule::min() exists from Laravel 13; on 12 the plain keyed rule
+            // gives the same type. On 13 this covers the "array:…|min:1" string.
+            'address' => [method_exists(ArrayRule::class, 'min')
+                ? Rule::array(['street', 'city'])->min(1)
+                : Rule::array(['street', 'city'])],
 
             // Rule order must not matter for nested / wildcard detection.
             'counts' => ['required', 'min:1', 'list'],
