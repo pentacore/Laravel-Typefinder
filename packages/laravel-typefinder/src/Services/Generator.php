@@ -793,19 +793,20 @@ final class Generator
      */
     private function handleDeletion(string $path, string $category, ExtractionCache $extractionCache, string $outputPath, array &$changed): void
     {
-        $cachedExtraction = $extractionCache->get($path);
+        // get() would return null here: the file changed or is gone, which is
+        // why we are removing its output in the first place.
+        $cachedExtraction = $extractionCache->lastKnown($path);
         $extractionCache->forget($path);
-
-        if ($cachedExtraction === null) {
-            return;
-        }
 
         if (in_array($category, ['inertia', 'broadcasting'], true)) {
             return;
         }
 
-        $name = $cachedExtraction['name'] ?? null;
-        if (! is_string($name)) {
+        // A deleted file has no cache entry (load() drops entries whose file
+        // is gone). Fall back to the PSR-4 file name, which is the class's
+        // short name and so the output's name.
+        $name = $cachedExtraction['name'] ?? pathinfo($path, PATHINFO_FILENAME);
+        if (! is_string($name) || $name === '') {
             return;
         }
 

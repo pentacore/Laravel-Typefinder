@@ -121,4 +121,39 @@ final class IncrementalRegenTest extends TestCase
         $this->assertSame($postMtimeBefore, filemtime($postPath));
         $this->assertGreaterThanOrEqual($userMtimeBefore, filemtime($userPath));
     }
+
+    public function test_generate_paths_drops_output_of_a_deleted_resource(): void
+    {
+        $id = uniqid();
+        $dir = sys_get_temp_dir().'/typefinder-inc-del-'.$id;
+        File::ensureDirectoryExists($dir);
+        $class = 'IncDeleted'.$id.'Resource';
+        $file = $dir.'/'.$class.'.php';
+
+        config(['typefinder.resources.paths' => [workbench_path('app/Http/Resources'), $dir]]);
+
+        try {
+            File::put($file, <<<PHP
+                <?php
+                namespace Scratch\\Del{$id};
+                #[\\Pentacore\\Typefinder\\Attributes\\TypefinderResource(shape: ['id' => 'number'])]
+                class {$class} extends \\Illuminate\\Http\\Resources\\Json\\JsonResource {}
+                PHP);
+            $real = (string) realpath($file);
+            require $real;
+
+            $generator = app(Generator::class);
+            $generator->generateFull();
+            $this->assertFileExists($this->output.'/resources/'.$class.'.d.ts');
+
+            File::delete($file);
+            $regenResult = $generator->generatePaths([$real]);
+
+            $this->assertSame([], $regenResult->failed);
+            $this->assertFileDoesNotExist($this->output.'/resources/'.$class.'.d.ts');
+            $this->assertStringNotContainsString($class, File::get($this->output.'/resources/index.d.ts'));
+        } finally {
+            File::deleteDirectory($dir);
+        }
+    }
 }
