@@ -108,7 +108,7 @@ class ResourceExtractor
         }
 
         $results = [];
-        $finder = Finder::create()->files()->name('*.php')->in($path);
+        $finder = Finder::create()->files()->name('*.php')->in($path)->sortByName();
 
         foreach ($finder as $file) {
             $className = ClassNameResolver::fromFile($file->getRealPath());

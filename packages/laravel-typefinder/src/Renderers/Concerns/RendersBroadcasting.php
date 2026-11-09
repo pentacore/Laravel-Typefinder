@@ -32,6 +32,8 @@ trait RendersBroadcasting
         $byType = ['public' => [], 'private' => [], 'presence' => []];
         $flatEvents = [];
 
+        usort($events, fn (array $a, array $b): int => strcmp((string) $a['broadcast_name'], (string) $b['broadcast_name']));
+
         foreach ($events as $event) {
             $payloadStr = $this->renderPayloadRecord($event['payload'], $allModels, $allEnums, $imports);
             $flatEvents[] = sprintf("  '%s': %s;", $event['broadcast_name'], $payloadStr);
@@ -66,6 +68,8 @@ trait RendersBroadcasting
         if ($entries === []) {
             return "export type {$typeName} = Record<string, never>;\n";
         }
+
+        ksort($entries, SORT_STRING);
 
         $lines = [];
         foreach ($entries as $channelName => $eventBodies) {

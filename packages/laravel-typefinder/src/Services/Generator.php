@@ -352,6 +352,8 @@ final class Generator
      */
     private function renderValueBarrel(array $names): string
     {
+        sort($names, SORT_STRING);
+
         $lines = array_map(
             fn (string $n): string => sprintf("export * from './%s';", $n),
             $names,

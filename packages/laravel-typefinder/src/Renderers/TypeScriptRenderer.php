@@ -141,6 +141,8 @@ class TypeScriptRenderer
         $imports = [];
         $entries = [];
 
+        usort($pages, fn (array $a, array $b): int => strcmp((string) $a['component'], (string) $b['component']));
+
         foreach ($pages as $page) {
             $propLines = [];
             foreach ($page['props'] as $name => $type) {
@@ -338,6 +340,8 @@ TS;
 
     public function renderBarrelIndex(array $typeNames): string
     {
+        sort($typeNames, SORT_STRING);
+
         $lines = array_map(
             fn (string $name): string => sprintf("export type { %s } from './%s';", $name, $name),
             $typeNames
