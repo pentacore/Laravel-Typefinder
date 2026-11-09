@@ -10,11 +10,11 @@ use Attribute;
  * Map a controller action to an Inertia page component, so Typefinder can
  * generate a typed `PageProps` entry for it.
  *
- * Applied per action method. Each attribute produces one entry keyed by
- * `$component` in the generated `pages.d.ts`. The attribute is repeatable —
- * an action that renders the same component with different prop sets can
- * carry multiple `#[TypefinderPage]` attributes, though the more common
- * pattern is one per method.
+ * Applied per action method. Each component gets one entry in the generated
+ * `pages.d.ts`. Several actions (or several attributes on one action, since
+ * the attribute is repeatable) may name the same component; their props
+ * merge. A prop declared by every one of them, and optional in none, is
+ * required; any other prop becomes optional.
  *
  * Prop values may be literal TS type strings or class-strings. Model /
  * enum / resource class-strings resolve to their generated short name and
@@ -39,9 +39,9 @@ use Attribute;
  * }
  * </pre>
  *
- * Generation is opt-in via `config('typefinder.inertia.enabled')`. Components
- * declared by two different methods cause the generator to fail loudly so the
- * ambiguity is caught at source.
+ * Generation is opt-in via `config('typefinder.inertia.enabled')`. A prop
+ * that two declarations of one component give different types fails the
+ * run, naming each action and its type.
  */
 #[Attribute(Attribute::TARGET_METHOD | Attribute::IS_REPEATABLE)]
 final readonly class TypefinderPage

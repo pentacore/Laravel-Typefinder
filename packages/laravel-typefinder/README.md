@@ -235,7 +235,13 @@ The name convention assumes the resource returns the model's attributes. If your
 
 ### Pages (opt-in, `typefinder.inertia.enabled`)
 
-Consolidated `pages.d.ts` with a `PageProps` map keyed by Inertia component name. Controllers declare their pages via `#[TypefinderPage(component: ..., props: [...])]` on action methods. Collisions (same component from two methods) fail the run.
+Consolidated `pages.d.ts` with a `PageProps` map keyed by Inertia component name. Controllers declare their pages via `#[TypefinderPage(component: ..., props: [...])]` on action methods.
+
+Several actions can render the same component, for example `create` and `edit` sharing a form page, or the tabs of one page spread across actions or controllers. Their declarations merge into one `PageProps` entry:
+
+- A prop that every action declares, and none lists in `optional`, is required.
+- A prop that only some actions declare, or that any action marks optional, becomes optional (`post?: …`).
+- One prop declared with different types in different actions fails the run, naming each `Class::method` and its type. If the type really varies, declare the union in every action.
 
 ### Broadcasting (opt-in, `typefinder.broadcasting.enabled`)
 

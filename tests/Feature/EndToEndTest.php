@@ -281,7 +281,7 @@ final class EndToEndTest extends TestCase
         $this->assertStringContainsString("export type * from './pages';", $barrel);
     }
 
-    public function test_inertia_collision_throws(): void
+    public function test_inertia_conflicting_prop_types_fail_the_command(): void
     {
         $collisionDir = workbench_path('app/Http/CollisionControllers');
         File::ensureDirectoryExists($collisionDir);
@@ -289,13 +289,13 @@ final class EndToEndTest extends TestCase
 <?php
 namespace App\Http\CollisionControllers;
 use Pentacore\Typefinder\Attributes\TypefinderPage;
-class A { #[TypefinderPage('Shared')] public function a(): void {} }
+class A { #[TypefinderPage('Shared', ['x' => 'string'])] public function a(): void {} }
 PHP);
         File::put($collisionDir.'/B.php', <<<'PHP'
 <?php
 namespace App\Http\CollisionControllers;
 use Pentacore\Typefinder\Attributes\TypefinderPage;
-class B { #[TypefinderPage('Shared')] public function b(): void {} }
+class B { #[TypefinderPage('Shared', ['x' => 'number'])] public function b(): void {} }
 PHP);
 
         config([
