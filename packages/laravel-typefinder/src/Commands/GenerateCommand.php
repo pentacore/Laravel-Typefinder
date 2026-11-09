@@ -10,7 +10,7 @@ use Pentacore\Typefinder\Services\Generator;
 
 class GenerateCommand extends Command
 {
-    protected $signature = 'typefinder:generate {--debug} {--json} {--check : Dry-run: fail if regeneration would change on-disk files.} {--only=* : Absolute paths to re-extract incrementally.}';
+    protected $signature = 'typefinder:generate {--debug} {--json} {--check : Dry-run: fail if regeneration would change on-disk files.} {--only=* : Absolute paths to re-extract incrementally.} {--strict : Fail (exit 1) if generation produced any warning.}';
 
     protected $aliases = ['typefinder:gen', 'typefinder'];
 
@@ -32,6 +32,7 @@ class GenerateCommand extends Command
         $useJson = (bool) $this->option('json');
         $useDebug = (bool) $this->option('debug');
         $useCheck = (bool) $this->option('check');
+        $useStrict = (bool) $this->option('strict');
 
         $outputPath = $useCheck
             ? sys_get_temp_dir().'/typefinder-check-'.uniqid('', true)
@@ -95,6 +96,10 @@ class GenerateCommand extends Command
                     return self::FAILURE;
                 }
 
+                if ($this->strictFailure($useStrict)) {
+                    return $this->failStrict($useJson, $durationMs, $realOutputPath);
+                }
+
                 $this->debugLine('check passed — no drift', $useJson, $useDebug);
                 if ($useJson) {
                     $this->emitJson(true, $durationMs, $realOutputPath, [], []);
@@ -110,6 +115,11 @@ class GenerateCommand extends Command
             }
 
             $durationMs = (int) round((microtime(true) - $startedAt) * 1000);
+
+            if ($this->strictFailure($useStrict)) {
+                return $this->failStrict($useJson, $durationMs, $outputPath);
+            }
+
             $this->debugLine('done success=true duration_ms='.$durationMs, $useJson, $useDebug);
 
             if ($useJson) {
@@ -199,6 +209,25 @@ class GenerateCommand extends Command
         foreach ($this->warnings as $message) {
             $this->warn('[typefinder] warning: '.$message);
         }
+    }
+
+    private function strictFailure(bool $useStrict): bool
+    {
+        return $useStrict && $this->warnings !== [];
+    }
+
+    /**
+     * Report a --strict failure (warnings were produced) and return the failure exit code.
+     */
+    private function failStrict(bool $useJson, int $durationMs, string $outputPath): int
+    {
+        if ($useJson) {
+            $this->emitJson(false, $durationMs, $outputPath, [], []);
+        } else {
+            $this->error(sprintf('[typefinder] --strict: %d warning(s) — failing.', count($this->warnings)));
+        }
+
+        return self::FAILURE;
     }
 
     /**

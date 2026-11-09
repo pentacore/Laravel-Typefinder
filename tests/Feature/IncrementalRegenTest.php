@@ -185,6 +185,15 @@ final class IncrementalRegenTest extends TestCase
         }
     }
 
+    public function test_strict_applies_to_only_runs(): void
+    {
+        $this->artisan('typefinder:generate')->assertSuccessful();
+
+        $this->artisan('typefinder:generate', ['--strict' => true, '--only' => [workbench_path('app/Http/Resources/OrphanResource.php')]])
+            ->expectsOutputToContain('[typefinder] warning: skipped App\Http\Resources\OrphanResource')
+            ->assertFailed();
+    }
+
     public function test_generate_paths_warns_and_drops_output_when_resource_stops_resolving(): void
     {
         $id = uniqid();
