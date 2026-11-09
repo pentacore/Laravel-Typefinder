@@ -175,4 +175,34 @@ final class ResourceExtractorTest extends TestCase
         $this->assertArrayHasKey(UserResource::class, $warnings);
         $this->assertStringContainsString('typefinder.resources.infer_from_model_name', $warnings[UserResource::class]);
     }
+
+    public function test_name_convention_skips_missing_paths_and_abstract_models(): void
+    {
+        $id = uniqid();
+        $dir = sys_get_temp_dir().'/typefinder-abstract-models-'.$id;
+        File::ensureDirectoryExists($dir);
+        $model = 'AbstractWidget'.$id;
+
+        File::put($dir.'/'.$model.'.php', <<<PHP
+            <?php
+            namespace Scratch\\Abs{$id};
+            abstract class {$model} extends \\Illuminate\\Database\\Eloquent\\Model {}
+            PHP);
+        File::put($dir.'/'.$model.'Resource.php', <<<PHP
+            <?php
+            namespace Scratch\\Abs{$id};
+            class {$model}Resource extends \\Illuminate\\Http\\Resources\\Json\\JsonResource {}
+            PHP);
+        require $dir.'/'.$model.'.php';
+        require $dir.'/'.$model.'Resource.php';
+
+        try {
+            config(['typefinder.models.paths' => [$dir.'/does-not-exist', $dir]]);
+
+            // An abstract model never gets a generated type, so it must not match.
+            $this->assertNull((new ResourceExtractor)->extract('Scratch\\Abs'.$id.'\\'.$model.'Resource'));
+        } finally {
+            File::deleteDirectory($dir);
+        }
+    }
 }
