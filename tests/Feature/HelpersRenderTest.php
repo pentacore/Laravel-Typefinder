@@ -29,4 +29,26 @@ final class HelpersRenderTest extends TestCase
         $this->assertStringContainsString('export type ValidationErrorResponse = {', $output);
         $this->assertStringContainsString('export type ErrorResponse = { message: string };', $output);
     }
+
+    public function test_pagination_link_is_declared_and_shared(): void
+    {
+        $output = (new TypeScriptRenderer)->renderHelpers();
+
+        $this->assertStringContainsString(
+            'export type PaginationLink = { url: string | null; label: string; page?: number | null; active: boolean };',
+            $output,
+        );
+        $this->assertStringContainsString('links: PaginationLink[];', $output);
+        $this->assertStringNotContainsString('links: Array<{', $output);
+    }
+
+    public function test_pagination_fields_bounds_are_nullable_for_empty_pages(): void
+    {
+        $output = (new TypeScriptRenderer)->renderHelpers();
+
+        preg_match('/export type PaginationFields = \{(.*?)\n\}/s', $output, $match);
+        $this->assertNotEmpty($match, 'PaginationFields block not found');
+        $this->assertMatchesRegularExpression('/\bfrom: number \| null\b/', $match[1]);
+        $this->assertMatchesRegularExpression('/\bto: number \| null\b/', $match[1]);
+    }
 }

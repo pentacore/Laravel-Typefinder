@@ -230,6 +230,10 @@ jobs:
       - name: Install JS dependencies
         working-directory: packages/vite-plugin-laravel-typefinder
         run: npm install
+      - name: Generate reference .d.ts
+        run: vendor/bin/phpunit --filter GenerateReferenceOutputTest
+      - name: Type-check generated .d.ts (skipLibCheck off)
+        run: npx --no-install tsc -p workbench/tsconfig.typefinder.json
       - name: Lint
         working-directory: packages/vite-plugin-laravel-typefinder
         run: npm run lint

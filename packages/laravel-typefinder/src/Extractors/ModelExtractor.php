@@ -349,7 +349,9 @@ class ModelExtractor
             'foreignKey' => $relation->getForeignPivotKeyName(),
             'relatedKey' => $relation->getRelatedPivotKeyName(),
             'withPivot' => $relation->getPivotColumns(),
-            'withTimestamps' => $relation->createdAt() !== null,
+            // createdAt() always returns a column name (falling back to the
+            // parent's CREATED_AT), so read the flag withTimestamps() sets.
+            'withTimestamps' => $relation->withTimestamps,
         ];
 
         if ($relation instanceof MorphToMany) {

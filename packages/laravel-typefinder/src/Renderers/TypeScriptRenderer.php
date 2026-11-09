@@ -236,15 +236,26 @@ class TypeScriptRenderer
     public function renderPivot(array $pivot): string
     {
         $lines = [];
+        $seen = [];
 
         foreach ($pivot['columns'] as $column) {
+            if (isset($seen[$column['name']])) {
+                continue;
+            }
+
+            $seen[$column['name']] = true;
             $nullable = (bool) ($column['nullable'] ?? false);
             $lines[] = sprintf('  %s: %s;', $column['name'], self::appendNullable($column['type'], $nullable));
         }
 
+        // Laravel's withTimestamps() already lists the timestamp columns among
+        // the pivot columns, so only add the ones that aren't there yet.
         if ($pivot['withTimestamps'] ?? false) {
-            $lines[] = '  created_at: string | null;';
-            $lines[] = '  updated_at: string | null;';
+            foreach (['created_at', 'updated_at'] as $timestamp) {
+                if (! isset($seen[$timestamp])) {
+                    $lines[] = sprintf('  %s: string | null;', $timestamp);
+                }
+            }
         }
 
         return self::FILE_HEADER."\nexport type {$pivot['name']} = {\n".implode("\n", $lines)."\n};\n";
@@ -285,7 +296,7 @@ export type PaginatedResourceCollection<T> = WrappedResourceCollection<T> & {
     per_page: number;
     to: number | null;
     total: number;
-    links: Array<{ url: string | null; label: string; active: boolean }>;
+    links: PaginationLink[];
   };
 };
 
@@ -315,7 +326,7 @@ export type PaginatedModel<TData> = PaginationFields & {
 export type PaginationFields = {
   current_page: number,
   first_page_url: string,
-  from: number,
+  from: number | null,
   last_page: number,
   last_page_url: string,
   links: PaginationLink[],
@@ -323,9 +334,11 @@ export type PaginationFields = {
   path: string,
   per_page: number,
   prev_page_url: string|null,
-  to: number,
+  to: number | null,
   total: number
 }
+
+export type PaginationLink = { url: string | null; label: string; page?: number | null; active: boolean };
 
 
 export type ValidationErrorResponse = {

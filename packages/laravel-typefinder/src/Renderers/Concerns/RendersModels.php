@@ -106,6 +106,11 @@ trait RendersModels
 
         $body = "export type {$model['name']}{$genericParam} = {\n".implode("\n", $lines)."\n};\n";
 
+        // A self-referencing relation (e.g. parent(): BelongsTo to the same
+        // model) would otherwise import the type this file declares (TS2440).
+        $selfImport = sprintf("import type { %s } from './%s';", $model['name'], $model['name']);
+        $imports = array_values(array_filter($imports, fn (string $import): bool => $import !== $selfImport));
+
         return ['imports' => $imports, 'body' => $body];
     }
 
