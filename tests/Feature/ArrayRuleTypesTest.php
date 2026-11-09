@@ -151,7 +151,7 @@ final class ArrayRuleTypesTest extends TestCase
 
     public function test_renderer_wraps_array_of_items(): void
     {
-        $renderer = new TypeScriptRenderer;
+        $typeScriptRenderer = new TypeScriptRenderer;
         $request = [
             'name' => 'Req',
             'fields' => [
@@ -161,7 +161,7 @@ final class ArrayRuleTypesTest extends TestCase
             ],
         ];
 
-        $output = $renderer->renderRequest($request, []);
+        $output = $typeScriptRenderer->renderRequest($request, []);
 
         $this->assertStringContainsString("  a: string[];\n", $output);
         $this->assertStringContainsString("  b: ('x' | 'y')[] | null;\n", $output);
