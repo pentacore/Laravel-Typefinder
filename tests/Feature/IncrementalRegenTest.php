@@ -122,6 +122,49 @@ final class IncrementalRegenTest extends TestCase
         $this->assertGreaterThanOrEqual($userMtimeBefore, filemtime($userPath));
     }
 
+    public function test_generate_paths_warns_and_drops_output_when_resource_stops_resolving(): void
+    {
+        $id = uniqid();
+        $dir = sys_get_temp_dir().'/typefinder-inc-res-'.$id;
+        File::ensureDirectoryExists($dir);
+        $file = $dir.'/SwapResource.php';
+        $before = 'IncShaped'.$id.'Resource';
+        $after = 'IncOrphan'.$id.'Resource';
+
+        config(['typefinder.resources.paths' => [workbench_path('app/Http/Resources'), $dir]]);
+
+        try {
+            File::put($file, <<<PHP
+                <?php
+                namespace Scratch\\Inc{$id};
+                #[\\Pentacore\\Typefinder\\Attributes\\TypefinderResource(shape: ['id' => 'number'])]
+                class {$before} extends \\Illuminate\\Http\\Resources\\Json\\JsonResource {}
+                PHP);
+            require realpath($file);
+
+            $generator = app(Generator::class);
+            $generator->generateFull();
+            $this->assertFileExists($this->output.'/resources/'.$before.'.d.ts');
+
+            // The same file now declares a resource with no attribute and no
+            // same-named model: it no longer produces a type.
+            File::put($file, <<<PHP
+                <?php
+                namespace Scratch\\Inc{$id};
+                class {$after} extends \\Illuminate\\Http\\Resources\\Json\\JsonResource {}
+                PHP);
+            require realpath($file);
+
+            $regenResult = $generator->generatePaths([(string) realpath($file)]);
+
+            $this->assertStringContainsString($after, implode("\n", $regenResult->warnings));
+            $this->assertFileDoesNotExist($this->output.'/resources/'.$before.'.d.ts');
+            $this->assertStringNotContainsString($before, File::get($this->output.'/resources/index.d.ts'));
+        } finally {
+            File::deleteDirectory($dir);
+        }
+    }
+
     public function test_generate_paths_drops_output_of_a_deleted_resource(): void
     {
         $id = uniqid();

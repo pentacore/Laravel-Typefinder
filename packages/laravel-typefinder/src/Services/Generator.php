@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Pentacore\Typefinder\Services;
 
+use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Facades\File;
+use Pentacore\Typefinder\Attributes\TypefinderIgnore;
 use Pentacore\Typefinder\Attributes\TypefinderWriteShape;
 use Pentacore\Typefinder\Cache\CacheKeyFactory;
 use Pentacore\Typefinder\Cache\ExtractionCache;
@@ -83,8 +85,14 @@ final class Generator
                 if ($extraction !== null) {
                     $extractionCache->put($path, $category, $extraction);
                     $this->writeSingleExtraction($category, $extraction, $config, $outputPath, $changed);
-                    $affectedCategories[$category] = true;
+                } else {
+                    // The file no longer yields a type (attribute removed,
+                    // #[TypefinderIgnore] added, class renamed). A full run
+                    // would prune its output, so do the same here.
+                    $this->handleDeletion($path, $category, $extractionCache, $outputPath, $changed);
                 }
+
+                $affectedCategories[$category] = true;
             } catch (\Throwable $e) {
                 $failed[] = ['path' => $path, 'message' => $e->getMessage()];
             }
@@ -227,7 +235,10 @@ final class Generator
 
         $allResources = [];
         if (config('typefinder.resources.enabled', true)) {
-            $resourceExtractor = new ResourceExtractor;
+            $resourceExtractor = new ResourceExtractor(
+                inferFromModelName: (bool) config('typefinder.resources.infer_from_model_name', true),
+                modelClasses: array_column($allModels, 'fqcn'),
+            );
             $paths = config('typefinder.resources.paths', []);
 
             foreach ($paths as $path) {
@@ -685,11 +696,37 @@ final class Generator
             'enums' => (new EnumExtractor)->extract($className),
             'models' => $this->extractSingleModel($className, $config, $warn),
             'requests' => (new RequestExtractor)->extract($className),
-            'resources' => (new ResourceExtractor)->extract($className),
+            'resources' => $this->extractSingleResource($className, $config, $warn),
             'inertia' => $this->extractSingleController($className),
             'broadcasting' => (new BroadcastExtractor)->extract($className),
             default => null,
         };
+    }
+
+    private function extractSingleResource(string $className, array $config, callable $warn): ?array
+    {
+        $resourceExtractor = new ResourceExtractor(
+            inferFromModelName: (bool) ($config['resources']['infer_from_model_name'] ?? true),
+        );
+
+        $extraction = $resourceExtractor->extract($className);
+        if ($extraction === null && $this->isEmittableResource($className)) {
+            $warn(sprintf('skipped %s: ', $className).$resourceExtractor->unresolvedMessage());
+        }
+
+        return $extraction;
+    }
+
+    /**
+     * Whether a null extraction is worth a warning: a JsonResource that is
+     * not explicitly ignored. Mirrors the filter in extractFromDirectory().
+     */
+    private function isEmittableResource(string $className): bool
+    {
+        $reflectionClass = new ReflectionClass($className);
+
+        return $reflectionClass->isSubclassOf(JsonResource::class)
+            && $reflectionClass->getAttributes(TypefinderIgnore::class, ReflectionAttribute::IS_INSTANCEOF) === [];
     }
 
     private function extractSingleModel(string $className, array $config, callable $warn): array

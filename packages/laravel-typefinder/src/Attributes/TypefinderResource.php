@@ -15,9 +15,10 @@ use Attribute;
  *
  *   1. `shape` — explicit key-by-key declaration (Tier 1).
  *   2. `model` + `omit` / `extend` — "wrap this model with tweaks" (Tier 2).
- *   3. Class-name convention — if the resource is named `{Model}Resource`
- *      and no attribute is present, the generator emits
- *      `export type UserResource = User;` automatically (Tier 3).
+ *   3. Class-name convention — if the resource is named `{Model}Resource`,
+ *      no attribute is present and `{Model}` is one of the generated models,
+ *      the generator emits `export type UserResource = User;` automatically
+ *      (Tier 3). Disable with `typefinder.resources.infer_from_model_name`.
  *
  * A resource matching none of the three is skipped with a warning.
  *

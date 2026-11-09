@@ -144,6 +144,7 @@ return [
     'resources' => [
         'enabled' => true,
         'paths' => [app_path('Http/Resources')],
+        'infer_from_model_name' => true, // false: undeclared resources warn instead of getting the model's type
     ],
 
     'inertia' => [

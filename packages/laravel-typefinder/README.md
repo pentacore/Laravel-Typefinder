@@ -225,9 +225,11 @@ Classes extending `JsonResource`. Three declaration tiers are tried in order:
 
 1. **Explicit shape** via `#[TypefinderResource(shape: [...])]`.
 2. **Model extension** via `#[TypefinderResource(model: User::class, omit: [...], extend: [...])]` → `Omit<User, ...> & { ... }`.
-3. **Name convention** — `UserResource` → `User` automatically when a matching model was discovered.
+3. **Name convention** — `UserResource` → `User` automatically, when `User` is one of the models typefinder generates (found under `models.paths` and not ignored). Models from other packages and models outside `models.paths` are never matched.
 
 Resources that match none of the above are skipped with a warning.
+
+The name convention assumes the resource returns the model's attributes. If your resources rename fields, flatten relations or add computed keys, the inferred type is wrong and nothing flags it. Set `'resources.infer_from_model_name' => false` to turn the convention off; every resource then needs an attribute (or `#[TypefinderIgnore]`), and undeclared ones are reported as warnings.
 
 ### Pages (opt-in, `typefinder.inertia.enabled`)
 
@@ -358,6 +360,7 @@ return [
     'resources' => [
         'enabled' => true,                              // default-on; ships with Laravel core
         'paths' => [app_path('Http/Resources')],
+        'infer_from_model_name' => true,                // UserResource → User when no attribute
     ],
 
     'inertia' => [
