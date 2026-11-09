@@ -103,6 +103,14 @@ final class Generator
             $this->rewriteCategoryBarrel($cat, $config, $outputPath, $changed);
         }
 
+        if (isset($affectedCategories['inertia'])) {
+            try {
+                $this->regeneratePages($config, $outputPath, $changed, $warnings);
+            } catch (\Throwable $e) {
+                $failed[] = ['path' => $outputPath.'/pages.d.ts', 'message' => $e->getMessage()];
+            }
+        }
+
         if ($changed !== []) {
             $enabledCats = $this->detectEnabledCategories($outputPath);
             $barrel = $this->typeScriptRenderer->renderTopLevelBarrel($enabledCats);
@@ -278,7 +286,7 @@ final class Generator
                 $allPages = array_merge($allPages, $controllerExtractor->extractFromDirectory($path, null, $onSkip));
             }
 
-            $this->assertNoPageCollisions($allPages);
+            $allPages = $this->mergePages($allPages);
 
             if ($allPages !== []) {
                 $this->writePages($allPages, $allModels, $allEnums, $allResources, $outputPath, $changed);
@@ -595,24 +603,129 @@ final class Generator
         }
     }
 
-    private function assertNoPageCollisions(array $pages): void
+    /**
+     * Merge #[TypefinderPage] entries that name the same component, so one
+     * page can be rendered by several actions (create/edit sharing a form,
+     * tabs of one page).
+     *
+     * A prop is required only when every contributing action declares it and
+     * none lists it as optional. Two actions giving one prop different types
+     * fail the run: a silent union would hide mistakes, and an intended union
+     * can be declared as such in both actions.
+     *
+     * @param  list<array{component: string, props: array<string, string>, optional: list<string>, source: string}>  $pages
+     * @return list<array{component: string, props: array<string, string>, optional: list<string>, source: string}>
+     */
+    private function mergePages(array $pages): array
     {
         $byComponent = [];
         foreach ($pages as $page) {
-            $byComponent[$page['component']][] = $page['source'];
+            $byComponent[$page['component']][] = $page;
         }
 
-        $conflicts = array_filter($byComponent, fn ($sources): bool => count($sources) > 1);
-        if ($conflicts === []) {
+        $merged = [];
+        $conflicts = [];
+
+        foreach ($byComponent as $component => $entries) {
+            if (count($entries) === 1) {
+                $merged[] = $entries[0];
+
+                continue;
+            }
+
+            $props = [];
+            $declaredBy = [];
+            $optional = [];
+            $typesSeen = [];
+
+            foreach ($entries as $entry) {
+                foreach ($entry['props'] as $key => $type) {
+                    $normalised = ltrim(trim((string) $type), '\\');
+                    $props[$key] ??= $normalised;
+                    $declaredBy[$key] = ($declaredBy[$key] ?? 0) + 1;
+                    $typesSeen[$key][$normalised][] = $entry['source'];
+
+                    if (in_array($key, $entry['optional'], true)) {
+                        $optional[$key] = true;
+                    }
+                }
+            }
+
+            foreach ($typesSeen as $key => $byType) {
+                if (count($byType) < 2) {
+                    continue;
+                }
+
+                $declarations = [];
+                foreach ($byType as $type => $sources) {
+                    foreach ($sources as $source) {
+                        $declarations[] = $source.' => '.$type;
+                    }
+                }
+
+                $conflicts[] = sprintf('  %s.%s: %s', $component, $key, implode(', ', $declarations));
+            }
+
+            foreach ($declaredBy as $key => $count) {
+                if ($count < count($entries)) {
+                    $optional[$key] = true;
+                }
+            }
+
+            $merged[] = [
+                'component' => $component,
+                'props' => $props,
+                'optional' => array_keys($optional),
+                'source' => implode(', ', array_unique(array_column($entries, 'source'))),
+            ];
+        }
+
+        if ($conflicts !== []) {
+            throw new \RuntimeException(
+                "TypefinderPage props declared with different types for the same component:\n"
+                .implode("\n", $conflicts)."\n"
+                .'Give the prop the same type in every action (a union if it really varies).',
+            );
+        }
+
+        return $merged;
+    }
+
+    /**
+     * Rebuild pages.d.ts from every configured controller path. Used by
+     * incremental runs: one component can be declared across several
+     * controllers, so a single changed file is not enough to render it.
+     *
+     * @param  list<string>  $warnings
+     */
+    private function regeneratePages(array $config, string $outputPath, array &$changed, array &$warnings): void
+    {
+        // Only reached when 'inertia' was an affected category, which
+        // buildCategoryMap() only allows when Inertia is enabled.
+        $controllerExtractor = new ControllerExtractor;
+        $onSkip = function (string $cls, \Throwable $throwable) use (&$warnings): void {
+            $warnings[] = sprintf('skipped %s: ', $cls).$throwable->getMessage();
+        };
+
+        $pages = [];
+        foreach ((array) ($config['inertia']['paths'] ?? []) as $path) {
+            $pages = array_merge($pages, $controllerExtractor->extractFromDirectory((string) $path, null, $onSkip));
+        }
+
+        $pages = $this->mergePages($pages);
+
+        if ($pages === []) {
+            if (is_file($outputPath.'/pages.d.ts')) {
+                @unlink($outputPath.'/pages.d.ts');
+                $changed[] = 'pages.d.ts';
+            }
+
             return;
         }
 
-        $lines = [];
-        foreach ($conflicts as $component => $sources) {
-            $lines[] = $component.': '.implode(', ', $sources);
-        }
-
-        throw new \RuntimeException("Duplicate TypefinderPage components:\n".implode("\n", $lines));
+        // Model, enum and resource names fall back to class basenames, which
+        // is what a full run emits too.
+        $this->writePages($pages, [], [], [], $outputPath, $changed);
     }
 
     private function writeBroadcasting(array $events, array $allModels, array $allEnums, array $allResources, string $outputPath, array &$changed): void
