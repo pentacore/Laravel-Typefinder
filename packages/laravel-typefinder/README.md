@@ -66,13 +66,13 @@ This copies `config/typefinder.php` into your application's `config/` directory.
 php artisan typefinder:generate
 ```
 
-Scans configured directories, resolves types, and writes `.d.ts` files to `output_path`. Only files whose content has changed are rewritten; stale generated files are pruned automatically. The `output_path` is added to your project `.gitignore` on first run.
+Scans configured directories, resolves types, and writes `.d.ts` files to `output_path`. Only files whose content has changed are rewritten; stale generated files are pruned automatically. By default the `output_path` is added to your project `.gitignore` on first run (`gitignore_generated`). Decide whether to commit the output before setting up CI; see [Using typefinder in CI](#using-typefinder-in-ci).
 
 ### Flags
 
 | Flag | Description |
 |---|---|
-| `--check` | Dry-run: generate into a temp directory, compare against the on-disk output, exit non-zero if they differ. Useful as a CI gate. |
+| `--check` | Dry-run: generate into a temp directory, compare against the on-disk output, exit non-zero if they differ. A CI gate for **committed** output only. See [Using typefinder in CI](#using-typefinder-in-ci). |
 | `--debug` | Print line-oriented diagnostic output prefixed with `[typefinder]`. Includes per-class parsing lines so you can pinpoint a failing class. |
 | `--json` | Output a single JSON object to stdout (machine-readable, used by the Vite plugin). |
 | `--only=<path>` | Re-extract only the given absolute paths instead of the full tree. Repeatable (`--only=/a/Foo.php --only=/a/Bar.php`). Used by the Vite plugin's watch loop for incremental regeneration; rarely useful by hand. |
@@ -84,6 +84,31 @@ php artisan typefinder:watch
 ```
 
 Starts a long-lived generator process that reads incremental regeneration requests from stdin (NDJSON) and emits status lines on stdout. Not intended for direct interactive use — the [Vite plugin](../vite-plugin-laravel-typefinder/) spawns and drives it during `vite dev` for 20–60ms per-change latency. Exits on `SIGINT` / `SIGTERM`.
+
+### Using typefinder in CI
+
+Choose one of two workflows. They differ in whether the generated files are committed, and `--check` only makes sense in the first.
+
+**1. Committed output.** Set `'gitignore_generated' => false` and commit `output_path`.
+
+- Run `php artisan typefinder:generate --check` in CI. It fails when someone changed a model, enum, request or resource without regenerating. The job needs a migrated database, since model columns are read from the schema.
+- Frontend-only jobs (no PHP runtime) can type-check against the committed files. Set the Vite plugin's `buildCommand: false` there.
+
+```yaml
+- run: php artisan migrate --force
+- run: php artisan typefinder:generate --check
+```
+
+**2. Ignored output (the default).** Keep `'gitignore_generated' => true`; the files exist only after a generation run.
+
+- Generate before anything that type-checks: `php artisan typefinder:generate`, or let the Vite plugin do it in `vite build` (its default `buildCommand`). The job needs PHP, the app's Composer dependencies and a database connection with the schema migrated, because model columns are read from the schema.
+- Do not use `--check` here. A fresh checkout has nothing on disk to compare against, so it fails with a hint that the output path does not exist. Generating first and then running `--check` only compares the generator with itself.
+
+```yaml
+- run: php artisan migrate --force
+- run: php artisan typefinder:generate
+- run: npm run build   # or: npx tsc --noEmit
+```
 
 ## What gets generated
 

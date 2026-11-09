@@ -20,6 +20,10 @@ return [
     | root .gitignore (if present) on every run so generated .d.ts files
     | stay out of version control. Idempotent — adds the line at most once.
     |
+    | Set this to false if you commit the generated output, which is what
+    | `typefinder:generate --check` needs as a CI gate. With ignored output,
+    | generate in CI before the TypeScript build instead.
+    |
     */
     'gitignore_generated' => true,
 
