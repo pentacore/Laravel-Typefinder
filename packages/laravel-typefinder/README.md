@@ -75,7 +75,7 @@ Scans configured directories, resolves types, and writes `.d.ts` files to `outpu
 | `--check` | Dry-run: generate into a temp directory, compare against the on-disk output, exit non-zero if they differ. A CI gate for **committed** output only. See [Using typefinder in CI](#using-typefinder-in-ci). |
 | `--debug` | Print line-oriented diagnostic output prefixed with `[typefinder]`. Includes per-class parsing lines so you can pinpoint a failing class. |
 | `--json` | Output a single JSON object to stdout (machine-readable, used by the Vite plugin). |
-| `--strict` | Exit non-zero when the run produced any warning (unknown column types, skipped classes, …). Combine with `--check` for a CI gate on committed output, or use alone after generating in CI. |
+| `--strict` | Exit non-zero when the run produced any warning (unknown column types, skipped classes, …). Combine with `--check` for a CI gate on committed output, or add it to the regular generate step in CI. |
 | `--only=<path>` | Re-extract only the given absolute paths instead of the full tree. Repeatable (`--only=/a/Foo.php --only=/a/Bar.php`). Used by the Vite plugin's watch loop for incremental regeneration; rarely useful by hand. |
 
 ### Watching for changes
@@ -394,7 +394,7 @@ When a cast is encountered, the resolver tries in order:
 3. `#[TypefinderCast]` attribute on the cast class.
 4. Built-in name map (`datetime`, `array`, etc.) and class map (`AsCollection::class`, etc.).
 5. `BackedEnum` detection → emits a reference to the generated enum type.
-6. Fall back to `unknown` (emits a warning in `--json` mode).
+6. Fall back to `unknown` (emits a warning).
 
 ## Configuration
 

@@ -13,7 +13,7 @@ php artisan typefinder:generate [--debug] [--json] [--check] [--strict]
 | `--json` | Emit a single structured JSON object to stdout. Suppresses human output. |
 | `--debug` | Emit `[typefinder]`-prefixed diagnostic lines, one per extracted class. |
 | `--check` | Dry-run: generate into a temp directory, diff against on-disk output, exit non-zero if they differ. Writes no files. Only meaningful when the output is committed (`gitignore_generated` => false); with ignored output, generate in CI instead. |
-| `--strict` | Exit 1 if the run produced any warning (files are still written). Combine with `--check` or use alone after generating in CI. |
+| `--strict` | Exit 1 if the run produced any warning (files are still written). Combine with `--check` or add it to the regular generate step in CI. |
 
 ## Emitted categories
 

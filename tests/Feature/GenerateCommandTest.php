@@ -85,10 +85,15 @@ final class GenerateCommandTest extends TestCase
     {
         config(['typefinder.resources.paths' => [workbench_path('app/Http/Resources')]]);
 
-        $this->artisan('typefinder:generate --json --strict')
-            ->expectsOutputToContain('"success":false')
-            ->doesntExpectOutputToContain('[typefinder]')
-            ->assertFailed();
+        $exit = Artisan::call('typefinder:generate', ['--json' => true, '--strict' => true]);
+        $output = Artisan::output();
+        $payload = json_decode($output, true, flags: JSON_THROW_ON_ERROR);
+
+        $this->assertSame(1, $exit);
+        $this->assertFalse($payload['success']);
+        $this->assertNotEmpty($payload['warnings']);
+        $this->assertSame([sprintf('--strict: %d warning(s) produced', count($payload['warnings']))], $payload['errors']);
+        $this->assertStringNotContainsString('[typefinder]', $output);
     }
 
     public function test_strict_does_not_mask_pipeline_exception(): void
