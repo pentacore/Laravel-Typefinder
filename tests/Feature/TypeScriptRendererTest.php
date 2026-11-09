@@ -468,6 +468,26 @@ final class TypeScriptRendererTest extends TestCase
         $this->assertSame(1, substr_count($output, 'updated_at:'));
     }
 
+    public function test_renders_pivot_without_duplicating_repeated_pivot_columns(): void
+    {
+        // e.g. withPivot('assigned_at') declared twice on the relation.
+        $pivot = [
+            'name' => 'RoleUserPivot',
+            'columns' => [
+                ['name' => 'user_id', 'type' => 'number'],
+                ['name' => 'role_id', 'type' => 'number'],
+                ['name' => 'assigned_at', 'type' => 'string', 'nullable' => true],
+                ['name' => 'assigned_at', 'type' => 'string', 'nullable' => true],
+            ],
+            'withTimestamps' => false,
+        ];
+
+        $output = $this->typeScriptRenderer->renderPivot($pivot);
+
+        $this->assertSame(1, substr_count($output, 'assigned_at:'));
+        $this->assertStringNotContainsString('created_at:', $output);
+    }
+
     public function test_renders_barrel_index(): void
     {
         $files = ['Post', 'User', 'Comment'];
