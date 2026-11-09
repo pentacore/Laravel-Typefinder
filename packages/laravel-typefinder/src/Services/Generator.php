@@ -700,10 +700,8 @@ final class Generator
      */
     private function regeneratePages(array $config, string $outputPath, array &$changed, array &$warnings): void
     {
-        if (! ($config['inertia']['enabled'] ?? false)) {
-            return;
-        }
-
+        // Only reached when 'inertia' was an affected category, which
+        // buildCategoryMap() only allows when Inertia is enabled.
         $controllerExtractor = new ControllerExtractor;
         $onSkip = function (string $cls, \Throwable $throwable) use (&$warnings): void {
             $warnings[] = sprintf('skipped %s: ', $cls).$throwable->getMessage();

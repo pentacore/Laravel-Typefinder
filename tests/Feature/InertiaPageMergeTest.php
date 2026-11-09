@@ -202,6 +202,63 @@ final class InertiaPageMergeTest extends TestCase
         $this->assertStringContainsString("'Dashboard'", $pages);
     }
 
+    public function test_incremental_run_deletes_pages_when_no_page_is_left(): void
+    {
+        $this->writeController('ShowController', <<<'PHP'
+            #[TypefinderPage('Dashboard', ['greeting' => 'string'])]
+            public function index(): void {}
+            PHP);
+        $generator = app(Generator::class);
+        $generator->generateFull();
+        $this->assertFileExists($this->output.'/pages.d.ts');
+
+        $deleted = realpath($this->scratch).'/ShowController.php';
+        File::delete($deleted);
+        $regenResult = $generator->generatePaths([$deleted]);
+
+        $this->assertFileDoesNotExist($this->output.'/pages.d.ts');
+        $this->assertContains('pages.d.ts', $regenResult->changed);
+        $this->assertStringNotContainsString("'./pages'", File::get($this->output.'/index.d.ts'));
+    }
+
+    public function test_incremental_type_conflict_is_reported_as_failed(): void
+    {
+        $this->writeController('ShowController', <<<'PHP'
+            #[TypefinderPage('Dashboard', ['greeting' => 'string'])]
+            public function index(): void {}
+            PHP);
+        $generator = app(Generator::class);
+        $generator->generateFull();
+
+        $before = File::get($this->output.'/pages.d.ts');
+
+        $this->writeController('OtherController', <<<'PHP'
+            #[TypefinderPage('Dashboard', ['greeting' => 'number'])]
+            public function index(): void {}
+            PHP);
+        $regenResult = $generator->generatePaths([(string) realpath($this->scratch.'/OtherController.php')]);
+
+        $this->assertCount(1, $regenResult->failed);
+        $this->assertStringContainsString('Dashboard.greeting', $regenResult->failed[0]['message']);
+        $this->assertSame($before, File::get($this->output.'/pages.d.ts'));
+    }
+
+    public function test_incremental_rescan_warns_about_unloadable_controllers(): void
+    {
+        $this->writeController('ShowController', <<<'PHP'
+            #[TypefinderPage('Dashboard', ['greeting' => 'string'])]
+            public function index(): void {}
+            PHP);
+        // Declares a class that no autoloader can find.
+        File::put($this->scratch.'/Ghost.php', "<?php\nnamespace Nowhere\\Ghost{$this->id};\nclass Ghost {}\n");
+
+        $regenResult = app(Generator::class)->generatePaths([(string) realpath($this->scratch.'/ShowController.php')]);
+
+        $this->assertSame([], $regenResult->failed);
+        $this->assertStringContainsString('could not be autoloaded', implode("\n", $regenResult->warnings));
+        $this->assertStringContainsString("'Dashboard'", File::get($this->output.'/pages.d.ts'));
+    }
+
     private function generate(): string
     {
         app(Generator::class)->generateFull();
