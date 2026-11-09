@@ -218,6 +218,14 @@ final class ModelExtractorTest extends TestCase
         $this->assertArrayHasKey('morphType', $rel['pivot']);
     }
 
+    public function test_pivot_without_timestamps_reports_with_timestamps_false(): void
+    {
+        $result = $this->modelExtractor->extract(Post::class);
+        $rel = $this->findRelationship($result, 'tags');
+
+        $this->assertFalse($rel['pivot']['withTimestamps']);
+    }
+
     public function test_extracts_self_referencing_relations(): void
     {
         $result = $this->modelExtractor->extract(Category::class);

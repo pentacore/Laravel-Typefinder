@@ -236,15 +236,26 @@ class TypeScriptRenderer
     public function renderPivot(array $pivot): string
     {
         $lines = [];
+        $seen = [];
 
         foreach ($pivot['columns'] as $column) {
+            if (isset($seen[$column['name']])) {
+                continue;
+            }
+
+            $seen[$column['name']] = true;
             $nullable = (bool) ($column['nullable'] ?? false);
             $lines[] = sprintf('  %s: %s;', $column['name'], self::appendNullable($column['type'], $nullable));
         }
 
+        // Laravel's withTimestamps() already lists the timestamp columns among
+        // the pivot columns, so only add the ones that aren't there yet.
         if ($pivot['withTimestamps'] ?? false) {
-            $lines[] = '  created_at: string | null;';
-            $lines[] = '  updated_at: string | null;';
+            foreach (['created_at', 'updated_at'] as $timestamp) {
+                if (! isset($seen[$timestamp])) {
+                    $lines[] = sprintf('  %s: string | null;', $timestamp);
+                }
+            }
         }
 
         return self::FILE_HEADER."\nexport type {$pivot['name']} = {\n".implode("\n", $lines)."\n};\n";

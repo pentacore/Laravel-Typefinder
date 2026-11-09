@@ -447,6 +447,27 @@ final class TypeScriptRendererTest extends TestCase
         $this->assertStringContainsString('updated_at: string | null;', $output);
     }
 
+    public function test_renders_pivot_without_duplicating_timestamp_columns(): void
+    {
+        // Laravel's withTimestamps() also adds created_at/updated_at to the
+        // relation's pivot columns, so they reach the renderer twice.
+        $pivot = [
+            'name' => 'RoleUserPivot',
+            'columns' => [
+                ['name' => 'user_id', 'type' => 'number'],
+                ['name' => 'role_id', 'type' => 'number'],
+                ['name' => 'created_at', 'type' => 'string', 'nullable' => true],
+                ['name' => 'updated_at', 'type' => 'string', 'nullable' => true],
+            ],
+            'withTimestamps' => true,
+        ];
+
+        $output = $this->typeScriptRenderer->renderPivot($pivot);
+
+        $this->assertSame(1, substr_count($output, 'created_at:'));
+        $this->assertSame(1, substr_count($output, 'updated_at:'));
+    }
+
     public function test_renders_barrel_index(): void
     {
         $files = ['Post', 'User', 'Comment'];
