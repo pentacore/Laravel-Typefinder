@@ -1,0 +1,278 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Tests\Feature;
+
+use App\Enums\PostStatus;
+use App\Http\Resources\PostResource;
+use App\Http\Resources\UserResource;
+use App\Models\User;
+use Illuminate\Support\Facades\File;
+use Pentacore\Typefinder\Resolvers\PhpDocShapeResolver;
+use Pentacore\Typefinder\Support\GeneratedClasses;
+use PHPUnit\Framework\Attributes\DataProvider;
+use ReflectionClass;
+use Tests\Fixtures\Resources\PhpDoc\AliasedShapeResource;
+use Tests\Fixtures\Resources\PhpDoc\BrokenDocResource;
+use Tests\Fixtures\Resources\PhpDoc\BrokenPhpstanReturnWithStubResource;
+use Tests\Fixtures\Resources\PhpDoc\Concerns\BaseShapeResource;
+use Tests\Fixtures\Resources\PhpDoc\ImportedAliasResource;
+use Tests\Fixtures\Resources\PhpDoc\InheritDocShapeResource;
+use Tests\Fixtures\Resources\PhpDoc\InheritedShapeResource;
+use Tests\Fixtures\Resources\PhpDoc\LaravelUnionShapeResource;
+use Tests\Fixtures\Resources\PhpDoc\ListTopLevelResource;
+use Tests\Fixtures\Resources\PhpDoc\MissingImportResource;
+use Tests\Fixtures\Resources\PhpDoc\NoOverrideResource;
+use Tests\Fixtures\Resources\PhpDoc\PlainArrayResource;
+use Tests\Fixtures\Resources\PhpDoc\PrecedenceResource;
+use Tests\Fixtures\Resources\PhpDoc\PsalmReturnResource;
+use Tests\Fixtures\Resources\PhpDoc\StubDefaultResource;
+use Tests\Fixtures\Resources\PhpDoc\TraitToArrayResource;
+use Tests\Fixtures\Resources\PhpDoc\TwoShapesResource;
+use Tests\TestCase;
+
+final class PhpDocShapeResolverTest extends TestCase
+{
+    /** @var list<string> */
+    private array $warnings = [];
+
+    private PhpDocShapeResolver $phpDocShapeResolver;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->warnings = [];
+        $this->phpDocShapeResolver = new PhpDocShapeResolver(
+            new GeneratedClasses(
+                models: [User::class],
+                enums: [PostStatus::class],
+                resources: [UserResource::class, PostResource::class, InheritedShapeResource::class, InheritDocShapeResource::class],
+            ),
+            function (string $message): void {
+                $this->warnings[] = $message;
+            },
+        );
+    }
+
+    public function test_phpstan_return_beats_psalm_return_and_return(): void
+    {
+        $this->assertSame(
+            $this->object([$this->field('id', $this->ts('number')), $this->field('name', $this->ts('string'))]),
+            $this->resolve(PrecedenceResource::class),
+        );
+    }
+
+    public function test_psalm_return_beats_return(): void
+    {
+        $this->assertSame($this->object([$this->field('id', $this->ts('number'))]), $this->resolve(PsalmReturnResource::class));
+    }
+
+    /**
+     * @return array<string, array{class-string}>
+     */
+    public static function fallThroughResources(): array
+    {
+        return [
+            'stub default' => [StubDefaultResource::class],
+            'plain Laravel signature' => [PlainArrayResource::class],
+            'two shapes' => [TwoShapesResource::class],
+            'top-level list shape' => [ListTopLevelResource::class],
+            'no override' => [NoOverrideResource::class],
+            'abstract' => [BaseShapeResource::class],
+        ];
+    }
+
+    /**
+     * @param  class-string  $class
+     */
+    #[DataProvider('fallThroughResources')]
+    public function test_non_shapes_fall_through_silently(string $class): void
+    {
+        $this->assertNull($this->resolve($class));
+        $this->assertSame([], $this->warnings);
+    }
+
+    public function test_shape_in_laravel_union_signature_is_used(): void
+    {
+        $this->assertSame($this->object([$this->field('id', $this->ts('number'))]), $this->resolve(LaravelUnionShapeResource::class));
+    }
+
+    public function test_unparsable_shape_warns_once_and_falls_through(): void
+    {
+        $this->assertNull($this->resolve(BrokenDocResource::class));
+        $this->assertCount(1, $this->warnings);
+        $this->assertStringContainsString(
+            'Could not parse @return on '.BrokenDocResource::class.'::toArray()',
+            $this->warnings[0],
+        );
+    }
+
+    public function test_unparsable_higher_precedence_tag_warns_next_to_a_valid_one(): void
+    {
+        $this->assertNull($this->resolve(BrokenPhpstanReturnWithStubResource::class));
+        $this->assertCount(1, $this->warnings);
+        $this->assertStringContainsString(
+            'Could not parse @phpstan-return on '.BrokenPhpstanReturnWithStubResource::class.'::toArray()',
+            $this->warnings[0],
+        );
+    }
+
+    /**
+     * @return array<string, array{class-string}>
+     */
+    public static function inheritingResources(): array
+    {
+        return [
+            'no override' => [InheritedShapeResource::class],
+            'inheritDoc override' => [InheritDocShapeResource::class],
+        ];
+    }
+
+    /**
+     * @param  class-string  $class
+     */
+    #[DataProvider('inheritingResources')]
+    public function test_inherited_doc_resolves_names_in_parent_and_static_to_child(string $class): void
+    {
+        $this->assertSame(
+            $this->object([
+                $this->field('id', $this->ts('number')),
+                $this->field('owner', ['kind' => 'model', 'fqcn' => User::class]),
+                $this->field('self', ['kind' => 'resource', 'fqcn' => $class]),
+            ]),
+            $this->resolve($class),
+        );
+        $this->assertSame([], $this->warnings);
+    }
+
+    public function test_trait_provided_to_array_does_not_inherit_the_parent_shape(): void
+    {
+        $this->assertNull($this->resolve(TraitToArrayResource::class));
+        $this->assertSame([], $this->warnings);
+    }
+
+    public function test_class_aliases_expand(): void
+    {
+        $this->assertSame(
+            $this->object([
+                $this->field('meta', $this->object([$this->field('total', $this->ts('number'))])),
+                $this->field('count', $this->ts('number')),
+            ]),
+            $this->resolve(AliasedShapeResource::class),
+        );
+        $this->assertSame([], $this->warnings);
+    }
+
+    public function test_imported_aliases_resolve_names_in_their_own_file(): void
+    {
+        $this->assertSame(
+            $this->object([
+                $this->field('address', $this->object([
+                    $this->field('city', $this->ts('string')),
+                    $this->field('owner', ['kind' => 'model', 'fqcn' => User::class]),
+                ])),
+                $this->field('contact', $this->object([
+                    $this->field('person', $this->object([
+                        $this->field('name', $this->ts('string')),
+                        $this->field('status', ['kind' => 'enum', 'fqcn' => PostStatus::class]),
+                    ])),
+                ])),
+            ]),
+            $this->resolve(ImportedAliasResource::class),
+        );
+        $this->assertSame([], $this->warnings);
+    }
+
+    public function test_missing_import_class_or_alias_is_unknown_with_warning(): void
+    {
+        $this->assertSame(
+            $this->object([$this->field('a', $this->ts('unknown')), $this->field('b', $this->ts('unknown'))]),
+            $this->resolve(MissingImportResource::class),
+        );
+        $this->assertSame([
+            MissingImportResource::class.'::toArray() @return: "a" has unsupported type Nope — emitted as unknown',
+            MissingImportResource::class.'::toArray() @return: "b" has unsupported type Address — emitted as unknown',
+        ], $this->warnings);
+    }
+
+    public function test_doc_change_on_disk_wins_over_loaded_class(): void
+    {
+        $directory = sys_get_temp_dir().'/typefinder-phpdoc-'.bin2hex(random_bytes(4));
+        $class = 'FreshDocResource'.bin2hex(random_bytes(4));
+        $path = $directory.'/'.$class.'.php';
+        File::ensureDirectoryExists($directory);
+
+        try {
+            File::put($path, $this->freshResource($class, 'array{id: int}'));
+            require $path;
+            $fqcn = 'Tests\Fixtures\Resources\PhpDoc\Temp\\'.$class;
+
+            $this->assertSame($this->object([$this->field('id', $this->ts('number'))]), $this->resolve($fqcn));
+
+            File::put($path, $this->freshResource($class, 'array{id: int, name: string}'));
+
+            $this->assertSame(
+                $this->object([$this->field('id', $this->ts('number')), $this->field('name', $this->ts('string'))]),
+                $this->resolve($fqcn),
+            );
+        } finally {
+            File::deleteDirectory($directory);
+        }
+    }
+
+    /**
+     * @param  class-string|string  $class
+     * @return ?array<string, mixed>
+     */
+    private function resolve(string $class): ?array
+    {
+        return $this->phpDocShapeResolver->resolve(new ReflectionClass($class));
+    }
+
+    private function freshResource(string $class, string $shape): string
+    {
+        return <<<PHP
+            <?php
+
+            namespace Tests\\Fixtures\\Resources\\PhpDoc\\Temp;
+
+            use Illuminate\\Http\\Resources\\Json\\JsonResource;
+
+            class {$class} extends JsonResource
+            {
+                /**
+                 * @return {$shape}
+                 */
+                public function toArray(\$request): array
+                {
+                    return [];
+                }
+            }
+            PHP;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $fields
+     * @return array<string, mixed>
+     */
+    private function object(array $fields): array
+    {
+        return ['kind' => 'object', 'fields' => $fields, 'open' => false];
+    }
+
+    /**
+     * @param  array<string, mixed>  $type
+     * @return array<string, mixed>
+     */
+    private function field(string $name, array $type): array
+    {
+        return ['name' => $name, 'type' => $type, 'optional' => false];
+    }
+
+    /** @return array{kind: 'ts', ts: string} */
+    private function ts(string $ts): array
+    {
+        return ['kind' => 'ts', 'ts' => $ts];
+    }
+}
