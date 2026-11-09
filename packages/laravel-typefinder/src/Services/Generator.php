@@ -752,7 +752,7 @@ final class Generator
             }
         }
 
-        $conflicts = array_filter($byKey, fn ($classes): bool => count($classes) > 1);
+        $conflicts = array_filter($byKey, fn (array $classes): bool => count($classes) > 1);
         if ($conflicts === []) {
             return;
         }

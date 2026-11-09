@@ -192,7 +192,7 @@ class BroadcastExtractor
     {
         $type = $reflectionProperty->getType();
         if (! $type instanceof ReflectionNamedType) {
-            return $type !== null && $type->allowsNull() ? null : self::NO_SENTINEL;
+            return $type instanceof \ReflectionType && $type->allowsNull() ? null : self::NO_SENTINEL;
         }
 
         $name = $type->getName();
