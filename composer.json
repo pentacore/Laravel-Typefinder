@@ -29,7 +29,9 @@
         "illuminate/database": "^12.0|^13.0",
         "illuminate/filesystem": "^12.0|^13.0",
         "illuminate/support": "^12.0|^13.0",
-        "illuminate/validation": "^12.0|^13.0"
+        "illuminate/validation": "^12.0|^13.0",
+        "nikic/php-parser": "^5.0",
+        "phpstan/phpdoc-parser": "^2.0"
     },
     "require-dev": {
         "laravel/boost": "^2.4",
