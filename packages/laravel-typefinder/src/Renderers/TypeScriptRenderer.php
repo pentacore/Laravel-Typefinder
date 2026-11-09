@@ -285,7 +285,7 @@ export type PaginatedResourceCollection<T> = WrappedResourceCollection<T> & {
     per_page: number;
     to: number | null;
     total: number;
-    links: Array<{ url: string | null; label: string; active: boolean }>;
+    links: PaginationLink[];
   };
 };
 
@@ -315,7 +315,7 @@ export type PaginatedModel<TData> = PaginationFields & {
 export type PaginationFields = {
   current_page: number,
   first_page_url: string,
-  from: number,
+  from: number | null,
   last_page: number,
   last_page_url: string,
   links: PaginationLink[],
@@ -323,9 +323,11 @@ export type PaginationFields = {
   path: string,
   per_page: number,
   prev_page_url: string|null,
-  to: number,
+  to: number | null,
   total: number
 }
+
+export type PaginationLink = { url: string | null; label: string; page?: number | null; active: boolean };
 
 
 export type ValidationErrorResponse = {
