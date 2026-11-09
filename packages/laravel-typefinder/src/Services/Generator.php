@@ -83,6 +83,7 @@ final class Generator
             try {
                 $extraction = $this->extractSingleFile($path, $category, $config, $warnings);
                 if ($extraction !== null) {
+                    $this->assertNameNotTaken($path, $category, $extraction, $extractionCache);
                     $extractionCache->put($path, $category, $extraction);
                     $this->writeSingleExtraction($category, $extraction, $config, $outputPath, $changed);
                 } else {
@@ -166,6 +167,8 @@ final class Generator
                 $allEnums = array_merge($allEnums, $enumExtractor->extractFromDirectory($path, null, $onSkip));
             }
 
+            $this->assertUniqueTypeNames('enums', $allEnums);
+
             foreach ($allEnums as $allEnum) {
                 $absolutePath = new ReflectionClass($allEnum['fqcn'])->getFileName();
                 if ($absolutePath !== false) {
@@ -204,6 +207,10 @@ final class Generator
             }
 
             $allPivots = $this->extractPivots($allModels);
+            $this->assertUniqueTypeNames('models', [
+                ...$allModels,
+                ...array_map(fn (array $pivot): array => ['name' => $pivot['name'], 'fqcn' => 'pivot table of '.$pivot['name']], $allPivots),
+            ]);
 
             if ($allModels !== [] || $allPivots !== []) {
                 $this->writeModels($allModels, $allPivots, $allEnums, $outputPath, $changed);
@@ -218,6 +225,8 @@ final class Generator
             foreach ($paths as $path) {
                 $allRequests = array_merge($allRequests, $requestExtractor->extractFromDirectory($path, null, $onSkip));
             }
+
+            $this->assertUniqueTypeNames('requests', $allRequests);
 
             foreach ($allRequests as $allRequest) {
                 $absolutePath = new ReflectionClass($allRequest['fqcn'])->getFileName();
@@ -244,6 +253,8 @@ final class Generator
             foreach ($paths as $path) {
                 $allResources = array_merge($allResources, $resourceExtractor->extractFromDirectory($path, null, $onSkip));
             }
+
+            $this->assertUniqueTypeNames('resources', $allResources);
 
             foreach ($allResources as $allResource) {
                 $absolutePath = new ReflectionClass($allResource['fqcn'])->getFileName();
@@ -291,6 +302,13 @@ final class Generator
                 $categories[] = 'broadcasting';
             }
         }
+
+        $this->warnOnCrossCategoryNames([
+            'enums' => $allEnums,
+            'models' => $allModels,
+            'requests' => $allRequests,
+            'resources' => $allResources,
+        ], $warn);
 
         $this->writeHelpers($outputPath, $changed);
         $categories[] = 'helpers';
@@ -492,6 +510,91 @@ final class Generator
     /**
      * @param  list<array{component: string, source: string}>  $pages
      */
+    /**
+     * Fail when two classes in one category would be emitted under the same
+     * type name. One file would silently overwrite the other and the barrel
+     * would export the name twice.
+     *
+     * @param  list<array{name: string, fqcn: string}>  $extractions
+     */
+    private function assertUniqueTypeNames(string $category, array $extractions): void
+    {
+        $byName = [];
+        foreach ($extractions as $extraction) {
+            $byName[$extraction['name']][] = $extraction['fqcn'];
+        }
+
+        $conflicts = array_filter($byName, fn (array $fqcns): bool => count($fqcns) > 1);
+        if ($conflicts === []) {
+            return;
+        }
+
+        ksort($conflicts);
+        $lines = [];
+        foreach ($conflicts as $name => $fqcns) {
+            $lines[] = sprintf('  %s: %s', $name, implode(', ', $fqcns));
+        }
+
+        throw new \RuntimeException(sprintf(
+            "Several %s would be emitted under the same type name:\n%s\n"
+            .'Rename one, mark it #[TypefinderIgnore], or narrow typefinder.%s.paths.',
+            $category,
+            implode("\n", $lines),
+            $category,
+        ));
+    }
+
+    /**
+     * Incremental counterpart of assertUniqueTypeNames(): reject an extraction
+     * whose name another class in the same category already owns.
+     *
+     * @param  array{name?: string, fqcn?: string}  $extraction
+     */
+    private function assertNameNotTaken(string $path, string $category, array $extraction, ExtractionCache $extractionCache): void
+    {
+        if (! in_array($category, ['enums', 'models', 'requests', 'resources'], true) || ! isset($extraction['name'], $extraction['fqcn'])) {
+            return;
+        }
+
+        foreach ($extractionCache->entriesByCategory($category) as $otherPath => $other) {
+            if ($otherPath === $path || ($other['name'] ?? null) !== $extraction['name'] || ($other['fqcn'] ?? null) === $extraction['fqcn']) {
+                continue;
+            }
+
+            $this->assertUniqueTypeNames($category, [$other, $extraction]);
+        }
+    }
+
+    /**
+     * Warn when two categories emit the same type name. Each category barrel
+     * stays valid, but the top-level index.d.ts re-exports both, which
+     * TypeScript reports as ambiguous (TS2308).
+     *
+     * @param  array<string, list<array{name: string}>>  $byCategory
+     */
+    private function warnOnCrossCategoryNames(array $byCategory, callable $warn): void
+    {
+        $categoriesByName = [];
+        foreach ($byCategory as $category => $extractions) {
+            foreach ($extractions as $extraction) {
+                $categoriesByName[$extraction['name']][$category] = true;
+            }
+        }
+
+        ksort($categoriesByName);
+        foreach ($categoriesByName as $name => $categories) {
+            if (count($categories) < 2) {
+                continue;
+            }
+
+            $warn(sprintf(
+                '%s is emitted by both %s. The top-level index.d.ts re-exports both, so import it from its category barrel instead.',
+                $name,
+                implode(' and ', array_keys($categories)),
+            ));
+        }
+    }
+
     private function assertNoPageCollisions(array $pages): void
     {
         $byComponent = [];
