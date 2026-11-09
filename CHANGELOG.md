@@ -1,3 +1,40 @@
+## [6.0.0](https://github.com/pentacore/Laravel-Typefinder/compare/v5.0.2...v6.0.0) (2026-11-09)
+
+### ⚠ BREAKING CHANGES
+
+* typefinder:generate (and the Vite build that runs it) now
+fails when two classes in one category share a short class name, instead of
+silently overwriting one generated type. Rename one class, mark it
+#[TypefinderIgnore], or narrow that category's paths.
+
+### Features
+
+* add resources.infer_from_model_name; infer only from generated models ([#68](https://github.com/pentacore/Laravel-Typefinder/issues/68)) ([a67bb8f](https://github.com/pentacore/Laravel-Typefinder/commit/a67bb8f851246c759ef870ac595b7bc39ffae19a))
+* merge #[TypefinderPage] entries per component; refresh pages.d.ts incrementally ([#73](https://github.com/pentacore/Laravel-Typefinder/issues/73)) ([2a2419f](https://github.com/pentacore/Laravel-Typefinder/commit/2a2419faa1acb317a0eeadf45a050ac3a40dfad1))
+
+### Bug Fixes
+
+* declare PaginationLink and allow null page bounds in helpers.d.ts ([#76](https://github.com/pentacore/Laravel-Typefinder/issues/76)) ([c46a7d8](https://github.com/pentacore/Laravel-Typefinder/commit/c46a7d869f7f9e2596565590f591554569978860))
+* drop self-import for self-referencing model relations ([#76](https://github.com/pentacore/Laravel-Typefinder/issues/76)) ([6bbd77d](https://github.com/pentacore/Laravel-Typefinder/commit/6bbd77d88146c7b56a630d8a6e9a7d51c5cbe8a5))
+* emit real TypeScript for array/list rules and structured wildcard items ([#74](https://github.com/pentacore/Laravel-Typefinder/issues/74)) ([e5843d8](https://github.com/pentacore/Laravel-Typefinder/commit/e5843d8291dd03d82edbc1075991aed0dc2884bb))
+* explain --check failures when the output directory is missing ([#70](https://github.com/pentacore/Laravel-Typefinder/issues/70)) ([2efe174](https://github.com/pentacore/Laravel-Typefinder/commit/2efe1748b117e9e65fdd5744dda249a4fe3a8c29))
+* fail when two classes would emit the same type name ([#72](https://github.com/pentacore/Laravel-Typefinder/issues/72)) ([41fd12e](https://github.com/pentacore/Laravel-Typefinder/commit/41fd12e7039d1e54a5cc39ea8d6edbbae88d5e77))
+* make duplicate type names a hard failure and cover re-extraction ([#72](https://github.com/pentacore/Laravel-Typefinder/issues/72)) ([b60d676](https://github.com/pentacore/Laravel-Typefinder/commit/b60d676945347efe0ba2c074672a0c8212aa0656))
+* make generated output order deterministic across filesystems and runs ([#71](https://github.com/pentacore/Laravel-Typefinder/issues/71)) ([308b912](https://github.com/pentacore/Laravel-Typefinder/commit/308b912fdbcbd746b746b0d220596d079abe8145))
+* remove stale output for changed or deleted files in incremental runs ([051c29d](https://github.com/pentacore/Laravel-Typefinder/commit/051c29d9d39a5213c23df3f8aab0e6837026f620))
+* resolve class-strings in attribute shapes relative to the output file ([#75](https://github.com/pentacore/Laravel-Typefinder/issues/75)) ([4a571f4](https://github.com/pentacore/Laravel-Typefinder/commit/4a571f4c365e10f70ab8c93ca86dac4e4a0c21db))
+* stop duplicating pivot timestamp columns ([#76](https://github.com/pentacore/Laravel-Typefinder/issues/76)) ([e2b3e36](https://github.com/pentacore/Laravel-Typefinder/commit/e2b3e3668abe936101bc2996afbdc92150126a65))
+
+### Dependencies and Other Build Updates
+
+* **deps-dev:** bump handlebars ([84d3378](https://github.com/pentacore/Laravel-Typefinder/commit/84d33784e27f330ed99694889bd5bf8d3a4ccdf6))
+* **deps-dev:** bump the npm-minor-patch group across 1 directory with 4 updates ([f056b05](https://github.com/pentacore/Laravel-Typefinder/commit/f056b05e7bb3cc06c53df1d31f7d94a2129c2c61))
+* **deps-dev:** bump the npm-minor-patch group with 3 updates ([f9d210b](https://github.com/pentacore/Laravel-Typefinder/commit/f9d210b3e188229c4b37dbb45ea97ce0a874ce5a))
+* **deps-dev:** bump typescript-eslint ([3c818ed](https://github.com/pentacore/Laravel-Typefinder/commit/3c818ed534a037035f771c7d461aeafcd3cdd98e))
+* **deps-dev:** bump typescript-eslint ([6c7ec37](https://github.com/pentacore/Laravel-Typefinder/commit/6c7ec378477b6aaae13adb5d926949e851030db9))
+* **deps:** bump npm to 11.21.2 to patch bundled undici, ip-address, postcss-selector-parser, brace-expansion ([04b051c](https://github.com/pentacore/Laravel-Typefinder/commit/04b051c5c34a2ec806c1874bf1ec12e29811c874))
+* **deps:** bump the npm_and_yarn group across 1 directory with 2 updates ([3bf4361](https://github.com/pentacore/Laravel-Typefinder/commit/3bf4361d18e6fc327d21a6cd9dcaa906b613ba19))
+
 ## [5.0.2](https://github.com/pentacore/Laravel-Typefinder/compare/v5.0.1...v5.0.2) (2026-10-12)
 
 ### Bug Fixes
