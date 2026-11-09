@@ -57,7 +57,9 @@ class MorphToResolver
                     }
                 }
 
-                $relationship['morphTargets'] = array_values(array_unique($targets));
+                $targets = array_values(array_unique($targets));
+                sort($targets, SORT_STRING);
+                $relationship['morphTargets'] = $targets;
             }
 
             unset($relationship);
