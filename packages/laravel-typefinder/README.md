@@ -114,6 +114,8 @@ Choose one of two workflows. They differ in whether the generated files are comm
 
 Every run produces a single tree under `output_path` (default `resources/js/typefinder/`). The categories below are each gated by config — most are default-on, the ones that depend on optional packages are opt-in.
 
+Each type is named after its class's short name, so two classes with the same short name in one category (for example `Api\StoreUserRequest` and `Web\StoreUserRequest`) would produce the same file. The run fails with both class names instead; rename one, mark one `#[TypefinderIgnore]`, or narrow that category's `paths`. The same name in two different categories (a `Role` model and a `Role` enum) only warns, because the top-level `index.d.ts` then exports `Role` twice. Import it from its category barrel instead.
+
 ```
 resources/js/typefinder/
 ├── index.d.ts                  top-level barrel — re-exports every category
