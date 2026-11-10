@@ -46,7 +46,35 @@ final class GeneratedClasses
     {
         return $this->models ??= $this->discover(
             'models',
-            static fn (string $class): bool => is_subclass_of($class, Model::class),
+            static fn (string $class): ?ReflectionClass => class_exists($class) && is_subclass_of($class, Model::class)
+                ? new ReflectionClass($class)
+                : null,
+            static fn (ReflectionClass $r): bool => ! $r->isAbstract(),
+        );
+    }
+
+    /**
+     * @return list<class-string>
+     */
+    private function enums(): array
+    {
+        return $this->enums ??= $this->discover(
+            'enums',
+            static fn (string $class): ?ReflectionClass => enum_exists($class) ? new ReflectionEnum($class) : null,
+            static fn (ReflectionClass $r): bool => $r instanceof ReflectionEnum && $r->isBacked(),
+        );
+    }
+
+    /**
+     * @return list<class-string>
+     */
+    private function resources(): array
+    {
+        return $this->resources ??= $this->discover(
+            'resources',
+            static fn (string $class): ?ReflectionClass => class_exists($class) && is_subclass_of($class, JsonResource::class)
+                ? new ReflectionClass($class)
+                : null,
             static fn (ReflectionClass $r): bool => ! $r->isAbstract(),
         );
     }
@@ -75,34 +103,21 @@ final class GeneratedClasses
     /** @return array<class-string, true> */
     private function enumSet(): array
     {
-        $this->enums ??= $this->discover(
-            'enums',
-            static fn (string $class): bool => enum_exists($class),
-            static fn (ReflectionClass $r): bool => $r instanceof ReflectionEnum && $r->isBacked(),
-            true,
-        );
-
-        return $this->enumSet ??= array_fill_keys($this->enums, true);
+        return $this->enumSet ??= array_fill_keys($this->enums(), true);
     }
 
     /** @return array<class-string, true> */
     private function resourceSet(): array
     {
-        $this->resources ??= $this->discover(
-            'resources',
-            static fn (string $class): bool => is_subclass_of($class, JsonResource::class),
-            static fn (ReflectionClass $r): bool => ! $r->isAbstract(),
-        );
-
-        return $this->resourceSet ??= array_fill_keys($this->resources, true);
+        return $this->resourceSet ??= array_fill_keys($this->resources(), true);
     }
 
     /**
-     * @param  callable(class-string): bool  $matches
+     * @param  callable(class-string): ?ReflectionClass<object>  $reflect  The class's reflection, or null when it is not of this category (or cannot load).
      * @param  callable(ReflectionClass<object>): bool  $accept
      * @return list<class-string>
      */
-    private function discover(string $category, callable $matches, callable $accept, bool $enums = false): array
+    private function discover(string $category, callable $reflect, callable $accept): array
     {
         if (! config(sprintf('typefinder.%s.enabled', $category), true)) {
             return [];
@@ -116,16 +131,12 @@ final class GeneratedClasses
 
             foreach (Finder::create()->files()->name('*.php')->in((string) $path)->sortByName() as $file) {
                 $className = ClassNameResolver::fromFile($file->getRealPath());
-                if ($className === null || ! $matches($className)) {
+                if ($className === null) {
                     continue;
                 }
 
-                if (! $enums && ! class_exists($className)) {
-                    continue;
-                }
-
-                $reflection = $enums ? new ReflectionEnum($className) : new ReflectionClass($className);
-                if (! $accept($reflection)) {
+                $reflection = $reflect($className);
+                if (! $reflection instanceof ReflectionClass || ! $accept($reflection)) {
                     continue;
                 }
 
