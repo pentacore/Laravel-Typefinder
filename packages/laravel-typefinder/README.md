@@ -38,8 +38,8 @@ Laravel Typefinder introspects your database schema, `$casts` declarations, vali
 
 ## Requirements
 
-- PHP 8.3+
-- Laravel 11, 12, or 13
+- PHP 8.4+
+- Laravel 12 or 13
 
 > `Rule::anyOf()` support in Form Request generation requires Laravel 13+. The package works on older Laravel versions — that rule is simply not specially handled.
 

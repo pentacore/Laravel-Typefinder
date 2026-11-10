@@ -21,12 +21,13 @@ php artisan typefinder:generate [--debug] [--json] [--check] [--strict]
 |---|---|---|---|
 | Models | on | `{output_path}/models/{Name}.d.ts` (+ `{Name}Create` / `{Name}Update`) | `app/Models/*` |
 | Enums | on | `{output_path}/enums/{Name}.d.ts` (or `.ts` when `emit_values` on) | `app/Enums/*` (backed) |
-| Form Requests | on | `{output_path}/requests/{Name}.d.ts` | `app/Http/Requests/*` |
+| Form Requests | on | `{output_path}/requests/{Name}.d.ts` (+ `{Name}Query` for rule keys tagged `@query`) | `app/Http/Requests/*` |
 | Pivots | on | `{output_path}/models/{Name}Pivot.d.ts` | derived from `belongsToMany` / `morphToMany` |
 | Resources | on | `{output_path}/resources/{Name}.d.ts` | `app/Http/Resources/*` |
 | Pages | off | `{output_path}/pages.d.ts` (single file) | controller actions tagged `#[TypefinderPage]` |
 | Broadcasting | off | `{output_path}/broadcasting.d.ts` (single file) | classes implementing `ShouldBroadcast` |
 | Helpers | always | `{output_path}/helpers.d.ts` | built-in generic response wrappers |
+| Category barrels | with the category | `{output_path}/{category}/index.d.ts` | re-export every type of every file, companions included |
 | Top-level barrel | always | `{output_path}/index.d.ts` | re-exports every active category |
 
 ## Cast type map
@@ -113,13 +114,13 @@ Inside the cast resolver, priority (highest first):
 │   └── index.d.ts          # barrel — re-exports every model, write shape + pivot
 ├── enums/                  # `.ts` when enums.emit_values is on
 │   ├── {EnumName}.d.ts
-│   └── index.d.ts
+│   └── index.d.ts          # barrel
 ├── requests/
-│   ├── {RequestName}.d.ts
-│   └── index.d.ts
+│   ├── {RequestName}.d.ts  # plus {RequestName}Query for rule keys tagged @query
+│   └── index.d.ts          # barrel — re-exports every request, query type + nested type
 ├── resources/
 │   ├── {ResourceName}.d.ts
-│   └── index.d.ts
+│   └── index.d.ts          # barrel
 ├── pages.d.ts              # opt-in — Inertia PageProps map
 ├── broadcasting.d.ts       # opt-in — Echo channel + event types
 └── index.d.ts              # top-level barrel
