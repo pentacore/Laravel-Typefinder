@@ -341,9 +341,10 @@ final readonly class PhpDocShapeResolver
     }
 
     /**
-     * Resolve one imported alias in the class it is imported from. A missing
-     * class or alias yields null: the local name then fails to resolve in the
-     * mapper and becomes `unknown` with a warning.
+     * Resolve one imported alias in the class, interface or trait it is
+     * imported from. A missing class or alias yields null: the local name
+     * then fails to resolve in the mapper and becomes `unknown` with a
+     * warning.
      *
      * @param  PhpDocScope  $names  the importing file's names
      * @param  array<string, ?PhpDocScope>  $scopes
@@ -358,7 +359,7 @@ final readonly class PhpDocShapeResolver
         $from = $names->resolveName($import->importedFrom->name);
 
         try {
-            if ($from === null || (! class_exists($from) && ! interface_exists($from))) {
+            if ($from === null || (! class_exists($from) && ! interface_exists($from) && ! trait_exists($from))) {
                 return null;
             }
         } catch (Throwable) {

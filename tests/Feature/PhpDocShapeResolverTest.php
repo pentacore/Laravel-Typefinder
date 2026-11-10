@@ -34,6 +34,7 @@ use Tests\Fixtures\Resources\PhpDoc\PsalmReturnResource;
 use Tests\Fixtures\Resources\PhpDoc\RecursiveImportResource;
 use Tests\Fixtures\Resources\PhpDoc\StubDefaultResource;
 use Tests\Fixtures\Resources\PhpDoc\TraitAliasToArrayResource;
+use Tests\Fixtures\Resources\PhpDoc\TraitImportResource;
 use Tests\Fixtures\Resources\PhpDoc\TraitToArrayResource;
 use Tests\Fixtures\Resources\PhpDoc\TwoShapesResource;
 use Tests\Fixtures\Resources\PhpDoc\UndocumentedTraitToArrayResource;
@@ -222,6 +223,20 @@ final class PhpDocShapeResolverTest extends TestCase
                 ])),
             ]),
             $this->resolve(ImportedAliasResource::class),
+        );
+        $this->assertSame([], $this->warnings);
+    }
+
+    public function test_aliases_may_be_imported_from_a_trait(): void
+    {
+        $this->assertSame(
+            $this->object([
+                $this->field('price', $this->object([
+                    $this->field('amount', $this->ts('number')),
+                    $this->field('currency', $this->ts('string')),
+                ])),
+            ]),
+            $this->resolve(TraitImportResource::class),
         );
         $this->assertSame([], $this->warnings);
     }
