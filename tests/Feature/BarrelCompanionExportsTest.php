@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use Illuminate\Support\Facades\File;
+use Pentacore\Typefinder\Cache\CacheKeyFactory;
 use Pentacore\Typefinder\Renderers\TypeScriptRenderer;
 use Pentacore\Typefinder\Services\Generator;
+use Pentacore\Typefinder\TypefinderRegistry;
 use Tests\TestCase;
 
 use function Orchestra\Testbench\workbench_path;
@@ -126,7 +128,16 @@ final class BarrelCompanionExportsTest extends TestCase
         $this->writeRequest('StoreThingRequestQuery', "'term' => ['string'],");
         config(['typefinder.requests.paths' => [$this->scratch]]);
 
-        $generator = app(Generator::class);
+        $heard = [];
+        $generator = new Generator(
+            app(TypefinderRegistry::class),
+            new TypeScriptRenderer,
+            new CacheKeyFactory(base_path()),
+            storage_path('framework/cache/typefinder/extractions.json'),
+            function (string $message) use (&$heard): void {
+                $heard[] = $message;
+            },
+        );
         $regenResult = $generator->generateFull();
 
         $barrel = File::get($this->output.'/requests/index.d.ts');
@@ -144,6 +155,8 @@ final class BarrelCompanionExportsTest extends TestCase
         $this->assertSame([], $regenResult->failed);
         $this->assertSame($barrel, File::get($this->output.'/requests/index.d.ts'));
         $this->assertContains($expected, $regenResult->warnings);
+        // The warning callback hears it from both runs.
+        $this->assertCount(2, array_keys($heard, $expected, true));
     }
 
     public function test_companion_exported_by_two_files_stays_out_of_the_barrel(): void
@@ -185,6 +198,23 @@ final class BarrelCompanionExportsTest extends TestCase
         app(Generator::class)->generateFull();
 
         $this->assertStringContainsString("export * from './PostStatus';", File::get($this->output.'/enums/index.ts'));
+    }
+
+    public function test_incremental_run_rewrites_the_value_enum_barrel(): void
+    {
+        config(['typefinder.enums.emit_values' => true]);
+
+        $generator = app(Generator::class);
+        $generator->generateFull();
+
+        $barrel = File::get($this->output.'/enums/index.ts');
+        File::delete($this->output.'/enums/index.ts');
+
+        $regenResult = $generator->generatePaths([workbench_path('app/Enums/PostStatus.php')]);
+
+        $this->assertSame([], $regenResult->failed);
+        $this->assertContains('enums/index.ts', $regenResult->changed);
+        $this->assertSame($barrel, File::get($this->output.'/enums/index.ts'));
     }
 
     /**
