@@ -241,6 +241,8 @@ final class Generator
             $this->assertUniqueTypeNames('requests', $allRequests);
 
             foreach ($allRequests as $allRequest) {
+                array_map($warn, $allRequest['warnings'] ?? []);
+
                 $absolutePath = new ReflectionClass($allRequest['fqcn'])->getFileName();
                 if ($absolutePath !== false) {
                     $extractionCache->put($absolutePath, 'requests', $allRequest);
@@ -962,7 +964,7 @@ final class Generator
         $extraction = match ($category) {
             'enums' => (new EnumExtractor)->extract($className),
             'models' => $this->extractSingleModel($className, $config, $warn),
-            'requests' => (new RequestExtractor)->extract($className),
+            'requests' => $this->extractSingleRequest($className, $warn),
             'resources' => $this->extractSingleResource($className, $config, $warn),
             'inertia' => $this->extractSingleController($className),
             'broadcasting' => (new BroadcastExtractor)->extract($className),
@@ -987,6 +989,14 @@ final class Generator
         }
 
         return $extraction;
+    }
+
+    private function extractSingleRequest(string $className, callable $warn): array
+    {
+        $request = (new RequestExtractor)->extract($className);
+        array_map($warn, $request['warnings'] ?? []);
+
+        return $request;
     }
 
     private function extractSingleResource(string $className, array $config, callable $warn): ?array

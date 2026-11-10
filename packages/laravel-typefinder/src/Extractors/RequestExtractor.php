@@ -11,6 +11,7 @@ use Illuminate\Validation\Rules\Enum;
 use Illuminate\Validation\Rules\In;
 use Pentacore\Typefinder\Attributes\TypefinderIgnore;
 use Pentacore\Typefinder\Attributes\TypefinderOverrides;
+use Pentacore\Typefinder\Renderers\TypeScriptRenderer;
 use Pentacore\Typefinder\Support\ClassNameResolver;
 use Pentacore\Typefinder\Support\NullSafeProxy;
 use ReflectionAttribute;
@@ -89,13 +90,21 @@ class RequestExtractor
     ];
 
     /**
+     * What the rules of the request being extracted could not express.
+     *
+     * @var list<string>
+     */
+    protected array $warnings = [];
+
+    /**
      * Extract type information from a single FormRequest class.
      *
      * @param  class-string<FormRequest>  $requestClass
-     * @return array{name: string, fqcn: class-string, fields: list<array>}
+     * @return array{name: string, fqcn: class-string, fields: list<array>, warnings?: list<string>}
      */
     public function extract(string $requestClass): array
     {
+        $this->warnings = [];
         $reflectionClass = new ReflectionClass($requestClass);
         $formRequest = $this->createRequestInstance($requestClass);
 
@@ -131,11 +140,21 @@ class RequestExtractor
             );
         }
 
-        return [
+        $result = [
             'name' => $reflectionClass->getShortName(),
             'fqcn' => $requestClass,
             'fields' => $fields,
         ];
+
+        // Carried on the result so the generator can report them.
+        if ($this->warnings !== []) {
+            $result['warnings'] = array_map(
+                fn (string $warning): string => $reflectionClass->getShortName().': '.$warning,
+                $this->warnings,
+            );
+        }
+
+        return $result;
     }
 
     /**
@@ -196,115 +215,57 @@ class RequestExtractor
     /**
      * Parse all rules into a structured fields array.
      *
-     * @param  array<string, mixed>  $rules
+     * The dotted rule names are folded into a tree first, so a rule at any
+     * depth lands below its own parent: `a.b.*.c` is `a` → `b` → `*` → `c`.
+     *
+     * @param  array<array-key, mixed>  $rules
      * @return list<array>
      */
     protected function parseRules(array $rules): array
     {
-        $topLevel = [];
-        $nested = [];
-        $wildcardTypes = [];
-        $wildcardObjects = [];
-        $unsafeWildcards = [];
-        $confirmedFields = [];
+        $root = ['rules' => null, 'children' => []];
 
-        // Separate top-level, nested, and wildcard rules
         foreach ($rules as $fieldName => $fieldRules) {
-            $fieldRules = $this->normalizeRules($fieldRules);
+            $node = &$root;
 
-            if (str_contains($fieldName, '.')) {
-                $parts = explode('.', $fieldName, 2);
-                $parent = $parts[0];
-                $rest = $parts[1];
-
-                if ($rest === '*') {
-                    // Bare wildcard rule: tags.* => 'string' → tags is string[]
-                    $wildcardTypes[$parent] = $this->resolveType($fieldRules);
-                } elseif (str_starts_with($rest, '*.')) {
-                    // Object-array wildcard: rate_limits.*.metric => ...
-                    // The child path is everything after the leading '*.'.
-                    $childPath = substr($rest, 2);
-
-                    if (str_contains($childPath, '*')) {
-                        // Nested wildcard (e.g. matrix.*.* or items.*.children.*.name):
-                        // can't be flattened into a single object shape. Degrade to a
-                        // safe, VALID TS array type rather than emit a bare `*` key.
-                        $unsafeWildcards[$parent] = true;
-                    } else {
-                        $wildcardObjects[$parent][] = [
-                            'path' => $childPath,
-                            'rules' => $fieldRules,
-                        ];
-                    }
-                } else {
-                    // Nested rule: metadata.key => 'string'
-                    $nested[$parent][] = [
-                        'path' => $rest,
-                        'rules' => $fieldRules,
-                    ];
-                }
-            } else {
-                $topLevel[$fieldName] = $fieldRules;
+            foreach ($this->splitFieldName((string) $fieldName) as $segment) {
+                $node['children'][$segment] ??= ['rules' => null, 'children' => []];
+                $node = &$node['children'][$segment];
             }
+
+            $node['rules'] = $this->normalizeRules($fieldRules);
+            unset($node);
         }
 
         $fields = [];
+        $confirmedFields = [];
 
-        foreach ($topLevel as $fieldName => $fieldRules) {
-            $required = $this->isRequired($fieldRules);
-            $nullable = $this->isNullable($fieldRules);
-            $type = $this->resolveType($fieldRules);
-            $isArray = $this->isArrayRule($fieldRules);
+        foreach ($root['children'] as $segment => $node) {
+            $segment = (string) $segment;
 
-            // Check for 'confirmed' rule
-            if ($this->hasRule($fieldRules, 'confirmed')) {
-                $confirmedFields[$fieldName.'_confirmation'] = $type;
-            }
-
-            // Handle array/list types with wildcard items
-            if ($isArray && isset($unsafeWildcards[$fieldName])) {
-                // Nested wildcard we can't model precisely — emit a safe array type.
-                $type = 'unknown[]';
-            } elseif ($isArray && isset($wildcardObjects[$fieldName])) {
-                // Array-of-objects: rate_limits.*.metric etc.
-                $children = $this->parseNestedFields($wildcardObjects[$fieldName]);
-                $fields[] = [
-                    'name' => $fieldName,
-                    'type' => 'object-array',
-                    'required' => $required,
-                    'nullable' => $nullable,
-                    'children' => $children,
-                ];
-
-                continue;
-            } elseif ($isArray && isset($wildcardTypes[$fieldName])) {
-                $type = $this->arrayOf($wildcardTypes[$fieldName]);
-            } elseif ($isArray && isset($nested[$fieldName])) {
-                // Nested object
-                $children = $this->parseNestedFields($nested[$fieldName]);
-                $fields[] = [
-                    'name' => $fieldName,
-                    'type' => 'object',
-                    'required' => $required,
-                    'nullable' => $nullable,
-                    'children' => $children,
-                ];
+            if ($segment === '*') {
+                // The request body itself would be a list; a request type is an object.
+                foreach ($this->ruleNames('*', $node) as $ruleName) {
+                    $this->warnings[] = sprintf(
+                        "rule '%s' was left out: a wildcard at the top level makes the request body a list, which a request type cannot express",
+                        $ruleName,
+                    );
+                }
 
                 continue;
             }
 
-            $fields[] = [
-                'name' => $fieldName,
-                'type' => $type,
-                'required' => $required,
-                'nullable' => $nullable,
-            ];
+            $fields[] = $this->buildField($segment, $node, $segment);
+
+            if ($node['rules'] !== null && $this->hasRule($node['rules'], 'confirmed')) {
+                $confirmedFields[$this->segmentName($segment).'_confirmation'] = $this->resolveType($node['rules']);
+            }
         }
 
         // Add auto-generated confirmation fields
         foreach ($confirmedFields as $confirmFieldName => $confirmType) {
             // Only add if not explicitly defined
-            if (! isset($topLevel[$confirmFieldName])) {
+            if (! isset($root['children'][$confirmFieldName])) {
                 $fields[] = [
                     'name' => $confirmFieldName,
                     'type' => $confirmType,
@@ -318,26 +279,131 @@ class RequestExtractor
     }
 
     /**
-     * Parse nested field rules into children array.
+     * Split a rule name into its segments at every unescaped dot. Segments
+     * keep their escapes (`\.`, `\*`), so a literal `\*` key is not confused
+     * with the `*` wildcard; segmentName() removes them.
      *
-     * @param  list<array{path: string, rules: list<mixed>}>  $nestedRules
-     * @return list<array>
+     * @return list<string>
      */
-    protected function parseNestedFields(array $nestedRules): array
+    protected function splitFieldName(string $fieldName): array
     {
-        $children = [];
+        return preg_split('/(?<!\\\\)\./', $fieldName) ?: [$fieldName];
+    }
 
-        foreach ($nestedRules as $nestedRule) {
-            $rules = $nestedRule['rules'];
-            $children[] = [
-                'name' => $nestedRule['path'],
-                'type' => $this->resolveType($rules),
-                'required' => $this->isRequired($rules),
-                'nullable' => $this->isNullable($rules),
+    /**
+     * The property name of a segment: Laravel's `\.` and `\*` escapes removed.
+     */
+    protected function segmentName(string $segment): string
+    {
+        return str_replace(['\.', '\*'], ['.', '*'], $segment);
+    }
+
+    /**
+     * Build one field from a node of the rule tree, with its nested shape.
+     *
+     * @param  array{rules: ?list<mixed>, children: array<array-key, array>}  $node
+     * @param  string  $path  dotted rule name of the node, for warnings
+     * @return array{name: string, type: mixed, required: bool, nullable: bool, children?: list<array>, arrayDepth?: int}
+     */
+    protected function buildField(string $segment, array $node, string $path): array
+    {
+        $rules = $node['rules'] ?? [];
+        $shape = $this->resolveShape($node, $path);
+
+        $field = [
+            'name' => $this->segmentName($segment),
+            'type' => $shape['type'],
+            // A parent without a rule of its own must be present when one of its keys must.
+            'required' => $node['rules'] === null
+                ? $shape['type'] === 'object' && array_any($shape['children'], fn (array $child): bool => $child['required'])
+                : $this->isRequired($rules),
+            'nullable' => $this->isNullable($rules),
+        ];
+
+        if (isset($shape['children'])) {
+            $field['children'] = $shape['children'];
+        }
+
+        if (($shape['arrayDepth'] ?? 1) > 1) {
+            $field['arrayDepth'] = $shape['arrayDepth'];
+        }
+
+        return $field;
+    }
+
+    /**
+     * Resolve the type of a rule-tree node.
+     *
+     * Returns a plain type, or `object` / `object-array` with `children`.
+     * `arrayDepth` counts the array levels around an `object-array`
+     * (`items.*.*.name` is 2).
+     *
+     * @param  array{rules: ?list<mixed>, children: array<array-key, array>}  $node
+     * @return array{type: mixed, children?: list<array>, arrayDepth?: int}
+     */
+    protected function resolveShape(array $node, string $path): array
+    {
+        $rules = $node['rules'] ?? [];
+        $ownType = $this->resolveType($rules);
+
+        // The node's own rule decides, unless it has keys below it and is an
+        // array or has no type of its own.
+        if ($node['children'] === [] || ($ownType !== 'unknown' && ! $this->isArrayRule($rules))) {
+            return ['type' => $ownType];
+        }
+
+        $named = $node['children'];
+        $wildcard = $named['*'] ?? null;
+        unset($named['*']);
+
+        if ($wildcard === null) {
+            $children = [];
+            foreach ($named as $segment => $child) {
+                $children[] = $this->buildField((string) $segment, $child, $path.'.'.$segment);
+            }
+
+            return ['type' => 'object', 'children' => $children];
+        }
+
+        if ($named !== []) {
+            // A list and a keyed object at once has no TypeScript shape. The
+            // wildcard wins; say which keys were dropped.
+            $this->warnings[] = sprintf(
+                "'%s' has rules for both every item ('%s.*') and named keys (%s); the named keys were left out",
+                $path,
+                $path,
+                implode(', ', array_map(fn (int|string $segment): string => $this->segmentName((string) $segment), array_keys($named))),
+            );
+        }
+
+        $item = $this->resolveShape($wildcard, $path.'.*');
+
+        if (isset($item['children'])) {
+            return [
+                'type' => 'object-array',
+                'children' => $item['children'],
+                'arrayDepth' => ($item['arrayDepth'] ?? 0) + 1,
             ];
         }
 
-        return $children;
+        return ['type' => $this->arrayOf($item['type'])];
+    }
+
+    /**
+     * Every rule name at or below a node, for warnings.
+     *
+     * @param  array{rules: ?list<mixed>, children: array<array-key, array>}  $node
+     * @return list<string>
+     */
+    protected function ruleNames(string $path, array $node): array
+    {
+        $names = $node['rules'] === null ? [] : [$path];
+
+        foreach ($node['children'] as $segment => $child) {
+            $names = [...$names, ...$this->ruleNames($path.'.'.$segment, $child)];
+        }
+
+        return $names;
     }
 
     /**
@@ -456,11 +522,7 @@ class RequestExtractor
                 continue;
             }
 
-            $name = preg_match('/^[A-Za-z_$][A-Za-z0-9_$]*$/', $key) === 1
-                ? $key
-                : "'".str_replace(['\\', "'"], ['\\\\', "\\'"], $key)."'";
-
-            $members[] = $name.'?: unknown';
+            $members[] = TypeScriptRenderer::propertyKey($key).'?: unknown';
         }
 
         if ($members === []) {

@@ -213,7 +213,35 @@ export type StorePostRequest = {
 };
 ```
 
-With `extract_nested: true`, nested keys become named types (`StorePostRequestMetadata`).
+Dotted rule names nest to any depth, and a `*` segment means "array of":
+
+```php
+'request' => ['required', 'array'],
+'request.headers' => ['sometimes', 'array'],
+'request.headers.*.name' => ['required', 'string'],
+'request.headers.*.value' => ['nullable', 'string'],
+'tags.*' => ['string'],
+'matrix.*.*' => ['integer'],
+```
+
+```typescript
+export type StoreWebhookRequest = {
+  request: {
+    headers?: {
+      name: string;
+      value?: string | null;
+    }[];
+  };
+  tags?: string[];
+  matrix?: number[][];
+};
+```
+
+- A parent with no rule of its own (`address.city` without `address`) is still emitted. It is required when one of its keys is.
+- A key that is not a TypeScript identifier is quoted (`'content-type'?: string`). An escaped dot (`'config.app\.name'`) stays one key (`'app.name'`).
+- Two shapes cannot be expressed and produce a warning (so `--strict` fails): a wildcard at the top level (`'*.name'`, the body itself is a list) is left out, and a parent with both `parent.*` and named keys keeps the array shape and drops the named keys. Use `#[TypefinderOverrides]` for those fields.
+
+With `extract_nested: true`, every nested object becomes a named type, named after its path (`StorePostRequestMetadata`, `StoreWebhookRequestRequestHeaders`).
 
 ### Pivots
 
