@@ -168,6 +168,31 @@ final class ReturnedArrayReaderTest extends TestCase
         $this->assertSame(['a', 'b?', 'c?'], $this->keyList($array));
     }
 
+    public function test_merge_unless_items_are_inlined_like_merge_when(): void
+    {
+        $array = $this->single("return ['a' => 1, \$this->mergeUnless(\$request->user(), ['b' => 2, 'c' => 3])];");
+
+        $this->assertSame(['item:a', 'item:b?', 'item:c?'], $this->shape($array));
+        $this->assertSame(['a', 'b?', 'c?'], $this->keyList($array));
+
+        $withDefault = $this->single("return [\$this->MERGEUNLESS(\$c, ['a' => 1, 'b' => 2], ['a' => 0, 'z' => 9])];");
+        $this->assertSame(['item:a', 'item:b?', 'item:a', 'item:z?'], $this->shape($withDefault));
+
+        $named = $this->single("return [\$this->mergeUnless(\$c, ['a' => 1], default: ['a' => 0])];");
+        $this->assertSame(['a'], $this->keyList($named));
+
+        $opaque = $this->single('return [$this->mergeUnless($c, $this->extra())];');
+        $this->assertSame(['expr:merge?'], $this->shape($opaque));
+    }
+
+    public function test_attributes_stays_a_dynamic_part(): void
+    {
+        $array = $this->single("return [\$this->attributes(['a', 'b']), 'c' => 1];");
+
+        $this->assertSame(['dynamic', 'item:c'], $this->shape($array));
+        $this->assertTrue($array->isOpen());
+    }
+
     public function test_merge_with_non_literal_argument_is_an_expr(): void
     {
         $array = $this->single("return ['a' => 1, \$this->merge(\$extra), \$this->mergeWhen(\$c, \$this->extra())];");
@@ -315,6 +340,10 @@ final class ReturnedArrayReaderTest extends TestCase
         yield 'whenPivotLoaded' => ["whenPivotLoaded('t', 1)", "whenPivotLoaded('t', 1, 0)"];
         yield 'whenPivotLoadedAs' => ["whenPivotLoadedAs('p', 't', 1)", "whenPivotLoadedAs('p', 't', 1, 0)"];
         yield 'whenExistsLoaded' => ["whenExistsLoaded('r', 1)", "whenExistsLoaded('r', 1, 0)"];
+        yield 'unless' => ['unless($c, 1)', 'unless($c, 1, 0)'];
+        yield 'whenNull' => ['whenNull($v)', 'whenNull($v, 0)'];
+        yield 'whenAppended' => ["whenAppended('a', 1)", "whenAppended('a', 1, 0)"];
+        yield 'transform' => ['transform($v, fn ($x) => $x)', 'transform($v, fn ($x) => $x, 0)'];
     }
 
     #[DataProvider('whenFamily')]
@@ -329,8 +358,8 @@ final class ReturnedArrayReaderTest extends TestCase
     {
         $array = $this->single(<<<'PHP'
         return [
-            'a' => $this->whenNull($this->a),
-            'b' => $this->unless($c, 1),
+            'a' => $this->whenever($this->a),
+            'b' => $this->attributes(['b']),
             'c' => $other->whenLoaded('c'),
             'd' => $this->whenLoaded(...$args),
             'e' => $this->whenLoaded(...),

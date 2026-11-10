@@ -38,21 +38,23 @@ use PhpParser\NodeVisitorAbstract;
  * {@see ParsedSource}; never evaluates anything.
  *
  * A value is conditional when it is:
- *  - `$this->when*(…)` from the closed list in {@see self::WHEN_DEFAULT_POSITION}
- *    called without its `$default` argument (positional or named `default:`);
+ *  - `$this->when*(…)`, `unless()` or `transform()` from the closed list in
+ *    {@see self::WHEN_DEFAULT_POSITION} called without its `$default`
+ *    argument (positional or named `default:`);
  *  - a static call matching one of the `$conditionalWrappers`;
  *  - `X::collection(<conditional>)`, `X::make(<conditional>)` or
  *    `new X(<conditional>)` where X is an existing `JsonResource` subclass.
  *
  * `$this->merge([...])` items are inlined as they are; `$this->mergeWhen($c,
- * [...])` items are inlined as conditional (with a literal default, only the
- * keys missing from the other branch are conditional).
+ * [...])` and `mergeUnless()` items are inlined as conditional (with a
+ * literal default, only the keys missing from the other branch are
+ * conditional). `$this->attributes([...])` is a dynamic part.
  */
 final readonly class ReturnedArrayReader
 {
     /**
-     * Zero-based position of the `$default` parameter of each `when*()`
-     * helper of `ConditionallyLoadsAttributes` (lower-case names).
+     * Zero-based position of the `$default` parameter of each conditional
+     * value helper of `ConditionallyLoadsAttributes` (lower-case names).
      */
     private const array WHEN_DEFAULT_POSITION = [
         'when' => 2,
@@ -64,9 +66,13 @@ final readonly class ReturnedArrayReader
         'whenpivotloaded' => 2,
         'whenpivotloadedas' => 3,
         'whenexistsloaded' => 2,
+        'unless' => 2,
+        'whennull' => 1,
+        'whenappended' => 2,
+        'transform' => 2,
     ];
 
-    /** Position of `$default` in `mergeWhen($condition, $value, $default)`. */
+    /** Position of `$default` in `mergeWhen()`/`mergeUnless($condition, $value, $default)`. */
     private const int MERGE_WHEN_DEFAULT_POSITION = 2;
 
     /** @var array<string, list<string>> lower-case method name => wrapper class FQCNs */
@@ -215,7 +221,7 @@ final readonly class ReturnedArrayReader
             return $this->mergedParts($value, $conditional);
         }
 
-        if (! $item->key instanceof Expr && $this->isThisCall($value, 'mergeWhen')) {
+        if (! $item->key instanceof Expr && ($this->isThisCall($value, 'mergeWhen') || $this->isThisCall($value, 'mergeUnless'))) {
             return $this->mergeWhenParts($value, $conditional);
         }
 
@@ -242,7 +248,8 @@ final readonly class ReturnedArrayReader
     }
 
     /**
-     * `$this->mergeWhen($condition, $value[, $default])`. Without a default
+     * `$this->mergeWhen($condition, $value[, $default])` (or `mergeUnless()`,
+     * the same with the condition negated). Without a default
      * every part is conditional. With one, both branches are emitted: their
      * opaque `expr` parts are conditional (mutually exclusive alternatives),
      * and an item is conditional only when the other branch is a literal

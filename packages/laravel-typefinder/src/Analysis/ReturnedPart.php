@@ -13,16 +13,17 @@ use PhpParser\Node\Expr;
  * - `dynamic`: an entry with a non-literal key, or no key; `$value` is set.
  * - `expr`: an opaque sub-expression combined into the array (`$expr`), with
  *   `$combine` saying how: `spread` (`...$x`), `merge` (an `array_merge()`
- *   argument or a `merge()`/`mergeWhen()` argument that is not a literal
- *   array), `plus` (an operand of `+`) or `whole` (the entire expression).
- *   `$expr` is null when the unknown keys come from outside any expression
- *   (props an action may pass on another code path).
+ *   argument, or a `merge()`/`mergeWhen()`/`mergeUnless()` argument that is
+ *   not a literal array), `plus` (an operand of `+`) or `whole` (the entire
+ *   expression). `$expr` is null when the unknown keys come from outside any
+ *   expression (props an action may pass on another code path).
  *
  * `$conditional` is set on items whose presence depends on runtime state
- * (`when*()` without a default, `mergeWhen()` items, configured wrappers such
- * as `Inertia::optional()`, `JsonResource::collection()` of such a value),
- * and on every `expr` part produced by a `mergeWhen()` (a non-literal value or
- * default branch).
+ * (`when*()`/`unless()`/`transform()` without a default, `mergeWhen()` and
+ * `mergeUnless()` items, configured wrappers such as `Inertia::optional()`,
+ * `JsonResource::collection()` of such a value), and on every `expr` part
+ * produced by a `mergeWhen()`/`mergeUnless()` (a non-literal value or default
+ * branch).
  */
 final readonly class ReturnedPart
 {

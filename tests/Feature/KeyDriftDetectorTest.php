@@ -328,6 +328,30 @@ final class KeyDriftDetectorTest extends TestCase
         $this->assertSame([], $this->checkResource($class));
     }
 
+    public function test_unless_without_a_default_on_a_required_key_is_conditional_but_required(): void
+    {
+        $class = $this->loadClass(<<<'PHP'
+            class {CLASS} extends \Illuminate\Http\Resources\Json\JsonResource
+            {
+                /**
+                 * @return array{id: int, secret: string, hint: string}
+                 */
+                public function toArray(\Illuminate\Http\Request $request): array
+                {
+                    return [
+                        'id' => 1,
+                        'secret' => $this->unless($request->boolean('guest'), 's'),
+                        'hint' => $this->unless($request->boolean('guest'), 'h', ''),
+                    ];
+                }
+            }
+            PHP);
+
+        $this->assertSame([
+            $class.'::toArray(): "secret" is conditional in code but required in PHPDoc @return shape',
+        ], $this->checkResource($class));
+    }
+
     public function test_optional_declared_keys_are_never_reported_missing(): void
     {
         $class = $this->loadClass(<<<'PHP'
