@@ -1,3 +1,9 @@
+## [8.0.1](https://github.com/pentacore/Laravel-Typefinder/compare/v8.0.0...v8.0.1) (2026-11-10)
+
+### Bug Fixes
+
+* apply the ignore and backed-enum filters to incremental runs ([#98](https://github.com/pentacore/Laravel-Typefinder/issues/98)) ([6318507](https://github.com/pentacore/Laravel-Typefinder/commit/6318507f656cad32fd84ab0395f34c3a291d1826))
+
 ## [8.0.0](https://github.com/pentacore/Laravel-Typefinder/compare/v7.1.0...v8.0.0) (2026-11-10)
 
 ### ⚠ BREAKING CHANGES
