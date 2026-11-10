@@ -184,7 +184,7 @@ final readonly class KeyDriftDetector
         $list = [];
 
         foreach ($declared as $key => $optional) {
-            $list[] = ['key' => $key, 'optional' => $optional];
+            $list[] = ['key' => strval($key), 'optional' => $optional];
         }
 
         $kinds = ['undeclared', 'never', 'notAlways', 'conditional'];

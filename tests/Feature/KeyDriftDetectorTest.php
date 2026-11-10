@@ -1297,6 +1297,85 @@ final class KeyDriftDetectorTest extends TestCase
         $this->assertStringContainsString('never returns', $warnings[0]);
     }
 
+    public function test_columns_plus_a_when_loaded_relation_have_no_drift(): void
+    {
+        $class = $this->loadClass(<<<'PHP'
+            class {CLASS} extends \Illuminate\Http\Resources\Json\JsonResource
+            {
+                public function toArray(\Illuminate\Http\Request $request): array
+                {
+                    return ['id' => $this->id, 'name' => $this->name, 'created_at' => $this->created_at, 'updated_at' => $this->updated_at, 'posts' => $this->whenLoaded('posts')];
+                }
+            }
+            PHP);
+
+        $modelExtraction = new ModelExtractor(new ColumnTypeResolver, new CastTypeResolver)->extract(Tag::class);
+        $this->assertNotNull($modelExtraction);
+        $modelExtraction['columns'] = array_values(array_filter($modelExtraction['columns'], static fn (array $column): bool => in_array($column['name'], ['id', 'name', 'created_at', 'updated_at'], true)));
+        $this->assertCount(4, $modelExtraction['columns']);
+        $this->assertContains('posts', array_column($modelExtraction['relationships'], 'name'));
+
+        $this->assertSame([], $this->keyDriftDetector->checkResource([
+            'name' => class_basename($class),
+            'fqcn' => $class,
+            'shape' => ['kind' => 'model', 'model' => Tag::class, 'omit' => [], 'extend' => [], 'via' => 'convention'],
+        ], $modelExtraction));
+    }
+
+    public function test_missing_via_falls_back_to_the_convention_without_omit_or_extend(): void
+    {
+        $class = $this->loadClass(<<<'PHP'
+            class {CLASS} extends \Illuminate\Http\Resources\Json\JsonResource
+            {
+                public function toArray(\Illuminate\Http\Request $request): array
+                {
+                    return ['id' => $this->id, 'name' => $this->name, 'extra' => 1];
+                }
+            }
+            PHP);
+
+        $warnings = $this->modelDriftWithoutVia($class, Tag::class);
+        $this->assertCount(1, $warnings);
+        $this->assertStringContainsString('model type it is typed as (by name): returns undeclared "extra"', $warnings[0]);
+    }
+
+    public function test_missing_via_falls_back_to_the_attribute_with_omit_or_extend(): void
+    {
+        $class = $this->loadClass(<<<'PHP'
+            class {CLASS} extends \Illuminate\Http\Resources\Json\JsonResource
+            {
+                public function toArray(\Illuminate\Http\Request $request): array
+                {
+                    return ['id' => $this->id, 'name' => $this->name, 'extra' => 1];
+                }
+            }
+            PHP);
+
+        foreach ([['omit' => ['created_at']], ['extend' => ['label' => 'string']]] as $options) {
+            $warnings = $this->modelDriftWithoutVia($class, Tag::class, $options['omit'] ?? [], $options['extend'] ?? []);
+            $this->assertCount(1, $warnings);
+            $this->assertStringContainsString('(#[TypefinderResource(model:)]): ', $warnings[0]);
+            $this->assertStringContainsString('returns undeclared "extra"', $warnings[0]);
+        }
+    }
+
+    public function test_numeric_looking_extend_keys_do_not_break_the_check(): void
+    {
+        $class = $this->loadClass(<<<'PHP'
+            class {CLASS} extends \Illuminate\Http\Resources\Json\JsonResource
+            {
+                public function toArray(\Illuminate\Http\Request $request): array
+                {
+                    return ['id' => $this->id, 'name' => $this->name];
+                }
+            }
+            PHP);
+
+        $warnings = $this->modelDrift($class, Tag::class, [], ['123' => 'string']);
+        $this->assertCount(1, $warnings);
+        $this->assertStringContainsString('never returns "created_at", "updated_at", "123"', $warnings[0]);
+    }
+
     public function test_conditional_column_with_a_closed_return_is_conditional_but_required(): void
     {
         $class = $this->loadClass(<<<'PHP'
@@ -1387,6 +1466,23 @@ final class KeyDriftDetectorTest extends TestCase
             'name' => class_basename($resource),
             'fqcn' => $resource,
             'shape' => ['kind' => 'model', 'model' => $model, 'omit' => $omit, 'extend' => $extend, 'via' => $omit === [] && $extend === [] ? 'convention' : 'attribute'],
+        ], $modelExtraction);
+    }
+
+    /**
+     * @param  list<string>  $omit
+     * @param  array<string, string>  $extend
+     * @return list<string>
+     */
+    private function modelDriftWithoutVia(string $resource, string $model, array $omit = [], array $extend = []): array
+    {
+        $modelExtraction = new ModelExtractor(new ColumnTypeResolver, new CastTypeResolver)->extract($model);
+        $this->assertNotNull($modelExtraction);
+
+        return $this->keyDriftDetector->checkResource([
+            'name' => class_basename($resource),
+            'fqcn' => $resource,
+            'shape' => ['kind' => 'model', 'model' => $model, 'omit' => $omit, 'extend' => $extend],
         ], $modelExtraction);
     }
 
