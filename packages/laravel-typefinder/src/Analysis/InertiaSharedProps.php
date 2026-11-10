@@ -8,7 +8,6 @@ use Pentacore\Typefinder\Support\ClassNameResolver;
 use Pentacore\Typefinder\Support\ParsedSource;
 use PhpParser\Node\Stmt\ClassMethod;
 use Symfony\Component\Finder\Finder;
-use Throwable;
 
 /**
  * The prop keys an app shares with every Inertia page: the literal keys any
@@ -34,14 +33,10 @@ final class InertiaSharedProps
         $keys = [];
 
         foreach (Finder::create()->files()->in($directory)->name('*.php')->sortByName() as $file) {
-            try {
-                foreach (self::shareReturns($file->getRealPath() ?: $file->getPathname(), $reader) as $returned) {
-                    foreach ($returned->keys() as ['key' => $key]) {
-                        $keys[$key] = true;
-                    }
+            foreach (self::shareReturns($file->getRealPath() ?: $file->getPathname(), $reader) as $returned) {
+                foreach ($returned->keys() as ['key' => $key]) {
+                    $keys[$key] = true;
                 }
-            } catch (Throwable) {
-                continue;
             }
         }
 
