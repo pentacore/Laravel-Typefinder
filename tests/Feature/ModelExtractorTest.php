@@ -18,6 +18,11 @@ use App\Models\User;
 use Pentacore\Typefinder\Extractors\ModelExtractor;
 use Pentacore\Typefinder\Resolvers\CastTypeResolver;
 use Pentacore\Typefinder\Resolvers\ColumnTypeResolver;
+use Pentacore\Typefinder\TypefinderRegistry;
+use Tests\Fixtures\Casts\UnmappedCast;
+use Tests\Fixtures\Models\JsonCastQuest;
+use Tests\Fixtures\Models\ParameterisedCastQuest;
+use Tests\Fixtures\Models\UnmappedCastQuest;
 use Tests\TestCase;
 
 use function Orchestra\Testbench\workbench_path;
@@ -142,15 +147,7 @@ final class ModelExtractorTest extends TestCase
     public function test_unknown_column_type_emits_warning_and_falls_back_to_unknown(): void
     {
         $warnings = [];
-        $modelExtractor = new ModelExtractor(
-            new ColumnTypeResolver,
-            new CastTypeResolver,
-            function (string $message) use (&$warnings): void {
-                $warnings[] = $message;
-            },
-        );
-
-        $result = $modelExtractor->extract(QuirkyThing::class);
+        $result = $this->warningExtractor($warnings)->extract(QuirkyThing::class);
 
         $shapeCol = $this->findColumn($result, 'shape');
         $this->assertSame('unknown', $shapeCol['type']);
@@ -159,6 +156,102 @@ final class ModelExtractorTest extends TestCase
         $this->assertStringContainsString('QuirkyThing', $warnings[0]);
         $this->assertStringContainsString('shape', $warnings[0]);
         $this->assertStringContainsString('geometry', $warnings[0]);
+    }
+
+    public function test_unknown_cast_emits_warning(): void
+    {
+        $warnings = [];
+        $result = $this->warningExtractor($warnings)->extract(UnmappedCastQuest::class);
+
+        $this->assertSame('unknown', $this->findColumn($result, 'rewards')['type']);
+        $this->assertCount(1, $warnings);
+        $this->assertStringContainsString(UnmappedCastQuest::class, $warnings[0]);
+        $this->assertStringContainsString('rewards', $warnings[0]);
+        $this->assertStringContainsString(UnmappedCast::class, $warnings[0]);
+        $this->assertStringContainsString('#[TypefinderCast]', $warnings[0]);
+        $this->assertStringContainsString('Typefinder::registerCast()', $warnings[0]);
+        $this->assertStringContainsString('typefinder.casts.type_map', $warnings[0]);
+    }
+
+    public function test_resolvable_casts_emit_no_warning(): void
+    {
+        $warnings = [];
+        $extractor = $this->warningExtractor($warnings);
+
+        // datetime + BackedEnum + #[TypefinderCast] class
+        $extractor->extract(Post::class);
+        $extractor->extract(User::class);
+
+        $this->assertSame([], $warnings);
+    }
+
+    public function test_json_cast_and_explicit_unknown_mappings_emit_no_warning(): void
+    {
+        $warnings = [];
+
+        // Built-in 'json' => 'unknown'
+        $result = $this->warningExtractor($warnings)->extract(JsonCastQuest::class);
+        $this->assertSame('unknown', $this->findColumn($result, 'rewards')['type']);
+
+        // typefinder.casts.type_map entry mapping to 'unknown'
+        $result = $this->warningExtractor($warnings, new CastTypeResolver([UnmappedCast::class => 'unknown']))
+            ->extract(UnmappedCastQuest::class);
+        $this->assertSame('unknown', $this->findColumn($result, 'rewards')['type']);
+
+        // Typefinder::registerCast() mapping to 'unknown'
+        $registry = new TypefinderRegistry;
+        $registry->registerCast(UnmappedCast::class, 'unknown');
+
+        $result = $this->warningExtractor($warnings, new CastTypeResolver([], $registry))
+            ->extract(UnmappedCastQuest::class);
+        $this->assertSame('unknown', $this->findColumn($result, 'rewards')['type']);
+
+        $this->assertSame([], $warnings);
+    }
+
+    public function test_parameterised_casts_emit_no_warning(): void
+    {
+        $warnings = [];
+        $result = $this->warningExtractor($warnings)->extract(ParameterisedCastQuest::class);
+
+        $this->assertSame('number', $this->findColumn($result, 'party_id')['type']);
+        $this->assertSame('string', $this->findColumn($result, 'completed_at')['type']);
+        $this->assertSame('{ amount: number; currency: string }', $this->findColumn($result, 'rewards')['type']);
+        $this->assertSame([], $warnings);
+    }
+
+    public function test_cast_mapped_to_real_type_via_config_or_registry_emits_no_warning(): void
+    {
+        $warnings = [];
+
+        // typefinder.casts.type_map entry
+        $result = $this->warningExtractor($warnings, new CastTypeResolver([UnmappedCast::class => 'Reward[]']))
+            ->extract(UnmappedCastQuest::class);
+        $this->assertSame('Reward[]', $this->findColumn($result, 'rewards')['type']);
+
+        // Typefinder::registerCast()
+        $registry = new TypefinderRegistry;
+        $registry->registerCast(UnmappedCast::class, 'Loot');
+
+        $result = $this->warningExtractor($warnings, new CastTypeResolver([], $registry))
+            ->extract(UnmappedCastQuest::class);
+        $this->assertSame('Loot', $this->findColumn($result, 'rewards')['type']);
+
+        $this->assertSame([], $warnings);
+    }
+
+    /**
+     * @param  list<string>  $warnings
+     */
+    private function warningExtractor(array &$warnings, ?CastTypeResolver $castTypeResolver = null): ModelExtractor
+    {
+        return new ModelExtractor(
+            new ColumnTypeResolver,
+            $castTypeResolver ?? new CastTypeResolver,
+            function (string $message) use (&$warnings): void {
+                $warnings[] = $message;
+            },
+        );
     }
 
     public function test_extracts_has_many_relationship(): void

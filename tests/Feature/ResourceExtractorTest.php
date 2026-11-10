@@ -5,11 +5,16 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use App\Http\Resources\AdminUserResource;
+use App\Http\Resources\CommentResource;
+use App\Http\Resources\Concerns\BaseShapeResource;
 use App\Http\Resources\InvalidResource;
 use App\Http\Resources\LegacyResource;
 use App\Http\Resources\OrphanResource;
 use App\Http\Resources\PostResource;
+use App\Http\Resources\ProductResource;
+use App\Http\Resources\UnmappableShapeResource;
 use App\Http\Resources\UserResource;
+use App\Models\Product;
 use App\Models\User;
 use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Support\Facades\File;
@@ -17,6 +22,8 @@ use Pentacore\Typefinder\Attributes\TypefinderIgnore;
 use Pentacore\Typefinder\Extractors\ResourceExtractor;
 use ReflectionClass;
 use Tests\Fixtures\Resources\DatabaseNotificationResource;
+use Tests\Fixtures\Resources\PhpDoc\AttributeAndDocResource;
+use Tests\Fixtures\Resources\PhpDoc\ModelAttributeAndDocResource;
 use Tests\TestCase;
 
 use function Orchestra\Testbench\workbench_path;
@@ -93,6 +100,78 @@ final class ResourceExtractorTest extends TestCase
         $this->resourceExtractor->extract(InvalidResource::class);
     }
 
+    public function test_phpdoc_beats_name_convention(): void
+    {
+        $result = $this->resourceExtractor->extract(CommentResource::class);
+
+        $this->assertSame('CommentResource', $result['name']);
+        $this->assertSame(CommentResource::class, $result['fqcn']);
+        $this->assertSame('phpdoc', $result['shape']['kind']);
+        $this->assertSame('object', $result['shape']['type']['kind']);
+        $this->assertSame(
+            ['id', 'body', 'author', 'post_id', 'created_at'],
+            array_column($result['shape']['type']['fields'], 'name'),
+        );
+    }
+
+    public function test_phpdoc_applies_when_inference_is_off(): void
+    {
+        $result = new ResourceExtractor(inferFromModelName: false)->extract(CommentResource::class);
+
+        $this->assertSame('phpdoc', $result['shape']['kind']);
+    }
+
+    public function test_attribute_beats_phpdoc(): void
+    {
+        $result = $this->resourceExtractor->extract(AttributeAndDocResource::class);
+
+        $this->assertSame('shape', $result['shape']['kind']);
+        $this->assertSame(['id' => 'number'], $result['shape']['fields']);
+    }
+
+    public function test_model_attribute_beats_phpdoc(): void
+    {
+        $result = $this->resourceExtractor->extract(ModelAttributeAndDocResource::class);
+
+        $this->assertSame('model', $result['shape']['kind']);
+        $this->assertSame(User::class, $result['shape']['model']);
+    }
+
+    public function test_stub_default_doc_keeps_convention(): void
+    {
+        $result = $this->resourceExtractor->extract(ProductResource::class);
+
+        $this->assertSame('model', $result['shape']['kind']);
+        $this->assertSame(Product::class, $result['shape']['model']);
+    }
+
+    public function test_abstract_resource_never_uses_phpdoc(): void
+    {
+        $result = $this->resourceExtractor->extract(BaseShapeResource::class);
+
+        // Abstract, documented, and no same-named model: nothing applies.
+        $this->assertNull($result);
+    }
+
+    public function test_unresolved_message_mentions_phpdoc(): void
+    {
+        $this->assertStringContainsString('PHPDoc @return array{', new ResourceExtractor(inferFromModelName: true)->unresolvedMessage());
+        $this->assertStringContainsString('PHPDoc @return array{', new ResourceExtractor(inferFromModelName: false)->unresolvedMessage());
+    }
+
+    public function test_phpdoc_warnings_go_to_on_warn(): void
+    {
+        $warnings = [];
+        new ResourceExtractor(onWarn: function (string $message) use (&$warnings): void {
+            $warnings[] = $message;
+        })->extract(UnmappableShapeResource::class);
+
+        $this->assertSame(
+            [UnmappableShapeResource::class.'::toArray() @return: "handler" has unsupported type callable — emitted as unknown'],
+            $warnings,
+        );
+    }
+
     public function test_extract_from_directory_warns_on_orphan(): void
     {
         $warned = [];
@@ -108,6 +187,11 @@ final class ResourceExtractorTest extends TestCase
         $this->assertContains('UserResource', $names);
         $this->assertContains('AdminUserResource', $names);
         $this->assertContains('PostResource', $names);
+        $this->assertContains('CommentResource', $names);
+        $this->assertContains('ProductResource', $names);
+        $this->assertContains('ShapeShowcaseResource', $names);
+        $this->assertContains('InheritedShapeResource', $names);
+        $this->assertNotContains('BaseShapeResource', $names);
         $this->assertNotContains('LegacyResource', $names);
         $this->assertNotContains('OrphanResource', $names);
         $this->assertNotContains('InvalidResource', $names);

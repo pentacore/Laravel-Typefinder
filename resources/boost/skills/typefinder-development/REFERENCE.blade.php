@@ -5,7 +5,7 @@ Detailed reference material for agents that need more than the surface-level ski
 ## Command
 
 ```
-php artisan typefinder:generate [--debug] [--json] [--check]
+php artisan typefinder:generate [--debug] [--json] [--check] [--strict]
 ```
 
 | Flag | Purpose |
@@ -13,6 +13,7 @@ php artisan typefinder:generate [--debug] [--json] [--check]
 | `--json` | Emit a single structured JSON object to stdout. Suppresses human output. |
 | `--debug` | Emit `[typefinder]`-prefixed diagnostic lines, one per extracted class. |
 | `--check` | Dry-run: generate into a temp directory, diff against on-disk output, exit non-zero if they differ. Writes no files. Only meaningful when the output is committed (`gitignore_generated` => false); with ignored output, generate in CI instead. |
+| `--strict` | Exit 1 if the run produced any warning (files are still written). Combine with `--check` or add it to the regular generate step in CI. |
 
 ## Emitted categories
 
@@ -33,18 +34,19 @@ php artisan typefinder:generate [--debug] [--json] [--check]
 | PHP cast | TS type |
 |---|---|
 | `'string'` / `'alpha'` / `'email'` / `'url'` / `'uuid'` / `'ulid'` / … | `string` |
-| `'integer'` / `'int'` / `'float'` / `'decimal'` / `'numeric'` | `number` |
-| `'boolean'` / `'accepted'` / `'declined'` | `boolean` |
-| `'datetime'` / `'date'` / `'timestamp'` / `'immutable_*'` | `string` |
-| `'array'` / `'collection'` / `'encrypted:array'` | `unknown[]` |
+| `'integer'` / `'int'` / `'float'` / `'decimal:2'` / `'numeric'` | `number` |
+| `'boolean'` / `'bool'` / `'accepted'` / `'declined'` | `boolean` |
+| `'datetime'` / `'date'` / `'timestamp'` / `'immutable_*'` / `'custom_datetime'` (with or without a `:format`) | `string` |
+| `'array'` / `'collection'` / `'encrypted:array'` / `'encrypted:collection'` | `unknown[]` |
 | `'object'` / `'encrypted:object'` | `Record<string, unknown>` |
-| `'json'` | `unknown` |
+| `'json'` / `'encrypted:json'` | `unknown` |
 | `'hashed'` | `string` |
-| `AsArrayObject` | `Record<string, unknown>` |
-| `AsCollection` | `unknown[]` |
-| `AsStringable` | `string` |
-| `AsEnumCollection:{Enum}` | inferred enum type, e.g. `PostStatus[]` |
-| Unknown cast (no `#[TypefinderCast]` attribute, no `Typefinder::registerCast()` entry, not a backed enum) | `unknown` (warning emitted) |
+| `AsArrayObject` / `AsEncryptedArrayObject` / `AsFluent` | `Record<string, unknown>` |
+| `AsCollection` / `AsEncryptedCollection` (incl. `::using()` / `::of()`) | `unknown[]` |
+| `AsStringable` / `AsUri` / `AsHtmlString` | `string` |
+| `AsEnumCollection:{Enum}` / `AsEnumArrayObject:{Enum}` | inferred enum type, e.g. `PostStatus[]` |
+| Parameterised cast `Name:args` with no exact mapping | resolved as `Name` |
+| Unknown cast (no `#[TypefinderCast]` attribute, no `Typefinder::registerCast()` entry, no `typefinder.casts.type_map` entry, not a backed enum) | `unknown` (warning emitted) |
 
 ## Type resolution precedence — models, resources, requests
 
@@ -55,6 +57,17 @@ When multiple sources could provide a type for a model attribute, priority (high
 3. `BackedEnum` cast auto-detection.
 4. Relationship introspection.
 5. DB schema column type.
+
+## Type resolution precedence — resources
+
+For a `JsonResource` subclass, the first match wins:
+
+1. `#[TypefinderIgnore]` → no file.
+2. `#[TypefinderResource(shape: [...])]`.
+3. `#[TypefinderResource(model: X::class, omit: [...], extend: [...])]`.
+4. PHPDoc `@return array{…}` on `toArray()` (`@phpstan-return` > `@psalm-return` > `@return`). Applies even with `infer_from_model_name` off; never to abstract classes. `array<string, mixed>` (the `make:resource` stub), plain `array` and `list<…>` are not shapes and fall through. Classes inside the shape resolve only to generated models, enums and resources; `Carbon`/`DateTimeInterface` become `string`, collections become arrays, `stdClass` becomes `Record<string, unknown>`; any other class becomes `unknown` with a warning.
+5. Name convention `{Model}Resource` → `{Model}` (only when `infer_from_model_name` is true).
+6. Otherwise skipped with a warning.
 
 ## Type resolution precedence — casts
 

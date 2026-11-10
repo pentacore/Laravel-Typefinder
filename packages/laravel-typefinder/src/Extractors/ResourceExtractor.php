@@ -8,7 +8,9 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Pentacore\Typefinder\Attributes\TypefinderIgnore;
 use Pentacore\Typefinder\Attributes\TypefinderResource;
+use Pentacore\Typefinder\Resolvers\PhpDocShapeResolver;
 use Pentacore\Typefinder\Support\ClassNameResolver;
+use Pentacore\Typefinder\Support\GeneratedClasses;
 use ReflectionAttribute;
 use ReflectionClass;
 use RuntimeException;
@@ -17,17 +19,30 @@ use Throwable;
 
 class ResourceExtractor
 {
+    private readonly GeneratedClasses $generatedClasses;
+
+    private readonly PhpDocShapeResolver $phpDocShapeResolver;
+
     /**
      * @param  bool  $inferFromModelName  Fall back to the `UserResource` → `User` name
-     *                                    convention when a resource has no attribute.
+     *                                    convention when a resource has no attribute or PHPDoc shape.
      * @param  ?list<class-string>  $modelClasses  Models the convention may match. These should
      *                                             be the models that get a generated type. When
      *                                             null, they are discovered from `typefinder.models.paths`.
+     * @param  ?list<class-string>  $enumClasses  Enums that get a generated type; null discovers them from config.
+     * @param  ?list<class-string>  $resourceClasses  Resources that get a generated type; null discovers them from config.
+     * @param  null|callable(string): void  $onWarn  Receives warnings about PHPDoc shapes (unmappable types, unparsable docs).
      */
     public function __construct(
         private readonly bool $inferFromModelName = true,
-        private readonly ?array $modelClasses = null,
-    ) {}
+        ?array $modelClasses = null,
+        ?array $enumClasses = null,
+        ?array $resourceClasses = null,
+        ?callable $onWarn = null,
+    ) {
+        $this->generatedClasses = new GeneratedClasses($modelClasses, $enumClasses, $resourceClasses);
+        $this->phpDocShapeResolver = new PhpDocShapeResolver($this->generatedClasses, $onWarn);
+    }
 
     /**
      * @return ?array{name: string, fqcn: class-string, shape: array}
@@ -74,6 +89,18 @@ class ResourceExtractor
                     'omit' => $attribute->omit,
                     'extend' => $attribute->extend,
                 ],
+            ];
+        }
+
+        // A documented toArray() shape is a declaration, so it applies even
+        // with name-convention inference off. The resolver skips abstract
+        // resources (never returned by an API), which fall through as before.
+        $type = $this->phpDocShapeResolver->resolve($reflectionClass);
+        if ($type !== null) {
+            return [
+                'name' => $reflectionClass->getShortName(),
+                'fqcn' => $resourceClass,
+                'shape' => ['kind' => 'phpdoc', 'type' => $type],
             ];
         }
 
@@ -174,11 +201,12 @@ class ResourceExtractor
         if (! $this->inferFromModelName) {
             return 'No #[TypefinderResource] attribute, and name-convention inference is off '
                 .'(typefinder.resources.infer_from_model_name). Add a shape or model attribute, '
+                .'or a PHPDoc @return array{…} on toArray(), '
                 .'or #[TypefinderIgnore] to skip this resource.';
         }
 
         return 'No #[TypefinderResource] attribute and class name does not match any discovered model. '
-            .'Add a shape or model attribute to include this resource.';
+            .'Add a shape or model attribute, or a PHPDoc @return array{…} on toArray(), to include this resource.';
     }
 
     /** @var ?array<string, class-string> */
@@ -195,51 +223,11 @@ class ResourceExtractor
     {
         if ($this->modelShortNameMap === null) {
             $this->modelShortNameMap = [];
-            foreach ($this->modelClasses ?? $this->discoverModelClasses() as $class) {
+            foreach ($this->generatedClasses->models() as $class) {
                 $this->modelShortNameMap[new ReflectionClass($class)->getShortName()] ??= $class;
             }
         }
 
         return $this->modelShortNameMap[$shortName] ?? null;
-    }
-
-    /**
-     * The models a full run would emit: concrete Model subclasses under
-     * `typefinder.models.paths` without #[TypefinderIgnore].
-     *
-     * @return list<class-string>
-     */
-    protected function discoverModelClasses(): array
-    {
-        if (! config('typefinder.models.enabled', true)) {
-            return [];
-        }
-
-        $classes = [];
-        foreach ((array) config('typefinder.models.paths', []) as $path) {
-            if (! is_dir((string) $path)) {
-                continue;
-            }
-
-            foreach (Finder::create()->files()->name('*.php')->in((string) $path)->sortByName() as $file) {
-                $className = ClassNameResolver::fromFile($file->getRealPath());
-                if ($className === null || ! class_exists($className) || ! is_subclass_of($className, Model::class)) {
-                    continue;
-                }
-
-                $reflection = new ReflectionClass($className);
-                if ($reflection->isAbstract()) {
-                    continue;
-                }
-
-                if ($reflection->getAttributes(TypefinderIgnore::class, ReflectionAttribute::IS_INSTANCEOF) !== []) {
-                    continue;
-                }
-
-                $classes[] = $className;
-            }
-        }
-
-        return $classes;
     }
 }
