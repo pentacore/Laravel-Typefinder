@@ -54,6 +54,8 @@ For a CI-style regression check (fails when regeneration would change anything o
 @boostsnippet("Typefinder type import", "typescript")
 // Named type imports
 import type { Post } from '@typefinder/models/Post'
+// A category barrel re-exports every type of every file, companions included
+import type { Post, PostCreate, PostUpdate } from '@typefinder/models'
 @endboostsnippet
 
 ## After running

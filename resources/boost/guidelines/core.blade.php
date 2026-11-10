@@ -20,7 +20,8 @@ The values are available under the `typefinder` key.
     - **Resources** (`{{$assist->appPath('Http/Resources/*')}}`) → `{output_path}/resources/{Name}.d.ts`. Declared via `#[TypefinderResource]` with an explicit shape, a model extension (`Omit<Model, ...> & { ... }`), or name-convention passthrough (`{Model}Resource` → `{Model}`).
     - **Pages** (opt-in, `typefinder.inertia.enabled`, `{{$assist->appPath('Http/Controllers/*')}}`) → `{output_path}/pages.d.ts`. A single file with a `PageProps` map keyed by Inertia component name. Tag controller actions with `#[TypefinderPage(component: ..., props: [...])]`.
     - **Broadcasting** (opt-in, `typefinder.broadcasting.enabled`, `{{$assist->appPath('Events/*')}}`) → `{output_path}/broadcasting.d.ts`. Public/private/presence channel maps plus a flat `BroadcastEvents` map. Discovered from classes implementing `ShouldBroadcast`.
-    - **Helpers** (always emitted) → `{output_path}/helpers.d.ts`. Generic response wrappers: `Wrapped<T>`, `WrappedCollection<T>`, `PaginatedCollection<T>`, `CursorPaginatedCollection<T>`, `SimplePaginatedCollection<T>`, `ValidationErrorResponse`, `ErrorResponse`.
+    - **Helpers** (always emitted) → `{output_path}/helpers.d.ts`. Generic response wrappers: `WrappedResource<T>`, `WrappedResourceCollection<T>`, `PaginatedResourceCollection<T>`, `CursorPaginatedResourceCollection<T>`, `SimplePaginatedResourceCollection<T>`, `PaginatedModel<T>`, `PaginationFields`, `ValidationErrorResponse`, `ErrorResponse`.
+    - **Category barrels** → `{output_path}/{category}/index.d.ts`. Re-export every type of every file in the category, companions included (`{Name}Create` / `{Name}Update`, `{Name}Query`, extracted nested request types).
     - **Top-level barrel** → `{output_path}/index.d.ts`. Re-exports every active category.
 @endverbatim
 ## Custom cast types
