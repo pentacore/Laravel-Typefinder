@@ -7,6 +7,7 @@ use Pentacore\Typefinder\Analysis\ReturnedArrayReader;
 use Pentacore\Typefinder\Analysis\ReturnedPart;
 use Pentacore\Typefinder\Support\ParsedSource;
 use PhpParser\Node\Expr;
+use PhpParser\Node\Expr\MethodCall;
 use PhpParser\Node\Expr\PropertyFetch;
 use PhpParser\Node\Expr\StaticCall;
 use PhpParser\Node\Expr\Variable;
@@ -173,6 +174,16 @@ final class ReturnedArrayReaderTest extends TestCase
 
         $this->assertSame(['item:a', 'expr:merge', 'expr:merge?'], $this->shape($array));
         $this->assertInstanceOf(Variable::class, $array->parts[1]->expr);
+        $this->assertTrue($array->isOpen());
+    }
+
+    public function test_merge_with_spread_arguments_is_an_expr_of_the_whole_call(): void
+    {
+        $array = $this->single("return ['a' => 1, \$this->merge(...\$extra), \$this->mergeWhen(\$c, ...\$rest)];");
+
+        $this->assertSame(['item:a', 'expr:merge', 'expr:merge?'], $this->shape($array));
+        $this->assertInstanceOf(MethodCall::class, $array->parts[1]->expr);
+        $this->assertInstanceOf(MethodCall::class, $array->parts[2]->expr);
         $this->assertTrue($array->isOpen());
     }
 

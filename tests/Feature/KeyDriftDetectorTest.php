@@ -152,6 +152,48 @@ final class KeyDriftDetectorTest extends TestCase
         ], $this->checkResource($class));
     }
 
+    public function test_phpdoc_return_that_is_not_a_shape_is_not_compared_with_the_attribute(): void
+    {
+        $class = $this->loadClass(<<<'PHP'
+            #[\Pentacore\Typefinder\Attributes\TypefinderResource(shape: ['id' => 'number'])]
+            class {CLASS} extends \Illuminate\Http\Resources\Json\JsonResource
+            {
+                /**
+                 * @return array<string, mixed>
+                 */
+                public function toArray(\Illuminate\Http\Request $request): array
+                {
+                    return ['id' => 1, 'extra' => 2];
+                }
+            }
+            PHP);
+
+        $this->assertSame([
+            $class.'::toArray() returns key "extra" not declared in #[TypefinderResource] shape',
+        ], $this->checkResource($class));
+    }
+
+    public function test_attribute_and_phpdoc_shapes_with_the_same_keys_agree(): void
+    {
+        $class = $this->loadClass(<<<'PHP'
+            #[\Pentacore\Typefinder\Attributes\TypefinderResource(shape: ['id' => 'number', 'title' => 'string'])]
+            class {CLASS} extends \Illuminate\Http\Resources\Json\JsonResource
+            {
+                /**
+                 * @return array{title: string, id: int}
+                 */
+                public function toArray(\Illuminate\Http\Request $request): array
+                {
+                    return ['id' => 1, 'title' => 'x', 'extra' => 2];
+                }
+            }
+            PHP);
+
+        $this->assertSame([
+            $class.'::toArray() returns key "extra" not declared in #[TypefinderResource] shape',
+        ], $this->checkResource($class));
+    }
+
     public function test_attribute_key_with_trailing_question_mark_is_optional(): void
     {
         $class = $this->loadClass(<<<'PHP'
@@ -1007,6 +1049,70 @@ final class KeyDriftDetectorTest extends TestCase
             $class.'::matched() passes prop "c" to Inertia page "X" but #[TypefinderPage] does not declare it',
             $class.'::matched(): #[TypefinderPage] declares prop "b" for "X" as required but it is not always passed (add it to optional?)',
         ], $this->keyDriftDetector->checkPage($this->page($class, 'matched', 'X', ['a' => 'number', 'b' => 'number'])));
+    }
+
+    public function test_spread_or_dynamic_arguments_open_the_render(): void
+    {
+        $class = $this->loadClass(<<<'PHP'
+            use Inertia\Inertia;
+
+            class {CLASS}
+            {
+                public function props(array $rest)
+                {
+                    return Inertia::render('Spread/Show', ...$rest)->with('extra', 1);
+                }
+
+                public function pairs(array $pairs)
+                {
+                    return Inertia::render('Spread/Show', ['a' => 1])->with(...$pairs)->with('extra', 1);
+                }
+
+                public function dynamicKey(string $key)
+                {
+                    return Inertia::render('Spread/Show', ['a' => 1])->with($key, 2)->with('extra', 1);
+                }
+            }
+            PHP, 'Controller');
+
+        // `b` may come from the spread or the dynamic key, so only the
+        // literal extra is reported.
+        foreach (['props', 'pairs', 'dynamicKey'] as $method) {
+            $this->assertSame([
+                $class.'::'.$method.'() passes prop "extra" to Inertia page "Spread/Show" but #[TypefinderPage] does not declare it',
+            ], $this->keyDriftDetector->checkPage($this->page($class, $method, 'Spread/Show', ['a' => 'number', 'b' => 'number'])), $method);
+        }
+    }
+
+    public function test_render_with_a_spread_component_is_not_matched(): void
+    {
+        $class = $this->loadClass(<<<'PHP'
+            use Inertia\Inertia;
+
+            class {CLASS}
+            {
+                public function show(array $args)
+                {
+                    return Inertia::render(...$args);
+                }
+            }
+            PHP, 'Controller');
+
+        $this->assertSame([], $this->keyDriftDetector->checkPage($this->page($class, 'show', 'Spread/Show', ['a' => 'number'])));
+    }
+
+    public function test_page_source_without_a_readable_body_reports_nothing(): void
+    {
+        $class = $this->loadClass(<<<'PHP'
+            abstract class {CLASS}
+            {
+                abstract public function show();
+            }
+            PHP, 'Controller');
+
+        $this->assertSame([], $this->keyDriftDetector->checkPage($this->page($class, 'show', 'X', ['a' => 'number'])));
+        // An internal class has no source file.
+        $this->assertSame([], $this->keyDriftDetector->checkPage($this->page(\ArrayObject::class, 'count', 'X', ['a' => 'number'])));
     }
 
     public function test_unloadable_page_source_reports_nothing(): void
