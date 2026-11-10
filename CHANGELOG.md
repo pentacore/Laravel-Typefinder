@@ -1,3 +1,16 @@
+## [7.1.0](https://github.com/pentacore/Laravel-Typefinder/compare/v7.0.0...v7.1.0) (2026-11-10)
+
+### Features
+
+* read literal array keys returned by toArray() ([95e013a](https://github.com/pentacore/Laravel-Typefinder/commit/95e013a1c5713813f608a4944196d2a38b0f111d))
+* report resource and page key drift during generation ([d2703d5](https://github.com/pentacore/Laravel-Typefinder/commit/d2703d5a87f3476bf8d53856fa599e3d8b4222ee))
+* warn when Inertia::render props drift from #[TypefinderPage] ([ce5b795](https://github.com/pentacore/Laravel-Typefinder/commit/ce5b79532fb7c5eee5a40d3cd2836c982ea16f20))
+* warn when toArray() keys drift from the declared resource shape ([5b9439d](https://github.com/pentacore/Laravel-Typefinder/commit/5b9439d85bc24a99439584e4d0044a1151bfe56b))
+
+### Bug Fixes
+
+* emit request rules nested deeper than one level as nested types ([#88](https://github.com/pentacore/Laravel-Typefinder/issues/88)) ([9087aeb](https://github.com/pentacore/Laravel-Typefinder/commit/9087aeb41f023b9472a7c87d5671c59bf7033ff7))
+
 ## [7.0.0](https://github.com/pentacore/Laravel-Typefinder/compare/v6.0.0...v7.0.0) (2026-11-10)
 
 ### ⚠ BREAKING CHANGES
