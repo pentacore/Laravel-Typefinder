@@ -1,3 +1,30 @@
+## [7.0.0](https://github.com/pentacore/Laravel-Typefinder/compare/v6.0.0...v7.0.0) (2026-11-10)
+
+### ⚠ BREAKING CHANGES
+
+* a resource whose toArray() documents @return array{…} and has no #[TypefinderResource] attribute is now typed from that shape instead of the same-named model. Add #[TypefinderResource(model: Model::class)] to keep the previous type.
+
+### Features
+
+* add --strict to fail generation on any warning ([1ef0279](https://github.com/pentacore/Laravel-Typefinder/commit/1ef0279430d93d25e0d911158a6d418f2e109c32))
+* add ParsedSource for reading docblocks and name context from disk ([e0ba8c3](https://github.com/pentacore/Laravel-Typefinder/commit/e0ba8c32fb59dc66459a92f122494a1bfdd9d592))
+* map PHPDoc array shapes on toArray() to a TypeScript type tree ([19b5e58](https://github.com/pentacore/Laravel-Typefinder/commit/19b5e588133868610eaa8e7abe0d5b9fd5aaf225))
+* print generation warnings in plain console output ([1aea6e9](https://github.com/pentacore/Laravel-Typefinder/commit/1aea6e9b5dd6c8b30a1822d9bf076e32be3a2bee))
+* read PHPDoc shapes from toArray() provided by a trait ([d5cd020](https://github.com/pentacore/Laravel-Typefinder/commit/d5cd0205675f0872a6ca244ac0f519de7f227b9d))
+* render PHPDoc-derived resource shapes ([aff03be](https://github.com/pentacore/Laravel-Typefinder/commit/aff03be5559264a7837e4ea182aebb3ee98d0c48))
+* type JSON resources from PHPDoc array shapes on toArray() ([c510b79](https://github.com/pentacore/Laravel-Typefinder/commit/c510b79208fd9816646e997d69f908eb7e7afe97))
+
+### Bug Fixes
+
+* allow importing PHPDoc aliases from traits ([2264b74](https://github.com/pentacore/Laravel-Typefinder/commit/2264b741acb18cb30de0c48b22ccb8fcced9671b))
+* allow mutual [@phpstan-import-type](https://github.com/phpstan-import-type) between classes ([abf2a47](https://github.com/pentacore/Laravel-Typefinder/commit/abf2a478cbe946c6ecde31f5ccd1878f7012f75d))
+* explain --strict failures in JSON errors and tidy flag docs ([eb40f84](https://github.com/pentacore/Laravel-Typefinder/commit/eb40f84adc23ee3330d6e501aa807fc9c8cdb87f))
+* only warn for casts with no mapping, not explicit unknown mappings ([30b5be2](https://github.com/pentacore/Laravel-Typefinder/commit/30b5be28621d13fc53d7da6997409d69e44b2021))
+* resolve imported PHPDoc aliases one at a time ([677e780](https://github.com/pentacore/Laravel-Typefinder/commit/677e780bf3783b95d2fe4854e62842104f6eba8a))
+* resolve namespace-less classes in PHPDoc shapes ([58bb2cc](https://github.com/pentacore/Laravel-Typefinder/commit/58bb2cc2696c669df1828760b1cfc16976f9a4fe))
+* resolve parameterised and missing built-in casts before warning ([5b99758](https://github.com/pentacore/Laravel-Typefinder/commit/5b997589d15685e9071e7085e106211948661ec7))
+* warn when a model cast falls back to unknown ([9ac14e8](https://github.com/pentacore/Laravel-Typefinder/commit/9ac14e8ac6b70776bb107fffa27b0baba4fadacd))
+
 ## [6.0.0](https://github.com/pentacore/Laravel-Typefinder/compare/v5.0.2...v6.0.0) (2026-11-09)
 
 ### ⚠ BREAKING CHANGES
