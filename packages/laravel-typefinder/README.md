@@ -243,6 +243,36 @@ export type StoreWebhookRequest = {
 
 With `extract_nested: true`, every nested object becomes a named type, named after its path (`StorePostRequestMetadata`, `StoreWebhookRequestRequestHeaders`).
 
+#### Query-string parameters
+
+A form request can validate query-string parameters next to the body fields (`PUT /things/{key}?scope=a`). Tag those rule keys with a `@query` PHPDoc tag (the tag [Scramble](https://scramble.dedoc.co) reads for the same purpose) and they move out of the request type into a `{Name}Query` type in the same file:
+
+```php
+public function rules(): array
+{
+    return [
+        'value' => ['required', 'string'],
+        /** @query */
+        'scope' => ['sometimes', 'string', 'max:100'],
+    ];
+}
+```
+
+```typescript
+export type SetValueRequest = {
+  value: string;
+};
+
+export type SetValueRequestQuery = {
+  scope?: string;
+};
+```
+
+- The tag is read from the source of the `rules()` method the request uses (its own, an inherited one or one from a trait), on array items with a string-literal key. A tag on any other key (a constant, an expression) is ignored with a warning.
+- A tagged key takes its whole top-level field along: tagging `filter` or `filter.status` puts all of `filter` in the query type.
+- A request without tagged keys gets no `{Name}Query` type. One with only tagged keys gets `Record<string, never>` as its request type.
+- `{Name}Query` lives in the request's file and is imported from there (`requests/SetValueRequest`), like the `{Model}Create` / `{Model}Update` companions of a model.
+
 ### Pivots
 
 Pivot types are derived from `belongsToMany` / `morphToMany` declarations. They're written into the same `models/` directory as their parent types — no separate `pivots/` subdirectory — so a relationship field like `roles?: (Role & { pivot: UserRolePivot })[];` resolves with a simple sibling import:

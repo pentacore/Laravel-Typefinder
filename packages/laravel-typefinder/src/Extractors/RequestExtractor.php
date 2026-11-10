@@ -9,6 +9,7 @@ use Illuminate\Validation\Rules\AnyOf;
 use Illuminate\Validation\Rules\ArrayRule;
 use Illuminate\Validation\Rules\Enum;
 use Illuminate\Validation\Rules\In;
+use Pentacore\Typefinder\Analysis\QueryRuleKeys;
 use Pentacore\Typefinder\Attributes\TypefinderIgnore;
 use Pentacore\Typefinder\Attributes\TypefinderOverrides;
 use Pentacore\Typefinder\Renderers\TypeScriptRenderer;
@@ -100,7 +101,7 @@ class RequestExtractor
      * Extract type information from a single FormRequest class.
      *
      * @param  class-string<FormRequest>  $requestClass
-     * @return array{name: string, fqcn: class-string, fields: list<array>, warnings?: list<string>}
+     * @return array{name: string, fqcn: class-string, fields: list<array>, query?: list<array>, warnings?: list<string>}
      */
     public function extract(string $requestClass): array
     {
@@ -140,11 +141,17 @@ class RequestExtractor
             );
         }
 
+        [$fields, $queryFields] = $this->separateQueryFields($fields, $reflectionClass);
+
         $result = [
             'name' => $reflectionClass->getShortName(),
             'fqcn' => $requestClass,
             'fields' => $fields,
         ];
+
+        if ($queryFields !== []) {
+            $result['query'] = $queryFields;
+        }
 
         // Carried on the result so the generator can report them.
         if ($this->warnings !== []) {
@@ -287,6 +294,39 @@ class RequestExtractor
         }
 
         return $fields;
+    }
+
+    /**
+     * Take the query-string parameters out of the fields: those whose rule
+     * key, or a rule key below them, is tagged `@query`.
+     *
+     * @param  list<array>  $fields
+     * @param  ReflectionClass<object>  $reflectionClass
+     * @return array{list<array>, list<array>} the remaining (body) fields and the query fields
+     */
+    protected function separateQueryFields(array $fields, ReflectionClass $reflectionClass): array
+    {
+        $tagged = QueryRuleKeys::of($reflectionClass);
+
+        if ($tagged['unreadable'] > 0) {
+            $this->warnings[] = sprintf(
+                '%d @query %s ignored: only a rule key written as a string literal can be tagged',
+                $tagged['unreadable'],
+                $tagged['unreadable'] === 1 ? 'tag was' : 'tags were',
+            );
+        }
+
+        $queryNames = array_map(
+            fn (string $key): string => $this->segmentName($this->splitFieldName($key)[0]),
+            $tagged['keys'],
+        );
+
+        $isQuery = fn (array $field): bool => in_array($field['name'], $queryNames, true);
+
+        return [
+            array_values(array_filter($fields, fn (array $field): bool => ! $isQuery($field))),
+            array_values(array_filter($fields, $isQuery)),
+        ];
     }
 
     /**
