@@ -10,6 +10,7 @@ use App\Http\Resources\UserResource;
 use App\Models\LegacyModel;
 use App\Models\User;
 use Illuminate\Notifications\DatabaseNotification;
+use Illuminate\Support\Facades\File;
 use Pentacore\Typefinder\Support\GeneratedClasses;
 use Tests\Fixtures\AbstractResources\BaseResource;
 use Tests\Fixtures\Enums\OutsideStatus;
@@ -38,6 +39,43 @@ final class GeneratedClassesTest extends TestCase
         $this->assertNotContains(DatabaseNotification::class, $models);
         $this->assertNotContains(LegacyModel::class, $models);
         $this->assertTrue(new GeneratedClasses()->isModel(User::class));
+    }
+
+    public function test_models_are_exactly_the_non_ignored_models_under_the_paths(): void
+    {
+        $expected = [];
+        foreach (glob(workbench_path('app/Models').'/*.php') as $file) {
+            $class = 'App\\Models\\'.basename($file, '.php');
+            if ($class !== LegacyModel::class) {
+                $expected[] = $class;
+            }
+        }
+
+        sort($expected);
+        $actual = new GeneratedClasses()->models();
+        sort($actual);
+
+        // A vendor model (DatabaseNotification, Pivot, …) leaking in would add a class here.
+        $this->assertSame($expected, $actual);
+    }
+
+    public function test_missing_model_path_is_skipped_and_abstract_model_excluded(): void
+    {
+        $id = uniqid();
+        $dir = sys_get_temp_dir().'/typefinder-generated-'.$id;
+        File::ensureDirectoryExists($dir);
+        File::put($dir.'/AbstractGadget'.$id.'.php', "<?php\nnamespace Scratch\\Gen{$id};\nabstract class AbstractGadget{$id} extends \\Illuminate\\Database\\Eloquent\\Model {}\n");
+        File::put($dir.'/ConcreteGadget'.$id.'.php', "<?php\nnamespace Scratch\\Gen{$id};\nclass ConcreteGadget{$id} extends \\Illuminate\\Database\\Eloquent\\Model {}\n");
+        require $dir.'/AbstractGadget'.$id.'.php';
+        require $dir.'/ConcreteGadget'.$id.'.php';
+
+        try {
+            config(['typefinder.models.paths' => [$dir.'/does-not-exist', $dir]]);
+
+            $this->assertSame(["Scratch\\Gen{$id}\\ConcreteGadget{$id}"], new GeneratedClasses()->models());
+        } finally {
+            File::deleteDirectory($dir);
+        }
     }
 
     public function test_is_enum_only_for_backed_enums_in_paths(): void

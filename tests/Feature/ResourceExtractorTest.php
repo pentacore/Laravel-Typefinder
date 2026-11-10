@@ -23,6 +23,7 @@ use Pentacore\Typefinder\Extractors\ResourceExtractor;
 use ReflectionClass;
 use Tests\Fixtures\Resources\DatabaseNotificationResource;
 use Tests\Fixtures\Resources\PhpDoc\AttributeAndDocResource;
+use Tests\Fixtures\Resources\PhpDoc\ModelAttributeAndDocResource;
 use Tests\TestCase;
 
 use function Orchestra\Testbench\workbench_path;
@@ -128,6 +129,14 @@ final class ResourceExtractorTest extends TestCase
         $this->assertSame(['id' => 'number'], $result['shape']['fields']);
     }
 
+    public function test_model_attribute_beats_phpdoc(): void
+    {
+        $result = $this->resourceExtractor->extract(ModelAttributeAndDocResource::class);
+
+        $this->assertSame('model', $result['shape']['kind']);
+        $this->assertSame(User::class, $result['shape']['model']);
+    }
+
     public function test_stub_default_doc_keeps_convention(): void
     {
         $result = $this->resourceExtractor->extract(ProductResource::class);
@@ -140,7 +149,8 @@ final class ResourceExtractorTest extends TestCase
     {
         $result = $this->resourceExtractor->extract(BaseShapeResource::class);
 
-        $this->assertNotSame('phpdoc', $result['shape']['kind'] ?? null);
+        // Abstract, documented, and no same-named model: nothing applies.
+        $this->assertNull($result);
     }
 
     public function test_unresolved_message_mentions_phpdoc(): void

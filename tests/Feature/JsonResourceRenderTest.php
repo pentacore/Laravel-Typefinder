@@ -350,4 +350,65 @@ final class JsonResourceRenderTest extends TestCase
 
         $this->assertStringContainsString('  x: unknown;', $output);
     }
+
+    public function test_phpdoc_top_level_non_object_renders_as_alias(): void
+    {
+        $output = $this->renderPhpdoc(['kind' => 'array', 'of' => $this->ts('string')]);
+
+        $this->assertStringEndsWith("export type PostResource = string[];\n", $output);
+    }
+
+    public function test_phpdoc_empty_object_renders_braces(): void
+    {
+        $output = $this->renderPhpdoc(['kind' => 'object', 'open' => false, 'fields' => []]);
+
+        $this->assertStringEndsWith("export type PostResource = {};\n", $output);
+    }
+
+    public function test_phpdoc_open_top_level_object_gets_index_signature(): void
+    {
+        $output = $this->renderPhpdoc([
+            'kind' => 'object',
+            'open' => true,
+            'fields' => [$this->field('id', $this->ts('number'))],
+        ]);
+
+        $this->assertStringEndsWith("export type PostResource = {\n  id: number;\n  [key: string]: unknown;\n};\n", $output);
+    }
+
+    public function test_phpdoc_nested_unions_are_flattened_and_deduplicated(): void
+    {
+        $output = $this->renderPhpdoc([
+            'kind' => 'object',
+            'open' => false,
+            'fields' => [
+                $this->field('v', ['kind' => 'union', 'of' => [
+                    $this->ts('string'),
+                    ['kind' => 'union', 'of' => [$this->ts('null'), ['kind' => 'union', 'of' => [$this->ts('number'), $this->ts('string')]]]],
+                ]]),
+            ],
+        ]);
+
+        $this->assertStringContainsString('  v: string | null | number;', $output);
+    }
+
+    public function test_phpdoc_inline_nested_object_quotes_keys_and_marks_optional(): void
+    {
+        $output = $this->renderPhpdoc([
+            'kind' => 'object',
+            'open' => false,
+            'fields' => [
+                $this->field('meta', [
+                    'kind' => 'object',
+                    'open' => true,
+                    'fields' => [
+                        $this->field('a-b', $this->ts('string')),
+                        $this->field('c', $this->ts('number'), true),
+                    ],
+                ]),
+            ],
+        ]);
+
+        $this->assertStringContainsString("  meta: { 'a-b': string; c?: number; [key: string]: unknown };", $output);
+    }
 }

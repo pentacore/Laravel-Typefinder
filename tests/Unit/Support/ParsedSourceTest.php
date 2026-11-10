@@ -152,4 +152,100 @@ final class ParsedSourceTest extends TestCase
         $this->assertNull(ParsedSource::forFile($path));
         $this->assertNull(ParsedSource::forFile($path.'.missing'));
     }
+
+    public function test_global_namespace_class_resolves_names_unprefixed(): void
+    {
+        $path = $this->write(<<<'PHP'
+        <?php
+        use Foo\Bar as Baz;
+
+        /** Global doc. */
+        class GlobalThing {
+            /** @return array{a: int} */
+            public function toArray($r): array { return []; }
+        }
+        PHP);
+
+        $source = ParsedSource::forFile($path);
+        $this->assertNotNull($source);
+
+        $this->assertStringContainsString('Global doc.', (string) $source->classDoc('GlobalThing'));
+        $this->assertNotNull($source->methodDoc('GlobalThing', 'toArray'));
+        $this->assertSame('Other', $source->resolveName('GlobalThing', 'Other'));
+        $this->assertSame('Foo\Bar', $source->resolveName('GlobalThing', 'Baz'));
+    }
+
+    public function test_multiple_namespace_blocks_resolve_their_own_imports(): void
+    {
+        $path = $this->write(<<<'PHP'
+        <?php
+        namespace One {
+            use Lib\Alpha as Thing;
+            class A {}
+        }
+        namespace Two {
+            use Lib\Beta as Thing;
+            class B {}
+        }
+        PHP);
+
+        $source = ParsedSource::forFile($path);
+        $this->assertNotNull($source);
+
+        $this->assertSame('Lib\Alpha', $source->resolveName('One\A', 'Thing'));
+        $this->assertSame('Lib\Beta', $source->resolveName('Two\B', 'Thing'));
+        $this->assertSame('One\Local', $source->resolveName('One\A', 'Local'));
+        $this->assertSame('Two\Local', $source->resolveName('Two\B', 'Local'));
+    }
+
+    public function test_enum_trait_and_interface_expose_docs_and_methods(): void
+    {
+        $path = $this->write(<<<'PHP'
+        <?php
+        namespace NS;
+
+        /** Enum doc. */
+        enum E: string {
+            case A = 'a';
+            /** @return array{e: int} */
+            public function toArray(): array { return []; }
+        }
+        trait T {
+            /** @return array{t: int} */
+            public function toArray(): array { return []; }
+        }
+        interface I {
+            /** @return array{i: int} */
+            public function toArray(): array;
+        }
+        PHP);
+
+        $source = ParsedSource::forFile($path);
+        $this->assertNotNull($source);
+
+        $this->assertStringContainsString('Enum doc.', (string) $source->classDoc('NS\E'));
+        $this->assertStringContainsString('array{e: int}', (string) $source->methodDoc('NS\E', 'toArray'));
+        $this->assertStringContainsString('array{t: int}', (string) $source->methodDoc('NS\T', 'toArray'));
+        $this->assertStringContainsString('array{i: int}', (string) $source->methodDoc('NS\I', 'toArray'));
+    }
+
+    public function test_unchanged_file_returns_the_same_instance(): void
+    {
+        $path = $this->write("<?php\nnamespace NS;\nclass X {}\n");
+
+        $first = ParsedSource::forFile($path);
+
+        $this->assertNotNull($first);
+        $this->assertSame($first, ParsedSource::forFile($path));
+    }
+
+    public function test_file_that_failed_to_parse_is_reparsed_once_fixed(): void
+    {
+        $path = $this->write('<?php namespace NS; class X {');
+        $this->assertNull(ParsedSource::forFile($path));
+
+        $this->write("<?php\nnamespace NS;\n/** fixed */\nclass X {}\n", $path);
+
+        $this->assertStringContainsString('fixed', (string) ParsedSource::forFile($path)?->classDoc('NS\X'));
+    }
 }

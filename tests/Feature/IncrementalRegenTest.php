@@ -185,8 +185,23 @@ final class IncrementalRegenTest extends TestCase
         }
     }
 
+    public function test_generate_paths_reports_a_phpdoc_warning_once(): void
+    {
+        $generator = app(Generator::class);
+        $generator->generateFull();
+
+        $regenResult = $generator->generatePaths([workbench_path('app/Http/Resources/UnmappableShapeResource.php')]);
+
+        $needle = 'UnmappableShapeResource::toArray() @return: "handler" has unsupported type callable';
+        $matching = array_filter($regenResult->warnings, static fn (string $warning): bool => str_contains($warning, $needle));
+
+        $this->assertCount(1, $matching, implode("\n", $regenResult->warnings));
+    }
+
     public function test_strict_applies_to_only_runs(): void
     {
+        config(['typefinder.resources.paths' => [workbench_path('app/Http/Resources')]]);
+
         $this->artisan('typefinder:generate')->assertSuccessful();
 
         $this->artisan('typefinder:generate', ['--strict' => true, '--only' => [workbench_path('app/Http/Resources/OrphanResource.php')]])
