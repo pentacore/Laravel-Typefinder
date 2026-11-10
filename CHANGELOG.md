@@ -1,3 +1,21 @@
+## [8.0.0](https://github.com/pentacore/Laravel-Typefinder/compare/v7.1.0...v8.0.0) (2026-11-10)
+
+### ⚠ BREAKING CHANGES
+
+* a resource whose undocumented toArray() returns parts of documented helper methods or of a documented parent toArray() is now typed from the composed shape instead of the name convention or the parent's doc. Add an explicit @return array{…} to toArray() or #[TypefinderResource(model: Model::class)] to control the type.
+
+### Features
+
+* compose resource shapes from documented helper methods in toArray() ([b90ecd0](https://github.com/pentacore/Laravel-Typefinder/commit/b90ecd0d6fe69d206aa2d45f24999d2ca44d88ce))
+* compose resource shapes from returned array parts ([8767857](https://github.com/pentacore/Laravel-Typefinder/commit/8767857292c9f5bb0d129c3da745c70af27efa72))
+* report model-typed resource drift during generation ([696a256](https://github.com/pentacore/Laravel-Typefinder/commit/696a2566dc8a4a26741625601dc71757c3cb38a7))
+* warn when a model-typed resource's toArray() keys drift from the model ([4972768](https://github.com/pentacore/Laravel-Typefinder/commit/4972768fddc433f496c0ecbd2d362669ca3f0094))
+
+### Bug Fixes
+
+* emit inherited relations and $appends; skip abstract and ignored models ([#93](https://github.com/pentacore/Laravel-Typefinder/issues/93), [#94](https://github.com/pentacore/Laravel-Typefinder/issues/94), [#97](https://github.com/pentacore/Laravel-Typefinder/issues/97), [#98](https://github.com/pentacore/Laravel-Typefinder/issues/98)) ([92b5ab3](https://github.com/pentacore/Laravel-Typefinder/commit/92b5ab30673f1f28a9fc5a3b9a28775e0d531fb2))
+* read unless(), whenNull(), whenAppended(), transform() and mergeUnless() as conditional ([83d6c03](https://github.com/pentacore/Laravel-Typefinder/commit/83d6c0354194352b49f9dc5cbf62e8b1fbf7ae7f))
+
 ## [7.1.0](https://github.com/pentacore/Laravel-Typefinder/compare/v7.0.0...v7.1.0) (2026-11-10)
 
 ### Features
