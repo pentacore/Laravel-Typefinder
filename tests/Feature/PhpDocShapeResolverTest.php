@@ -13,6 +13,7 @@ use Pentacore\Typefinder\Resolvers\PhpDocShapeResolver;
 use Pentacore\Typefinder\Support\GeneratedClasses;
 use PHPUnit\Framework\Attributes\DataProvider;
 use ReflectionClass;
+use RuntimeException;
 use Tests\Fixtures\Resources\PhpDoc\AliasedShapeResource;
 use Tests\Fixtures\Resources\PhpDoc\BrokenDocResource;
 use Tests\Fixtures\Resources\PhpDoc\BrokenPhpstanReturnWithStubResource;
@@ -45,6 +46,9 @@ final class PhpDocShapeResolverTest extends TestCase
     /** @var list<string> */
     private array $warnings = [];
 
+    /** @var list<string> */
+    private array $tempDirectories = [];
+
     private PhpDocShapeResolver $phpDocShapeResolver;
 
     protected function setUp(): void
@@ -61,6 +65,15 @@ final class PhpDocShapeResolverTest extends TestCase
                 $this->warnings[] = $message;
             },
         );
+    }
+
+    protected function tearDown(): void
+    {
+        foreach ($this->tempDirectories as $directory) {
+            File::deleteDirectory($directory);
+        }
+
+        parent::tearDown();
     }
 
     public function test_phpstan_return_beats_psalm_return_and_return(): void
@@ -325,6 +338,177 @@ final class PhpDocShapeResolverTest extends TestCase
         } finally {
             File::deleteDirectory($directory);
         }
+    }
+
+    public function test_top_level_alias_expands_to_the_shape_through_alias_chains(): void
+    {
+        $class = $this->loadTemp(<<<'PHP'
+            /**
+             * @phpstan-type Meta array{id: int}
+             * @phpstan-type Outer Meta
+             */
+            class %s extends JsonResource
+            {
+                /** @return Outer */
+                public function toArray($request): array
+                {
+                    return [];
+                }
+            }
+            PHP);
+
+        $this->assertSame($this->object([$this->field('id', $this->ts('number'))]), $this->resolve($class));
+        $this->assertSame([], $this->warnings);
+    }
+
+    public function test_top_level_alias_loop_falls_through_silently(): void
+    {
+        $class = $this->loadTemp(<<<'PHP'
+            /**
+             * @phpstan-type A B
+             * @phpstan-type B A
+             */
+            class %s extends JsonResource
+            {
+                /** @return A */
+                public function toArray($request): array
+                {
+                    return [];
+                }
+            }
+            PHP);
+
+        $this->assertNull($this->resolve($class));
+        $this->assertSame([], $this->warnings);
+    }
+
+    public function test_shape_in_union_with_a_non_laravel_member_falls_through_silently(): void
+    {
+        $class = $this->loadTemp(<<<'PHP'
+            class %s extends JsonResource
+            {
+                /** @return array{id: int}|\stdClass */
+                public function toArray($request): array
+                {
+                    return [];
+                }
+            }
+            PHP);
+
+        $this->assertNull($this->resolve($class));
+        $this->assertSame([], $this->warnings);
+    }
+
+    public function test_undocumented_to_array_directly_under_json_resource_falls_through(): void
+    {
+        $class = $this->loadTemp(<<<'PHP'
+            class %s extends JsonResource
+            {
+                public function toArray($request): array
+                {
+                    return [];
+                }
+            }
+            PHP);
+
+        $this->assertNull($this->resolve($class));
+        $this->assertSame([], $this->warnings);
+    }
+
+    public function test_resource_whose_file_can_no_longer_be_parsed_falls_through_silently(): void
+    {
+        $class = $this->loadTemp(<<<'PHP'
+            class %s extends JsonResource
+            {
+                /** @return array{id: int} */
+                public function toArray($request): array
+                {
+                    return [];
+                }
+            }
+            PHP);
+        file_put_contents(new ReflectionClass($class)->getFileName(), '<?php class {');
+
+        $this->assertNull($this->resolve($class));
+        $this->assertSame([], $this->warnings);
+    }
+
+    public function test_import_from_a_class_whose_file_can_no_longer_be_parsed_is_unknown_with_warning(): void
+    {
+        $source = $this->loadTemp(<<<'PHP'
+            /** @phpstan-type Foo array{a: int} */
+            class %s {}
+            PHP);
+        file_put_contents(new ReflectionClass($source)->getFileName(), '<?php class {');
+        $short = substr($source, (int) strrpos($source, '\\') + 1);
+
+        $class = $this->loadTemp(<<<PHP
+            /** @phpstan-import-type Foo from {$short} */
+            class %s extends JsonResource
+            {
+                /** @return array{x: Foo} */
+                public function toArray(\$request): array
+                {
+                    return [];
+                }
+            }
+            PHP);
+
+        $this->assertSame($this->object([$this->field('x', $this->ts('unknown'))]), $this->resolve($class));
+        $this->assertSame([$class.'::toArray() @return: "x" has unsupported type Foo — emitted as unknown'], $this->warnings);
+    }
+
+    public function test_import_from_a_class_that_fails_to_autoload_is_unknown_with_warning(): void
+    {
+        $missing = 'Tests\Fixtures\Resources\PhpDoc\Temp\ThrowsOnLoad'.bin2hex(random_bytes(4));
+        $loader = static function (string $name) use ($missing): void {
+            if ($name === $missing) {
+                throw new RuntimeException('cannot load');
+            }
+        };
+        spl_autoload_register($loader);
+
+        try {
+            $class = $this->loadTemp(<<<PHP
+                /** @phpstan-import-type Foo from \\{$missing} */
+                class %s extends JsonResource
+                {
+                    /** @return array{x: Foo} */
+                    public function toArray(\$request): array
+                    {
+                        return [];
+                    }
+                }
+                PHP);
+
+            $this->assertSame($this->object([$this->field('x', $this->ts('unknown'))]), $this->resolve($class));
+        } finally {
+            spl_autoload_unregister($loader);
+        }
+
+        $this->assertSame([$class.'::toArray() @return: "x" has unsupported type Foo — emitted as unknown'], $this->warnings);
+    }
+
+    /**
+     * Write a resource class (`%s` is replaced by a unique name) to a temp file and load it.
+     *
+     * @return class-string
+     */
+    private function loadTemp(string $classCode): string
+    {
+        $directory = sys_get_temp_dir().'/typefinder-phpdoc-'.bin2hex(random_bytes(4));
+        $short = 'TempResource'.bin2hex(random_bytes(4));
+        File::ensureDirectoryExists($directory);
+        $this->tempDirectories[] = $directory;
+
+        $path = $directory.'/'.$short.'.php';
+        File::put($path, "<?php\n\nnamespace Tests\\Fixtures\\Resources\\PhpDoc\\Temp;\n\nuse Illuminate\\Http\\Resources\\Json\\JsonResource;\n\n".sprintf($classCode, $short));
+        require $path;
+
+        /** @var class-string $fqcn */
+        $fqcn = 'Tests\\Fixtures\\Resources\\PhpDoc\\Temp\\'.$short;
+
+        return $fqcn;
     }
 
     /**

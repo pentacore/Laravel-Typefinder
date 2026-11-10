@@ -248,4 +248,27 @@ final class ParsedSourceTest extends TestCase
 
         $this->assertStringContainsString('fixed', (string) ParsedSource::forFile($path)?->classDoc('NS\X'));
     }
+
+    public function test_leading_backslash_means_fully_qualified(): void
+    {
+        $path = $this->write("<?php\nnamespace NS;\nuse Foo\\Bar as Baz;\nclass X {}\n");
+        $source = ParsedSource::forFile($path);
+        $this->assertNotNull($source);
+
+        // Built by concatenation so Rector keeps it a plain string rather than a ::class constant.
+        $this->assertSame('Vendor\\Pkg\\Thing', $source->resolveName('NS\X', '\\'.'Vendor\\Pkg\\Thing'));
+        $this->assertSame('Baz', $source->resolveName('NS\X', '\\'.'Baz'));
+    }
+
+    public function test_class_missing_from_the_parsed_file_has_no_docs_methods_or_context(): void
+    {
+        $path = $this->write("<?php\nnamespace NS;\nuse Foo\\Bar as Baz;\n/** doc */\nclass X { public function toArray(): array { return []; } }\n");
+        $source = ParsedSource::forFile($path);
+        $this->assertNotNull($source);
+
+        $this->assertNull($source->classDoc('NS\Other'));
+        $this->assertNull($source->methodDoc('NS\Other', 'toArray'));
+        $this->assertNull($source->methodNode('NS\Other', 'toArray'));
+        $this->assertSame('Baz', $source->resolveName('NS\Other', 'Baz'));
+    }
 }

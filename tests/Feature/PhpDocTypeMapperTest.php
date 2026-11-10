@@ -447,6 +447,46 @@ final class PhpDocTypeMapperTest extends TestCase
         $this->assertSame([$this->warning('x', 'Foo')], $this->warnings);
     }
 
+    public function test_bare_list_keywords_are_unknown_arrays(): void
+    {
+        $this->assertSame($this->arrayOf(self::ts('unknown')), $this->map('list'));
+        $this->assertSame($this->arrayOf(self::ts('unknown')), $this->map('non-empty-list'));
+        $this->assertSame([], $this->warnings);
+    }
+
+    public function test_unkeyed_items_after_keyed_ones_get_the_next_index(): void
+    {
+        $node = $this->map('array{a: int, string, 5: bool, float}');
+
+        $this->assertSame('object', $node['kind']);
+        $this->assertSame(['a', '0', '5', '6'], array_column($node['fields'], 'name'));
+    }
+
+    public function test_collection_key_with_int_generic_is_a_list_but_other_generics_are_records(): void
+    {
+        $this->assertSame($this->arrayOf($this->model(User::class)), $this->map('Collection<int<0, max>, User>'));
+        $this->assertSame(['kind' => 'record', 'of' => $this->model(User::class)], $this->map('Collection<list<int>, User>'));
+    }
+
+    public function test_class_that_fails_to_autoload_is_unknown_with_warning(): void
+    {
+        $class = 'Tests\\Fixtures\\Resources\\PhpDoc\\ThrowsOnLoad'.bin2hex(random_bytes(4));
+        $loader = static function (string $name) use ($class): void {
+            if ($name === $class) {
+                throw new \RuntimeException('cannot load');
+            }
+        };
+        spl_autoload_register($loader);
+
+        try {
+            $this->assertSame(self::ts('unknown'), $this->map($class, 'x'));
+        } finally {
+            spl_autoload_unregister($loader);
+        }
+
+        $this->assertSame([$this->warning('x', $class)], $this->warnings);
+    }
+
     /**
      * @return array<string, mixed>
      */

@@ -121,4 +121,19 @@ final class GeneratedClassesTest extends TestCase
         $this->assertFalse($generated->isEnum(PostStatus::class));
         $this->assertFalse($generated->isResource(UserResource::class));
     }
+
+    public function test_files_without_a_class_are_skipped(): void
+    {
+        $directory = sys_get_temp_dir().'/typefinder-noclass-'.bin2hex(random_bytes(4));
+        File::ensureDirectoryExists($directory);
+
+        try {
+            File::put($directory.'/helpers.php', "<?php\n\nfunction typefinder_helper_without_class(): void {}\n");
+            config(['typefinder.models.paths' => [$directory]]);
+
+            $this->assertSame([], new GeneratedClasses()->models());
+        } finally {
+            File::deleteDirectory($directory);
+        }
+    }
 }

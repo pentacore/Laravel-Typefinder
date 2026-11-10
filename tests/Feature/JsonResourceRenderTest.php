@@ -411,4 +411,56 @@ final class JsonResourceRenderTest extends TestCase
 
         $this->assertStringContainsString("  meta: { 'a-b': string; c?: number; [key: string]: unknown };", $output);
     }
+
+    public function test_phpdoc_node_of_unknown_kind_renders_unknown(): void
+    {
+        $output = $this->renderPhpdoc([
+            'kind' => 'object',
+            'open' => false,
+            'fields' => [$this->field('x', ['kind' => 'mystery'])],
+        ]);
+
+        $this->assertStringContainsString('  x: unknown;', $output);
+    }
+
+    public function test_array_element_union_of_quoted_literals_is_parenthesised(): void
+    {
+        $output = $this->renderPhpdoc($this->objectWith(['kind' => 'array', 'of' => ['kind' => 'union', 'of' => [
+            $this->ts("'a|b'"),
+            $this->ts("'c'"),
+        ]]]));
+
+        $this->assertStringContainsString("  v: ('a|b' | 'c')[];", $output);
+    }
+
+    public function test_array_element_literal_containing_an_operator_is_not_parenthesised(): void
+    {
+        $output = $this->renderPhpdoc($this->objectWith(['kind' => 'array', 'of' => $this->ts("' | '")]));
+
+        $this->assertStringContainsString("  v: ' | '[];", $output);
+    }
+
+    public function test_array_element_literal_with_escaped_quote_stays_quoted(): void
+    {
+        // The escaped quote must not end the literal early, which would expose the ` | ` inside it.
+        $output = $this->renderPhpdoc($this->objectWith(['kind' => 'array', 'of' => $this->ts("'it\\'s | not'")]));
+
+        $this->assertStringContainsString("  v: 'it\\'s | not'[];", $output);
+    }
+
+    public function test_array_element_operator_nested_in_generics_is_not_parenthesised(): void
+    {
+        $output = $this->renderPhpdoc($this->objectWith(['kind' => 'array', 'of' => $this->ts('Record<string, string | null>')]));
+
+        $this->assertStringContainsString('  v: Record<string, string | null>[];', $output);
+    }
+
+    /**
+     * @param  array<string, mixed>  $type
+     * @return array<string, mixed>
+     */
+    private function objectWith(array $type): array
+    {
+        return ['kind' => 'object', 'open' => false, 'fields' => [$this->field('v', $type)]];
+    }
 }
