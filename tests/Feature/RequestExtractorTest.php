@@ -212,14 +212,13 @@ final class RequestExtractorTest extends TestCase
         $this->assertFalse($field['required']);
     }
 
-    public function test_nested_wildcard_falls_back_to_safe_array(): void
+    public function test_nested_wildcard_is_an_array_of_arrays(): void
     {
         $result = $this->requestExtractor->extract(StoreScheduleRequest::class);
         $field = $this->findField($result, 'matrix');
 
-        // A nested wildcard (matrix.*.*) can't be modelled as a flat object
-        // array; it must degrade to a VALID TS type, never a bare `*` key.
-        $this->assertSame('unknown[]', $field['type']);
+        // matrix.*.* => integer: each `*` is one array level, never a bare `*` key.
+        $this->assertSame('number[][]', $field['type']);
     }
 
     /**
