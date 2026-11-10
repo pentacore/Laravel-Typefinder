@@ -27,6 +27,7 @@ use Tests\Fixtures\Resources\PhpDoc\Composition\DocumentedDelegatingResource;
 use Tests\Fixtures\Resources\PhpDoc\Composition\HelperCycleResource;
 use Tests\Fixtures\Resources\PhpDoc\Composition\NestedHelperResource;
 use Tests\Fixtures\Resources\PhpDoc\Composition\ParentHelperResource;
+use Tests\Fixtures\Resources\PhpDoc\Composition\Precision\MergeBaseResource;
 use Tests\Fixtures\Resources\PhpDoc\Composition\PrivateCollisionResource;
 use Tests\Fixtures\Resources\PhpDoc\Composition\PrivateTraitResource;
 use Tests\Fixtures\Resources\PhpDoc\Composition\SelfRecursiveHelperResource;
@@ -1190,6 +1191,14 @@ final class PhpDocShapeResolverTest extends TestCase
         $fqcn = 'Tests\\Fixtures\\Resources\\PhpDoc\\Temp\\'.$short;
 
         return $fqcn;
+    }
+
+    public function test_resolve_documented_skips_abstract_resources_and_other_classes(): void
+    {
+        $this->assertNull($this->phpDocShapeResolver->resolveDocumented(
+            new ReflectionClass(MergeBaseResource::class),
+        ));
+        $this->assertNull($this->phpDocShapeResolver->resolveDocumented(new ReflectionClass(\stdClass::class)));
     }
 
     /**
