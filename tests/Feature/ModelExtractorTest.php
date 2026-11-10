@@ -18,7 +18,9 @@ use App\Models\User;
 use Pentacore\Typefinder\Extractors\ModelExtractor;
 use Pentacore\Typefinder\Resolvers\CastTypeResolver;
 use Pentacore\Typefinder\Resolvers\ColumnTypeResolver;
+use Pentacore\Typefinder\TypefinderRegistry;
 use Tests\Fixtures\Casts\UnmappedCast;
+use Tests\Fixtures\Models\JsonCastQuest;
 use Tests\Fixtures\Models\UnmappedCastQuest;
 use Tests\TestCase;
 
@@ -166,15 +168,7 @@ final class ModelExtractorTest extends TestCase
     public function test_unknown_cast_emits_warning(): void
     {
         $warnings = [];
-        $modelExtractor = new ModelExtractor(
-            new ColumnTypeResolver,
-            new CastTypeResolver,
-            function (string $message) use (&$warnings): void {
-                $warnings[] = $message;
-            },
-        );
-
-        $result = $modelExtractor->extract(UnmappedCastQuest::class);
+        $result = $this->warningExtractor($warnings)->extract(UnmappedCastQuest::class);
 
         $this->assertSame('unknown', $this->findColumn($result, 'rewards')['type']);
         $this->assertCount(1, $warnings);
@@ -189,19 +183,51 @@ final class ModelExtractorTest extends TestCase
     public function test_resolvable_casts_emit_no_warning(): void
     {
         $warnings = [];
-        $modelExtractor = new ModelExtractor(
+        $extractor = $this->warningExtractor($warnings);
+
+        // datetime + BackedEnum + #[TypefinderCast] class
+        $extractor->extract(Post::class);
+        $extractor->extract(User::class);
+
+        $this->assertSame([], $warnings);
+    }
+
+    public function test_json_cast_and_explicit_unknown_mappings_emit_no_warning(): void
+    {
+        $warnings = [];
+
+        // Built-in 'json' => 'unknown'
+        $result = $this->warningExtractor($warnings)->extract(JsonCastQuest::class);
+        $this->assertSame('unknown', $this->findColumn($result, 'rewards')['type']);
+
+        // typefinder.casts.type_map entry mapping to 'unknown'
+        $result = $this->warningExtractor($warnings, new CastTypeResolver([UnmappedCast::class => 'unknown']))
+            ->extract(UnmappedCastQuest::class);
+        $this->assertSame('unknown', $this->findColumn($result, 'rewards')['type']);
+
+        // Typefinder::registerCast() mapping to 'unknown'
+        $registry = new TypefinderRegistry;
+        $registry->registerCast(UnmappedCast::class, 'unknown');
+
+        $result = $this->warningExtractor($warnings, new CastTypeResolver([], $registry))
+            ->extract(UnmappedCastQuest::class);
+        $this->assertSame('unknown', $this->findColumn($result, 'rewards')['type']);
+
+        $this->assertSame([], $warnings);
+    }
+
+    /**
+     * @param  list<string>  $warnings
+     */
+    private function warningExtractor(array &$warnings, ?CastTypeResolver $castTypeResolver = null): ModelExtractor
+    {
+        return new ModelExtractor(
             new ColumnTypeResolver,
-            new CastTypeResolver,
+            $castTypeResolver ?? new CastTypeResolver,
             function (string $message) use (&$warnings): void {
                 $warnings[] = $message;
             },
         );
-
-        // datetime + BackedEnum + #[TypefinderCast] class
-        $modelExtractor->extract(Post::class);
-        $modelExtractor->extract(User::class);
-
-        $this->assertSame([], $warnings);
     }
 
     public function test_extracts_has_many_relationship(): void

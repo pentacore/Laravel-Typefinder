@@ -168,14 +168,17 @@ class ModelExtractor
 
             // Priority 2: Cast resolution
             if (isset($casts[$name])) {
-                $castType = $this->castTypeResolver->resolve($casts[$name]);
-                if ($castType === 'unknown' && $this->onWarn !== null) {
-                    ($this->onWarn)(sprintf(
-                        "%s.%s: cast '%s' has no TypeScript mapping — emitted as `unknown`. Add #[TypefinderCast] to the cast class, register it with Typefinder::registerCast(), or map it in typefinder.casts.type_map.",
-                        $modelClass ?? $model::class,
-                        $name,
-                        $casts[$name],
-                    ));
+                $castType = $this->castTypeResolver->resolveOrNull($casts[$name]);
+                if ($castType === null) {
+                    $castType = 'unknown';
+                    if ($this->onWarn !== null) {
+                        ($this->onWarn)(sprintf(
+                            "%s.%s: cast '%s' has no TypeScript mapping — emitted as `unknown`. Add #[TypefinderCast] to the cast class, register it with Typefinder::registerCast(), or map it in typefinder.casts.type_map.",
+                            $modelClass ?? $model::class,
+                            $name,
+                            $casts[$name],
+                        ));
+                    }
                 }
 
                 $columns[] = ['type' => $castType] + $base;

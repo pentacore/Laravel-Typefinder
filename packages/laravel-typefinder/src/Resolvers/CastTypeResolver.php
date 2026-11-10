@@ -73,6 +73,17 @@ class CastTypeResolver
      */
     public function resolve(string $cast): string|array
     {
+        return $this->resolveOrNull($cast) ?? 'unknown';
+    }
+
+    /**
+     * Same as resolve(), but returns null when the cast genuinely has no
+     * mapping (as opposed to being explicitly mapped to 'unknown').
+     *
+     * @return string|array{enum: class-string}|array{enumCollection: class-string}|null
+     */
+    public function resolveOrNull(string $cast): string|array|null
+    {
         if ($this->registry instanceof TypefinderRegistry) {
             $registered = $this->registry->resolveCast($cast);
             if ($registered !== null) {
@@ -106,13 +117,13 @@ class CastTypeResolver
         }
 
         if (! class_exists($cast) && ! enum_exists($cast)) {
-            return 'unknown';
+            return null;
         }
 
         if (is_subclass_of($cast, BackedEnum::class)) {
             return ['enum' => $cast];
         }
 
-        return 'unknown';
+        return null;
     }
 }
