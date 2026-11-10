@@ -92,13 +92,15 @@ final readonly class KeyDriftDetector
 
     /**
      * Drift between a resource extraction's declared keys and the literal keys
-     * its own `toArray()` returns. Model-typed resources (attribute `model:`
-     * or the name convention) are not checked.
+     * its own `toArray()` returns. A model-typed resource (attribute `model:`
+     * or the name convention) is compared with its model's keys, as one
+     * aggregated warning, when `$model` (that model's extraction) is given.
      *
      * @param  array{name: string, fqcn: class-string, shape: array<string, mixed>}  $extraction
+     * @param  ?array{name: string, columns: list<array{name: string}>, relationships: list<array{name: string}>}  $model
      * @return list<string>
      */
-    public function checkResource(array $extraction): array
+    public function checkResource(array $extraction, ?array $model = null): array
     {
         $fqcn = ltrim($extraction['fqcn'], '\\');
         $shape = $extraction['shape'];
@@ -131,7 +133,126 @@ final readonly class KeyDriftDetector
             return $this->unique($this->resourceDrift($fqcn, $declared, $type['open'] ?? false, self::PHPDOC_SHAPE));
         }
 
+        if ($shape['kind'] === 'model' && $model !== null) {
+            return $this->modelDrift($fqcn, $shape, $model);
+        }
+
         return [];
+    }
+
+    /**
+     * A model-typed resource's `toArray()` against the model type it is
+     * emitted as: columns (required; nullable ones are still present) and
+     * relations (optional), less `omit`, plus `extend`. One warning per
+     * resource, as a convention mismatch usually differs in many keys.
+     *
+     * @param  array<string, mixed>  $shape
+     * @param  array{name: string, columns: list<array{name: string}>, relationships: list<array{name: string}>}  $model
+     * @return list<string>
+     */
+    private function modelDrift(string $fqcn, array $shape, array $model): array
+    {
+        /** @var list<string> $omit */
+        $omit = array_map(strval(...), (array) ($shape['omit'] ?? []));
+        /** @var array<array-key, string> $extend */
+        $extend = (array) ($shape['extend'] ?? []);
+
+        $declared = [];
+
+        foreach ($model['columns'] as $column) {
+            $declared[(string) $column['name']] = false;
+        }
+
+        foreach ($model['relationships'] as $relationship) {
+            $declared[(string) $relationship['name']] ??= true;
+        }
+
+        foreach ($omit as $key) {
+            unset($declared[$key]);
+        }
+
+        foreach (array_keys($extend) as $key) {
+            $key = (string) $key;
+
+            if (str_ends_with($key, '?')) {
+                $declared[substr($key, 0, -1)] = true;
+            } else {
+                $declared[$key] = false;
+            }
+        }
+
+        $list = [];
+
+        foreach ($declared as $key => $optional) {
+            $list[] = ['key' => strval($key), 'optional' => $optional];
+        }
+
+        $kinds = ['undeclared', 'never', 'notAlways', 'conditional'];
+        $tag = static fn (string $kind): Closure => static fn (string $key): string => $kind."\0".$key;
+        $found = $this->compare($list, false, $this->resourceReturns($fqcn), array_combine($kinds, array_map($tag, $kinds)));
+
+        if ($found === []) {
+            return [];
+        }
+
+        $keys = array_fill_keys($kinds, []);
+
+        foreach ($found as $finding) {
+            [$kind, $key] = explode("\0", $finding, 2);
+            $keys[$kind][] = '"'.$key.'"';
+        }
+
+        $clauses = [];
+
+        if ($keys['undeclared'] !== []) {
+            $clauses[] = 'returns undeclared '.implode(', ', $keys['undeclared']);
+        }
+
+        if ($keys['never'] !== []) {
+            $clauses[] = 'never returns '.implode(', ', $keys['never']);
+        }
+
+        if ($keys['notAlways'] !== []) {
+            $clauses[] = 'does not always return '.implode(', ', $keys['notAlways']);
+        }
+
+        if ($keys['conditional'] !== []) {
+            $clauses[] = implode(', ', $keys['conditional']).(count($keys['conditional']) === 1 ? ' is' : ' are').' conditional but required';
+        }
+
+        $viaAttribute = ($shape['via'] ?? ($omit === [] && $extend === [] ? 'convention' : 'attribute')) === 'attribute';
+
+        return [sprintf(
+            '%s::toArray() does not match the %s model type it is typed as (%s): %s — %s',
+            $fqcn,
+            $model['name'],
+            $viaAttribute ? '#[TypefinderResource(model:)]' : 'by name',
+            implode('; ', $clauses),
+            $viaAttribute
+                ? 'adjust omit/extend in #[TypefinderResource] or declare a shape instead'
+                : 'adjust it with #[TypefinderResource(model: …, omit: …, extend: …)], declare its shape with #[TypefinderResource(shape: …)] or a PHPDoc @return array{…} on toArray(), or set typefinder.resources.infer_from_model_name to false',
+        )];
+    }
+
+    /**
+     * The returns of the resource's own `toArray()`; an empty-array guard
+     * (`if ($this->resource === null) { return []; }`) does not make keys
+     * "not always returned", so it is dropped unless every return is empty.
+     *
+     * @return list<ReturnedArray>
+     */
+    private function resourceReturns(string $fqcn): array
+    {
+        $method = $this->methodNode($fqcn, 'toArray');
+
+        if (! $method instanceof ClassMethod) {
+            return [];
+        }
+
+        $returns = $this->reader->returns($method);
+        $withKeys = array_values(array_filter($returns, static fn (ReturnedArray $returned): bool => $returned->parts !== []));
+
+        return $withKeys === [] ? $returns : $withKeys;
     }
 
     /**
@@ -286,20 +407,7 @@ final readonly class KeyDriftDetector
      */
     private function resourceDrift(string $fqcn, array $declared, bool $declaredOpen, string $src): array
     {
-        $method = $this->methodNode($fqcn, 'toArray');
-
-        if (! $method instanceof ClassMethod) {
-            return [];
-        }
-
-        $returns = $this->reader->returns($method);
-        // An empty-array guard (`if ($this->resource === null) { return []; }`)
-        // does not make keys "not always returned". It holds no keys and is
-        // closed, so that is all dropping it changes; when every return is
-        // empty, they are kept and the declared keys are never returned.
-        $withKeys = array_values(array_filter($returns, static fn (ReturnedArray $returned): bool => $returned->parts !== []));
-
-        return $this->compare($declared, $declaredOpen, $withKeys === [] ? $returns : $withKeys, [
+        return $this->compare($declared, $declaredOpen, $this->resourceReturns($fqcn), [
             'undeclared' => static fn (string $key): string => sprintf('%s::toArray() returns key "%s" not declared in %s', $fqcn, $key, $src),
             'never' => static fn (string $key): string => sprintf('%s::toArray(): %s declares "%s" but toArray() never returns it', $fqcn, $src, $key),
             'notAlways' => static fn (string $key): string => sprintf('%s::toArray(): %s declares "%s" as required but toArray() does not always return it (make it optional?)', $fqcn, $src, $key),

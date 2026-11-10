@@ -88,6 +88,7 @@ class ResourceExtractor
                     'model' => $attribute->model,
                     'omit' => $attribute->omit,
                     'extend' => $attribute->extend,
+                    'via' => 'attribute',
                 ],
             ];
         }
@@ -117,6 +118,7 @@ class ResourceExtractor
                         'model' => $modelFqcn,
                         'omit' => [],
                         'extend' => [],
+                        'via' => 'convention',
                     ],
                 ];
             }

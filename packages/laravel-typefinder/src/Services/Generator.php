@@ -85,7 +85,7 @@ final class Generator
             }
 
             try {
-                $extraction = $this->extractSingleFile($path, $category, $config, $warnings);
+                $extraction = $this->extractSingleFile($path, $category, $config, $warnings, $extractionCache);
                 if ($extraction !== null) {
                     $this->assertNameNotTaken($path, $category, $extraction, $extractionCache);
                     $extractionCache->put($path, $category, $extraction);
@@ -265,6 +265,7 @@ final class Generator
             sharedPageProps: config('typefinder.inertia.enabled', false) ? $this->keyDrift($this->sharedPageProps(...)) : [],
         );
         if (config('typefinder.resources.enabled', true)) {
+            $modelsByClass = array_column($allModels, null, 'fqcn');
             $resourceExtractor = new ResourceExtractor(
                 inferFromModelName: (bool) config('typefinder.resources.infer_from_model_name', true),
                 modelClasses: array_column($allModels, 'fqcn'),
@@ -280,7 +281,7 @@ final class Generator
             $this->assertUniqueTypeNames('resources', $allResources);
 
             foreach ($allResources as $allResource) {
-                foreach ($this->keyDrift(static fn (): array => $keyDriftDetector->checkResource($allResource)) as $message) {
+                foreach ($this->keyDrift(static fn (): array => $keyDriftDetector->checkResource($allResource, $modelsByClass[$allResource['shape']['model'] ?? ''] ?? null)) as $message) {
                     $warn($message);
                 }
 
@@ -945,7 +946,7 @@ final class Generator
     /**
      * Extract metadata from a single PHP file using the appropriate extractor.
      */
-    private function extractSingleFile(string $path, string $category, array $config, array &$warnings): ?array
+    private function extractSingleFile(string $path, string $category, array $config, array &$warnings, ExtractionCache $extractionCache): ?array
     {
         $className = ClassNameResolver::fromFile($path);
         if ($className === null || ! class_exists($className)) {
@@ -973,14 +974,14 @@ final class Generator
 
         if ($extraction !== null && in_array($category, ['resources', 'inertia'], true)) {
             // Models/enums come from config discovery here, like the resource extractor's.
-            $messages = $this->keyDrift(function () use ($category, $extraction): array {
+            $messages = $this->keyDrift(function () use ($category, $extraction, $extractionCache): array {
                 $keyDriftDetector = new KeyDriftDetector(
                     new PhpDocShapeResolver(new GeneratedClasses),
                     sharedPageProps: $category === 'inertia' ? $this->sharedPageProps() : [],
                 );
 
                 return $category === 'resources'
-                    ? $keyDriftDetector->checkResource($extraction)
+                    ? $keyDriftDetector->checkResource($extraction, $this->cachedModel($extraction, $extractionCache))
                     : $keyDriftDetector->checkPages($extraction);
             });
             foreach ($messages as $message) {
@@ -989,6 +990,24 @@ final class Generator
         }
 
         return $extraction;
+    }
+
+    /**
+     * The fresh cached extraction of the model a model-typed resource is
+     * typed as, or null (not model-typed, no fresh cache entry, not a model
+     * extraction). The model is never extracted here: that needs the DB schema.
+     */
+    private function cachedModel(array $resource, ExtractionCache $extractionCache): ?array
+    {
+        $model = $resource['shape']['model'] ?? null;
+        if (($resource['shape']['kind'] ?? null) !== 'model' || ! is_string($model) || ! class_exists($model)) {
+            return null;
+        }
+
+        $file = new ReflectionClass($model)->getFileName();
+        $cached = $file === false ? null : $extractionCache->get($file);
+
+        return $cached !== null && ($cached['fqcn'] ?? null) === $model && isset($cached['columns'], $cached['relationships']) ? $cached : null;
     }
 
     private function extractSingleRequest(string $className, callable $warn): array
