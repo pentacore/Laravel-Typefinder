@@ -88,7 +88,7 @@ Every generation run produces a tree under `output_path` (default `resources/js/
 
 Default-off categories are gated because they depend on optional Laravel features (Inertia, broadcasting). The rest default on per the gating rule above.
 
-Drift checks: `Analysis\KeyDriftDetector` (run from `Generator`, full and incremental) warns when a resource's declared shape or a `#[TypefinderPage]` disagrees with the literal keys `toArray()` / `Inertia::render()` produce; never changes emitted types. Shared Inertia props come from `Analysis\InertiaSharedProps` (parses `app/Http/Middleware`).
+Drift checks: `Analysis\KeyDriftDetector` (run from `Generator`, full and incremental) warns when a resource's declared shape, a model-typed resource's model type (one aggregated warning; incremental runs use the cached model extraction and skip silently without one) or a `#[TypefinderPage]` disagrees with the literal keys `toArray()` / `Inertia::render()` produce; never changes emitted types. Shared Inertia props come from `Analysis\InertiaSharedProps` (parses `app/Http/Middleware`).
 
 ## Attributes
 
@@ -97,7 +97,7 @@ All under `Pentacore\Typefinder\Attributes\`. Detected via reflection; no trait 
 - `#[TypefinderIgnore]` — skip any model/enum/request/resource/controller/event.
 - `#[TypefinderOverrides(['col' => 'TSType'])]` — override or add fields on a model or form request.
 - `#[TypefinderWriteShape(serverFilled: [...], respectMassAssignment: null, immutableOnUpdate: [...])]` — tune the Create/Update companion shapes.
-- `#[TypefinderResource(shape / model / omit / extend)]` — declare a JSON resource's shape. Without the attribute, a PHPDoc `@return array{…}` on `toArray()` declares it (beats the name convention, applies even with `infer_from_model_name` off); then the class-name convention (`UserResource` → `User`).
+- `#[TypefinderResource(shape / model / omit / extend)]` — declare a JSON resource's shape. Without the attribute, a PHPDoc `@return array{…}` on `toArray()` declares it (beats the name convention, applies even with `infer_from_model_name` off), or, with no shape on its own `toArray()`, `Resolvers\PhpDocShapeResolver` composes one from the documented helpers / `parent::toArray()` that body returns (`Resolvers\ShapeComposer`); then the class-name convention (`UserResource` → `User`).
 - `#[TypefinderPage(component, props, optional)]` — tag a controller action method as an Inertia page (repeatable).
 - `#[TypefinderBroadcast(payload, as, channel, channelType)]` — override reflection for broadcast events with dynamic `broadcastOn()`/`broadcastWith()`.
 - `#[TypefinderCast('{ … }')]` — declare the TS shape for a custom cast class you own. For third-party casts, use `Typefinder::registerCast()` from a service provider instead.

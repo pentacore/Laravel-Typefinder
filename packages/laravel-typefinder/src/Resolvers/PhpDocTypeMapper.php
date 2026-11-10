@@ -89,6 +89,9 @@ final class PhpDocTypeMapper
     /** @var array<string, true> warnings already emitted by the current map() call */
     private array $warned = [];
 
+    /** The method whose doc the current map() call reads, named in warnings. */
+    private string $method = 'toArray';
+
     /**
      * @param  null|callable(string): void  $onWarn
      */
@@ -100,11 +103,13 @@ final class PhpDocTypeMapper
     /**
      * Map one type tree. Identical warnings within one call are emitted once.
      *
+     * @param  string  $method  the resource method whose `@return` this is (a helper when composing)
      * @return array<string, mixed>
      */
-    public function map(TypeNode $type, PhpDocScope $scope, string $fieldPath): array
+    public function map(TypeNode $type, PhpDocScope $scope, string $fieldPath, string $method = 'toArray'): array
     {
         $this->warned = [];
+        $this->method = $method;
 
         return $this->mapType($type, $scope, $fieldPath);
     }
@@ -419,8 +424,9 @@ final class PhpDocTypeMapper
     private function warn(TypeNode $type, PhpDocScope $scope, string $fieldPath, string $emitted = 'unknown'): void
     {
         $message = sprintf(
-            '%s::toArray() @return: "%s" has unsupported type %s — emitted as %s',
+            '%s::%s() @return: "%s" has unsupported type %s — emitted as %s',
             $scope->resourceFqcn,
+            $this->method,
             $fieldPath,
             (string) $type,
             $emitted,

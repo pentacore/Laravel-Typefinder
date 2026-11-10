@@ -9,8 +9,18 @@ namespace Pentacore\Typefinder\Analysis;
  */
 final readonly class ReturnedArray
 {
-    /** @param list<ReturnedPart> $parts in source order */
-    public function __construct(public array $parts) {}
+    /**
+     * @param  list<ReturnedPart>  $parts  in source order
+     * @param  bool  $plus  the expression joins arrays with `+` (the items of a
+     *                      literal operand carry no `plus` combine)
+     */
+    public function __construct(public array $parts, public bool $plus = false) {}
+
+    /** Whether arrays are joined with `+`: flagged, or any `plus` part. */
+    public function usesPlus(): bool
+    {
+        return $this->plus || array_any($this->parts, fn (ReturnedPart $part): bool => $part->combine === 'plus');
+    }
 
     /**
      * True when the array may hold keys that are not listed: any `dynamic`

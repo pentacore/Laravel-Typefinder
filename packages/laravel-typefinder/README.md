@@ -261,7 +261,7 @@ Classes extending `JsonResource`. The type comes from the first of these that ap
 
 1. **Explicit shape** via `#[TypefinderResource(shape: [...])]`.
 2. **Model extension** via `#[TypefinderResource(model: User::class, omit: [...], extend: [...])]` → `Omit<User, ...> & { ... }`.
-3. **PHPDoc array shape** on `toArray()` — `@return array{…}` (or `@phpstan-return` / `@psalm-return`, which take precedence). Applies whether or not the name convention is on.
+3. **PHPDoc array shape** on `toArray()` — `@return array{…}` (or `@phpstan-return` / `@psalm-return`, which take precedence), or one composed from documented helpers / a documented parent `toArray()` (see [Composed shapes](#composed-shapes)). Applies whether or not the name convention is on.
 4. **Name convention** — `UserResource` → `User` automatically, when `User` is one of the models typefinder generates (found under `models.paths` and not ignored). Models from other packages and models outside `models.paths` are never matched.
 5. Otherwise the resource is skipped with a warning.
 
@@ -300,15 +300,57 @@ export type CommentResource = {
 };
 ```
 
-Only an `array{…}` (or `object{…}`) shape counts. The `make:resource` stub's `@return array<string, mixed>`, a plain `array`, `list<…>` and other generics fall through to the name convention, unchanged. Nested shapes, lists, `array<string, T>`, unions, literals, `?T`, collections (`Collection<int, X>` → `X[]`), Carbon/`DateTimeInterface` (→ `string`), `@phpstan-type` aliases and `@phpstan-import-type` are understood. A `X|MissingValue` field (the `whenLoaded()` / `when()` idiom) becomes optional. A `toArray()` provided by a trait is read from the trait's file. A subclass that does not override `toArray()`, or whose doc is only `{@inheritDoc}`, uses its parent's doc; `static` in it refers to the subclass. An abstract resource never takes a PHPDoc shape (it falls through to the attribute/name-convention tiers as before).
+Only an `array{…}` (or `object{…}`) shape counts. The `make:resource` stub's `@return array<string, mixed>`, a plain `array`, `list<…>` and other generics fall through to the name convention, unchanged. Nested shapes, lists, `array<string, T>`, unions, literals, `?T`, collections (`Collection<int, X>` → `X[]`), Carbon/`DateTimeInterface` (→ `string`), `@phpstan-type` aliases and `@phpstan-import-type` are understood. A `X|MissingValue` field (the `whenLoaded()` / `when()` idiom) becomes optional. A `toArray()` provided by a trait is read from the trait's file. A subclass that does not override `toArray()`, or whose override has no doc or only `{@inheritDoc}` and does not compose (below), uses its parent's doc; `static` in it refers to the subclass. An abstract resource never takes a PHPDoc shape (it falls through to the attribute/name-convention tiers as before).
 
 Only types typefinder generates resolve: models it generates, backed enums under `enums.paths`, and resources under `resources.paths`. Any other class (a vendor model, a plain value object), and types with no JSON equivalent (`callable`, `Closure`, …), become `unknown` with a warning naming the resource and field.
 
 The name convention assumes the resource returns the model's attributes. If your resources rename fields, flatten relations or add computed keys, the inferred type is wrong and nothing flags it. Set `'resources.infer_from_model_name' => false` to turn the convention off; every resource then needs an attribute or a PHPDoc shape (or `#[TypefinderIgnore]`), and undeclared ones are reported as warnings.
 
+#### Composed shapes
+
+When the resource's own `toArray()` has no `@return` shape, typefinder reads its body. If every `return` is built only from calls to documented helper methods (`$this->m()`, `self::m()`, `static::m()`), `parent::toArray($request)` with a documented (or itself composed) parent, and literal keys, combined with `[...]` spreads, `array_merge()`, `+`, `$this->merge()`, `$this->mergeWhen()` and `$this->mergeUnless()`, the type is composed from those parts:
+
+```php
+class PostResource extends JsonResource
+{
+    public function toArray(Request $request): array
+    {
+        return [...$this->base(), ...$this->counts(), 'note' => $this->note];
+    }
+
+    /** @return array{id: int, title: string, status: PostStatus} */
+    private function base(): array { /* … */ }
+
+    /** @return array{comments_count: int, author?: UserResource} */
+    private function counts(): array { /* … */ }
+}
+```
+
+```typescript
+export type PostResource = {
+  id: number;
+  title: string;
+  status: PostStatus;
+  comments_count: number;
+  author?: UserResource;
+  note: unknown;
+};
+```
+
+- A helper's doc is read in its declaring class or trait file (its imports and aliases); `static` / `self` in it mean the resource. A helper without a `@return` shape is composed from its own body the same way.
+- Precedence: with spreads, `array_merge()` and literal keys, a later key wins. A key that appears twice in a `return` that uses `+`, `merge()`, `mergeWhen()` or `mergeUnless()` (Laravel keeps the earliest there) → not composed.
+- A later optional or conditional key over an earlier one → not composed (a missing value removes the key; the earlier value does not come back).
+- Optional: every key inside `mergeWhen()` / `mergeUnless()`, and `when*()` / `unless()` / `transform()` values without a default. A key missing from some `return` is optional; its types across returns are unioned.
+- An open helper shape (`array{…, ...}`) composes only as the first part of a `return`, and not in one that uses `+` or a merge call; the result is open.
+- Merge calls (`merge()`, `mergeWhen()`, `mergeUnless()`) → not composed when they appear in a helper or parent `toArray()` without a `@return` shape, in a `return` that also uses `+`, or when one may add nothing (an empty array, or a helper whose keys are all optional) and more keys follow it.
+- A literal key (`'note' => …`) has no documented type: it is `unknown`, and the run warns once per resource: `{R}::toArray() composes a shape but "note" has no documented type — add @return array{…} to toArray()`.
+- A body made only of literal keys is not composed (the name convention applies as before), nor is `parent::toArray()` when the parent is `JsonResource` itself (that is the model's attributes). If any part cannot be typed — a variable, a call on another object, a computed key, an undocumented helper that does not compose — nothing is composed. "Not composed" always means the resource falls back as before (next tier: name convention, or skipped), with no warning.
+
+**Upgrading (composed shapes):** a resource whose undocumented `toArray()` returns parts of documented helper methods or of a documented parent `toArray()` is now typed from the composed shape instead of the name convention or the parent's doc. Add an explicit `@return array{…}` to `toArray()`, or `#[TypefinderResource(model: User::class)]`, to control the type.
+
 **Upgrading:** a resource that already documents `@return array{…}` on `toArray()` and has no `#[TypefinderResource]` attribute now gets that shape instead of the same-named model. To keep the old type, add `#[TypefinderResource(model: User::class)]`. This release also adds `nikic/php-parser` ^5 and `phpstan/phpdoc-parser` ^2 as dependencies; apps pinned to phpdoc-parser ^1 must upgrade.
 
-**Known limits:** in watch / `--only` runs, editing a parent resource's `toArray()` doc, a trait that provides `toArray()`, or a class that defines an imported `@phpstan-type` alias, does not re-render the resources that use it; run a full `typefinder:generate` to refresh. Trait conflict resolution (`insteadof` / `as`) is not considered: the first trait in `use` order that declares `toArray()` is read. In watch mode, method bodies are re-read from disk on every change, but attributes (`#[TypefinderResource]`, `#[TypefinderPage]`) of a class the watcher has already loaded keep their old values, so drift warnings may compare the new code with the old attribute until the dev server restarts.
+**Known limits:** in watch / `--only` runs, editing a parent resource's `toArray()` doc, a trait that provides `toArray()`, or a class that defines an imported `@phpstan-type` alias, does not re-render the resources that use it; run a full `typefinder:generate` to refresh. Trait conflict resolution (`insteadof` / `as`) is not considered: the first trait in `use` order that declares `toArray()` (or a helper) is read. Composition follows only `$this->m()`, `self::m()`, `static::m()` and `parent::toArray()` calls, at most 3 delegations deep from `toArray()` (a recursive helper is not composed), and only a `toArray()` declared in the resource class itself, not an inherited or trait-provided one. Editing a helper in a parent class or trait does not re-render the resources that use it in watch / `--only` runs. In watch mode, method bodies are re-read from disk on every change, but attributes (`#[TypefinderResource]`, `#[TypefinderPage]`) of a class the watcher has already loaded keep their old values, so drift warnings may compare the new code with the old attribute until the dev server restarts.
 
 ### Pages (opt-in, `typefinder.inertia.enabled`)
 
@@ -354,9 +396,10 @@ Consumers write `WrappedResource<UserResource>` or `PaginatedResourceCollection<
 Generation compares what you declare with what your code actually produces, by key name only (types are never compared), and reports mismatches as warnings:
 
 - **Resources:** the keys of a declared shape (`#[TypefinderResource(shape: [...])]`, or a PHPDoc `@return array{…}`) against the literal keys returned by the `toArray()` in the resource's own file. Inherited or trait-provided `toArray()` methods are not read.
+- **Model-typed resources:** a resource typed as a model (by the `{Model}Resource` name convention or `#[TypefinderResource(model: …)]`) against that model's type: columns (required, nullable or not), relations (optional), less `omit`, plus `extend`. Hidden columns are not in the model type, so returning one is reported. The resource's default `toArray()` and `return parent::toArray($request);` are not checked. Incremental runs (`--only`, watch) read the model's type from the extraction cache, so they report this only after a full run (or an `--only` run on the model file) has cached the model; with a cold cache, or when the model file changed since it was cached, the check is skipped silently (extracting the model needs the database schema). A cached model does not notice a migration or an edited parent model or trait until the next full run.
 - **Pages:** the props of a `#[TypefinderPage]` against the props the same action passes to `Inertia::render()` or the `inertia()` helper for that component (literal arrays, `compact()`, chained `->with()` calls, and `Inertia::optional|lazy|defer` wrappers). Several `#[TypefinderPage]` attributes for one component on one action are merged first, as in the generated type: a prop is optional when any of them leaves it out or lists it in `optional`. Only with `typefinder.inertia.enabled`.
 
-The checks favour precision. When the code is not fully literal (a spread, `parent::toArray()`, a computed key), only "undeclared key" warnings are reported, since a key that is certainly returned and not declared is still a fact, while a missing key cannot be proven. Only renders the action makes directly are read, not renders in a helper method or a base controller: an action whose every return is such a call gets no page warnings, and an action that also returns anything other than a direct render of the page (a helper call, a redirect, another page, a bare `return;`) gets only "undeclared prop" warnings. A key is called conditional only when it is conditional everywhere it appears (`$this->when*()` without a default, `mergeWhen()`). An early `return [];` guard in `toArray()` does not make the other keys "not always returned". A file that fails to parse produces no drift warnings.
+The checks favour precision. When the code is not fully literal (a spread, `parent::toArray()`, a computed key), only "undeclared key" warnings are reported, since a key that is certainly returned and not declared is still a fact, while a missing key cannot be proven. Only renders the action makes directly are read, not renders in a helper method or a base controller: an action whose every return is such a call gets no page warnings, and an action that also returns anything other than a direct render of the page (a helper call, a redirect, another page, a bare `return;`) gets only "undeclared prop" warnings. A key is called conditional only when it is conditional everywhere it appears (`$this->when*()`, `unless()` or `transform()` without a default, `mergeWhen()`, `mergeUnless()`). An early `return [];` guard in `toArray()` does not make the other keys "not always returned". A file that fails to parse produces no drift warnings.
 
 Shared Inertia props are never reported as not passed: `errors` (shared by Inertia itself), the literal keys returned by `share()` in middleware under `app/Http/Middleware` that extends `Inertia\Middleware` (`return array_merge(parent::share($request), [...])` or `[...parent::share($request), ...]`), and, in an action that calls `Inertia::share()` itself, every prop. Passing a shared prop explicitly without declaring it is still reported.
 
@@ -366,6 +409,7 @@ Warnings (`{R}` is the resource class, `{C}::{m}` the controller method):
 - `{R}::toArray(): #[TypefinderResource] shape declares "k" but toArray() never returns it`
 - `{R}::toArray(): … declares "k" as required but toArray() does not always return it (make it optional?)`
 - `{R}::toArray(): "k" is conditional in code but required in …`
+- `{R}::toArray() does not match the {M} model type it is typed as (by name): returns undeclared "a"; never returns "b"; does not always return "c"; "d" is conditional but required — …`: one warning per model-typed resource, clauses left out when empty; `(by name)` is `(#[TypefinderResource(model:)])` for an attribute. The remedy is to adjust it with `#[TypefinderResource(model: …, omit: …, extend: …)]`, declare its shape with `#[TypefinderResource(shape: …)]` or a PHPDoc `@return array{…}` on `toArray()`, or set `typefinder.resources.infer_from_model_name` to `false` (attribute: adjust `omit` / `extend`, or declare a shape).
 - `{R}: #[TypefinderResource] shape and PHPDoc @return shape disagree (only in attribute: {…}; only in PHPDoc: {…})`
 - `{C}::{m}() passes prop "k" to Inertia page "X" but #[TypefinderPage] does not declare it`
 - `{C}::{m}(): #[TypefinderPage] declares prop "k" for "X" but it is never passed`

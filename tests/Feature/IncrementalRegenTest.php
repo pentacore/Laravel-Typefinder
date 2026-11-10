@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Http\Resources\ComposedLiteralResource;
+use App\Http\Resources\ComposedResource;
 use App\Http\Resources\ShapeShowcaseResource;
 use App\Models\User;
 use Illuminate\Support\Facades\File;
 use Pentacore\Typefinder\Services\Generator;
 use ReflectionClass;
+use Tests\Fixtures\AbstractModels\BaseLabel;
 use Tests\TestCase;
 
 use function Orchestra\Testbench\workbench_path;
@@ -65,6 +68,34 @@ final class IncrementalRegenTest extends TestCase
         // Barrel and top-level index may or may not appear in changed
         // depending on whether their content actually differs
         $this->assertNotContains('models/Post.d.ts', $regenResult->changed, 'Post must not be in changed list');
+    }
+
+    public function test_generate_paths_skips_an_abstract_model(): void
+    {
+        config(['typefinder.models.paths' => [workbench_path('app/Models'), __DIR__.'/../Fixtures/AbstractModels']]);
+
+        $generator = app(Generator::class);
+        $generator->generateFull();
+
+        $regenResult = $generator->generatePaths([
+            new ReflectionClass(BaseLabel::class)->getFileName(),
+        ]);
+
+        $this->assertSame([], $regenResult->failed);
+        $this->assertFileExists($this->output.'/models/Label.d.ts');
+        $this->assertFileDoesNotExist($this->output.'/models/BaseLabel.d.ts');
+    }
+
+    public function test_generate_paths_skips_an_ignored_model(): void
+    {
+        $generator = app(Generator::class);
+        $generator->generateFull();
+
+        $regenResult = $generator->generatePaths([workbench_path('app/Models/LegacyModel.php')]);
+
+        $this->assertSame([], $regenResult->failed);
+        $this->assertNotContains('models/LegacyModel.d.ts', $regenResult->changed);
+        $this->assertFileDoesNotExist($this->output.'/models/LegacyModel.d.ts');
     }
 
     public function test_generate_paths_with_empty_list_does_full_regen(): void
@@ -138,6 +169,39 @@ final class IncrementalRegenTest extends TestCase
 
         $this->assertSame([], $regenResult->failed);
         $this->assertSame($full, File::get($output));
+    }
+
+    public function test_only_run_on_a_composed_resource_matches_full_run(): void
+    {
+        $this->artisan('typefinder:generate')->assertSuccessful();
+
+        $output = $this->output.'/resources/ComposedResource.d.ts';
+        $full = File::get($output);
+        $this->assertStringContainsString('  status: PostStatus;', $full);
+        File::delete($output);
+
+        $source = (string) new ReflectionClass(ComposedResource::class)->getFileName();
+        $this->artisan('typefinder:generate', ['--only' => [$source]])->assertSuccessful();
+
+        $this->assertSame($full, File::get($output));
+    }
+
+    public function test_generate_paths_reports_a_composition_warning_once(): void
+    {
+        $generator = app(Generator::class);
+        $generator->generateFull();
+
+        $regenResult = $generator->generatePaths([(string) new ReflectionClass(ComposedLiteralResource::class)->getFileName()]);
+
+        $matching = array_values(array_filter(
+            $regenResult->warnings,
+            static fn (string $warning): bool => str_contains($warning, ComposedLiteralResource::class),
+        ));
+
+        $this->assertSame(
+            [ComposedLiteralResource::class.'::toArray() composes a shape but "note" has no documented type — add @return array{…} to toArray()'],
+            $matching,
+        );
     }
 
     public function test_phpdoc_change_is_picked_up_while_class_stays_loaded(): void

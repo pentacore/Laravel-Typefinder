@@ -31,7 +31,7 @@ class ResourceExtractor
      *                                             null, they are discovered from `typefinder.models.paths`.
      * @param  ?list<class-string>  $enumClasses  Enums that get a generated type; null discovers them from config.
      * @param  ?list<class-string>  $resourceClasses  Resources that get a generated type; null discovers them from config.
-     * @param  null|callable(string): void  $onWarn  Receives warnings about PHPDoc shapes (unmappable types, unparsable docs).
+     * @param  null|callable(string): void  $onWarn  Receives warnings about PHPDoc shapes (unmappable types, unparsable docs, composed keys with no documented type).
      */
     public function __construct(
         private readonly bool $inferFromModelName = true,
@@ -88,6 +88,7 @@ class ResourceExtractor
                     'model' => $attribute->model,
                     'omit' => $attribute->omit,
                     'extend' => $attribute->extend,
+                    'via' => 'attribute',
                 ],
             ];
         }
@@ -117,6 +118,7 @@ class ResourceExtractor
                         'model' => $modelFqcn,
                         'omit' => [],
                         'extend' => [],
+                        'via' => 'convention',
                     ],
                 ];
             }

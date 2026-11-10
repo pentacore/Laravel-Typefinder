@@ -29,7 +29,7 @@ Any of these changes should trigger a regenerate:
 - A model changed `$casts`, `$hidden`, `$visible`, `$fillable`, `$guarded`, a relationship method, or a `#[TypefinderOverrides]` / `#[TypefinderWriteShape]` attribute.
 - A `FormRequest`'s `rules()` or `#[TypefinderOverrides]` changed.
 - A backed enum was added, renamed, or had cases changed.
-- A `JsonResource` was added, its `#[TypefinderResource]` attribute changed, or the PHPDoc `@return array{…}` on its `toArray()` changed.
+- A `JsonResource` was added, its `#[TypefinderResource]` attribute changed, the PHPDoc `@return array{…}` on its `toArray()` changed, or a documented helper (or parent `toArray()`) its undocumented `toArray()` returns changed.
 - A controller action was tagged (or untagged) with `#[TypefinderPage]`.
 - A class implementing `ShouldBroadcast` was added or its payload changed.
 - A custom cast class was added/modified, or a `Typefinder::registerCast(...)` entry was added to a service provider.
@@ -48,7 +48,7 @@ The command emits a single JSON object on stdout. Relevant fields:
 - `files[]` — each entry has `{ path, written }`. `written: true` means the file changed. If every entry is `written: false`, nothing in the backend changed in a way that affects frontend types.
 - `warnings[]` — non-fatal notices. Surface these to the user verbatim.
 
-For a CI-style regression check (fails when regeneration would change anything on disk) use `--check` instead of `--json`; it needs the generated output committed (`gitignore_generated` => false). Add `--strict` to either workflow to also fail when the run produced any warning, including drift warnings (a resource shape or `#[TypefinderPage]` whose keys no longer match what `toArray()` / `Inertia::render()` actually return). For a human-readable step-by-step trace use `--debug`.
+For a CI-style regression check (fails when regeneration would change anything on disk) use `--check` instead of `--json`; it needs the generated output committed (`gitignore_generated` => false). Add `--strict` to either workflow to also fail when the run produced any warning, including drift warnings (a resource shape, a model-typed resource or a `#[TypefinderPage]` whose keys no longer match what `toArray()` / `Inertia::render()` actually return). For a human-readable step-by-step trace use `--debug`.
 
 ### Import Patterns
 @boostsnippet("Typefinder type import", "typescript")
