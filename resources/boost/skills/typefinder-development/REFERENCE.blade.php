@@ -69,6 +69,10 @@ For a `JsonResource` subclass, the first match wins:
 5. Name convention `{Model}Resource` → `{Model}` (only when `infer_from_model_name` is true).
 6. Otherwise skipped with a warning.
 
+## Drift checks
+
+Generation warns (key names only; types are not compared) when a resource's declared shape (attribute or PHPDoc) and the literal keys of its own-file `toArray()` disagree, and, with Inertia enabled, when a `#[TypefinderPage]`'s props and the props the same action passes to `Inertia::render()` / `inertia()` (with chained `->with()`) disagree. Repeated `#[TypefinderPage]` attributes for one component on one action are merged first. When the code is not fully literal only "undeclared key" warnings are emitted; only renders the action makes directly are read (not those in a helper method or base controller): if every return is such a call there are no page warnings, and if the action also returns something other than a direct render of the page (helper call, redirect, another page), only undeclared-prop warnings remain. Shared props (`errors`, keys returned by `share()` in `app/Http/Middleware` classes extending `Inertia\Middleware`, and every prop of an action that calls `Inertia::share()`) are never reported as not passed. In watch mode, attribute edits on an already-loaded class are seen stale until the dev server restarts. `--strict` fails the run on them. Fix the declaration (or add the key to `optional` / mark it `?`), not the generated file.
+
 ## Type resolution precedence — casts
 
 Inside the cast resolver, priority (highest first):

@@ -34,6 +34,6 @@ class ShapeShowcaseResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
-        return [];
+        return parent::toArray($request);
     }
 }

@@ -48,7 +48,7 @@ The command emits a single JSON object on stdout. Relevant fields:
 - `files[]` — each entry has `{ path, written }`. `written: true` means the file changed. If every entry is `written: false`, nothing in the backend changed in a way that affects frontend types.
 - `warnings[]` — non-fatal notices. Surface these to the user verbatim.
 
-For a CI-style regression check (fails when regeneration would change anything on disk) use `--check` instead of `--json`; it needs the generated output committed (`gitignore_generated` => false). Add `--strict` to either workflow to also fail when the run produced any warning. For a human-readable step-by-step trace use `--debug`.
+For a CI-style regression check (fails when regeneration would change anything on disk) use `--check` instead of `--json`; it needs the generated output committed (`gitignore_generated` => false). Add `--strict` to either workflow to also fail when the run produced any warning, including drift warnings (a resource shape or `#[TypefinderPage]` whose keys no longer match what `toArray()` / `Inertia::render()` actually return). For a human-readable step-by-step trace use `--debug`.
 
 ### Import Patterns
 @boostsnippet("Typefinder type import", "typescript")
