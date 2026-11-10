@@ -89,8 +89,8 @@ final readonly class PhpDocShapeResolver
     }
 
     /**
-     * The winning `@*return` type of `toArray()` and the class whose doc
-     * declares it, walking up past docs without a return tag (no doc, or
+     * The winning `@*return` type of `toArray()` and the class or trait whose
+     * doc declares it, walking up past docs without a return tag (no doc, or
      * only inheritDoc) until `JsonResource`.
      *
      * @param  ReflectionClass<object>  $resource
@@ -101,20 +101,16 @@ final readonly class PhpDocShapeResolver
         $class = new ReflectionMethod($resource->getName(), 'toArray')->getDeclaringClass();
 
         while ($class->getName() !== JsonResource::class) {
-            $file = $class->getFileName();
-            $source = $file === false ? null : ParsedSource::forFile($file);
+            // A trait-provided toArray() reports the using class as declaring
+            // it, but the method (and its doc) lives in the trait's file.
+            $owner = $this->toArraySource($class) ?? $this->traitToArraySource($class);
 
-            if (! $source instanceof ParsedSource) {
+            if ($owner === null) {
                 return null;
             }
 
-            // Trait-provided toArray(): the declaring class is the user, but the
-            // method is not in its file. Don't mistake that for "no doc".
-            if (! $source->methodNode($class->getName(), 'toArray') instanceof ClassMethod) {
-                return null;
-            }
-
-            $doc = $this->parseDoc($source->methodDoc($class->getName(), 'toArray'));
+            [$ownerName, $source] = $owner;
+            $doc = $this->parseDoc($source->methodDoc($ownerName, 'toArray'));
             $hasReturnTag = $doc instanceof PhpDocNode && array_filter(
                 self::RETURN_TAGS,
                 static fn (string $tag): bool => $doc->getTagsByName($tag) !== [],
@@ -139,13 +135,49 @@ final readonly class PhpDocShapeResolver
                     // A broken higher-precedence tag still deserves its warning.
                     $this->warnUnparsable($doc, $resource->getName(), array_slice(self::RETURN_TAGS, 0, $rank));
 
-                    return [$values[0]->type, $class->getName()];
+                    return [$values[0]->type, $ownerName];
                 }
             }
 
             $this->warnUnparsable($doc, $resource->getName(), self::RETURN_TAGS);
 
             return null;
+        }
+
+        return null;
+    }
+
+    /**
+     * The class itself and its parsed file, when that file declares `toArray()`.
+     *
+     * @param  ReflectionClass<object>  $class
+     * @return ?array{class-string, ParsedSource}
+     */
+    private function toArraySource(ReflectionClass $class): ?array
+    {
+        $file = $class->getFileName();
+        $source = $file === false ? null : ParsedSource::forFile($file);
+
+        return $source?->methodNode($class->getName(), 'toArray') instanceof ClassMethod
+            ? [$class->getName(), $source]
+            : null;
+    }
+
+    /**
+     * The first trait (in `use` order, depth-first through traits used by
+     * traits) whose own file declares `toArray()`.
+     *
+     * @param  ReflectionClass<object>  $class
+     * @return ?array{class-string, ParsedSource}
+     */
+    private function traitToArraySource(ReflectionClass $class): ?array
+    {
+        foreach ($class->getTraits() as $trait) {
+            $found = $this->toArraySource($trait) ?? $this->traitToArraySource($trait);
+
+            if ($found !== null) {
+                return $found;
+            }
         }
 
         return null;

@@ -23,13 +23,16 @@ use Tests\Fixtures\Resources\PhpDoc\InheritedShapeResource;
 use Tests\Fixtures\Resources\PhpDoc\LaravelUnionShapeResource;
 use Tests\Fixtures\Resources\PhpDoc\ListTopLevelResource;
 use Tests\Fixtures\Resources\PhpDoc\MissingImportResource;
+use Tests\Fixtures\Resources\PhpDoc\NestedTraitToArrayResource;
 use Tests\Fixtures\Resources\PhpDoc\NoOverrideResource;
 use Tests\Fixtures\Resources\PhpDoc\PlainArrayResource;
 use Tests\Fixtures\Resources\PhpDoc\PrecedenceResource;
 use Tests\Fixtures\Resources\PhpDoc\PsalmReturnResource;
 use Tests\Fixtures\Resources\PhpDoc\StubDefaultResource;
+use Tests\Fixtures\Resources\PhpDoc\TraitAliasToArrayResource;
 use Tests\Fixtures\Resources\PhpDoc\TraitToArrayResource;
 use Tests\Fixtures\Resources\PhpDoc\TwoShapesResource;
+use Tests\Fixtures\Resources\PhpDoc\UndocumentedTraitToArrayResource;
 use Tests\TestCase;
 
 final class PhpDocShapeResolverTest extends TestCase
@@ -146,10 +149,45 @@ final class PhpDocShapeResolverTest extends TestCase
         $this->assertSame([], $this->warnings);
     }
 
-    public function test_trait_provided_to_array_does_not_inherit_the_parent_shape(): void
+    /**
+     * @return array<string, array{class-string}>
+     */
+    public static function traitResources(): array
     {
-        $this->assertNull($this->resolve(TraitToArrayResource::class));
+        return [
+            'trait on the resource' => [TraitToArrayResource::class],
+            'trait used by a trait' => [NestedTraitToArrayResource::class],
+        ];
+    }
+
+    /**
+     * @param  class-string  $class
+     */
+    #[DataProvider('traitResources')]
+    public function test_trait_provided_to_array_doc_is_read(string $class): void
+    {
+        $this->assertSame($this->object([$this->field('trait_field', $this->ts('string'))]), $this->resolve($class));
         $this->assertSame([], $this->warnings);
+    }
+
+    public function test_trait_doc_resolves_names_and_aliases_in_the_trait_file(): void
+    {
+        $this->assertSame(
+            $this->object([
+                $this->field('owner', ['kind' => 'model', 'fqcn' => User::class]),
+                $this->field('meta', $this->object([$this->field('count', $this->ts('number'))])),
+            ]),
+            $this->resolve(TraitAliasToArrayResource::class),
+        );
+        $this->assertSame([], $this->warnings);
+    }
+
+    public function test_undocumented_trait_to_array_continues_to_the_parent(): void
+    {
+        $this->assertSame(
+            $this->object([$this->field('base_only', $this->ts('number'))]),
+            $this->resolve(UndocumentedTraitToArrayResource::class),
+        );
     }
 
     public function test_class_aliases_expand(): void

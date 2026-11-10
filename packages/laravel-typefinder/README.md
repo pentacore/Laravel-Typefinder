@@ -271,7 +271,7 @@ export type CommentResource = {
 };
 ```
 
-Only an `array{…}` (or `object{…}`) shape counts. The `make:resource` stub's `@return array<string, mixed>`, a plain `array`, `list<…>` and other generics fall through to the name convention, unchanged. Nested shapes, lists, `array<string, T>`, unions, literals, `?T`, collections (`Collection<int, X>` → `X[]`), Carbon/`DateTimeInterface` (→ `string`), `@phpstan-type` aliases and `@phpstan-import-type` are understood. A `X|MissingValue` field (the `whenLoaded()` / `when()` idiom) becomes optional. A subclass that does not override `toArray()`, or whose doc is only `{@inheritDoc}`, uses its parent's doc; `static` in it refers to the subclass. An abstract resource never takes a PHPDoc shape (it falls through to the attribute/name-convention tiers as before).
+Only an `array{…}` (or `object{…}`) shape counts. The `make:resource` stub's `@return array<string, mixed>`, a plain `array`, `list<…>` and other generics fall through to the name convention, unchanged. Nested shapes, lists, `array<string, T>`, unions, literals, `?T`, collections (`Collection<int, X>` → `X[]`), Carbon/`DateTimeInterface` (→ `string`), `@phpstan-type` aliases and `@phpstan-import-type` are understood. A `X|MissingValue` field (the `whenLoaded()` / `when()` idiom) becomes optional. A `toArray()` provided by a trait is read from the trait's file. A subclass that does not override `toArray()`, or whose doc is only `{@inheritDoc}`, uses its parent's doc; `static` in it refers to the subclass. An abstract resource never takes a PHPDoc shape (it falls through to the attribute/name-convention tiers as before).
 
 Only types typefinder generates resolve: models it generates, backed enums under `enums.paths`, and resources under `resources.paths`. Any other class (a vendor model, a plain value object), and types with no JSON equivalent (`callable`, `Closure`, …), become `unknown` with a warning naming the resource and field.
 
@@ -279,7 +279,7 @@ The name convention assumes the resource returns the model's attributes. If your
 
 **Upgrading:** a resource that already documents `@return array{…}` on `toArray()` and has no `#[TypefinderResource]` attribute now gets that shape instead of the same-named model. To keep the old type, add `#[TypefinderResource(model: User::class)]`. This release also adds `nikic/php-parser` ^5 and `phpstan/phpdoc-parser` ^2 as dependencies; apps pinned to phpdoc-parser ^1 must upgrade.
 
-**Known limits:** in watch / `--only` runs, editing a parent resource's `toArray()` doc, or a class that defines an imported `@phpstan-type` alias, does not re-render the resources that use it; run a full `typefinder:generate` to refresh. A `toArray()` provided by a trait is not read (the resource falls through to the next tier).
+**Known limits:** in watch / `--only` runs, editing a parent resource's `toArray()` doc, a trait that provides `toArray()`, or a class that defines an imported `@phpstan-type` alias, does not re-render the resources that use it; run a full `typefinder:generate` to refresh.
 
 ### Pages (opt-in, `typefinder.inertia.enabled`)
 
