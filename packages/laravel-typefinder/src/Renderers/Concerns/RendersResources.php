@@ -92,12 +92,10 @@ trait RendersResources
         if ($type['kind'] === 'object') {
             $lines = [];
             foreach ($type['fields'] as $field) {
-                $lines[] = sprintf(
-                    '  %s%s: %s;',
-                    $this->renderObjectKey((string) $field['name']),
-                    $field['optional'] ? '?' : '',
+                $lines[] = '  '.$this->renderObjectField(
+                    $field,
                     $this->renderTypeNode($field['type'], $imports, $resource['fqcn'], $allModels, $allEnums, $allResources),
-                );
+                ).';';
             }
 
             if ($type['open']) {
@@ -172,12 +170,7 @@ trait RendersResources
                 }, $node['of']));
             case 'object':
                 $parts = array_map(
-                    fn (array $field): string => sprintf(
-                        '%s%s: %s',
-                        $this->renderObjectKey((string) $field['name']),
-                        $field['optional'] ? '?' : '',
-                        $render($field['type']),
-                    ),
+                    fn (array $field): string => $this->renderObjectField($field, $render($field['type'])),
                     $node['fields'],
                 );
                 if ($node['open']) {
@@ -202,6 +195,21 @@ trait RendersResources
         }
 
         return $flat;
+    }
+
+    /**
+     * One object member (`key?: T`), shared by the multi-line top level and inline nested objects.
+     *
+     * @param  array{name: string, optional: bool}  $field
+     */
+    private function renderObjectField(array $field, string $renderedType): string
+    {
+        return sprintf(
+            '%s%s: %s',
+            $this->renderObjectKey((string) $field['name']),
+            $field['optional'] ? '?' : '',
+            $renderedType,
+        );
     }
 
     private function renderObjectKey(string $name): string
