@@ -199,7 +199,7 @@ Handy for `<select options={Object.values(PostStatus)}>` and similar runtime pat
 
 ### Form Requests
 
-Validation rules map to TypeScript types. `required` → non-optional; `nullable` → adds `| null`; `sometimes` and conditional `required_*` rules → optional. Fields without `required` are optional.
+Validation rules map to TypeScript types. `required` and `present` → non-optional; `nullable` → adds `| null`; `sometimes` (also next to `required` or `present`) and conditional `required_*` / `present_*` rules → optional. Fields without `required` or `present` are optional.
 
 ```typescript
 import type { PostStatus } from '../enums';

@@ -550,8 +550,14 @@ class RequestExtractor
      */
     protected function isRequired(array $rules): bool
     {
+        // `sometimes` runs the other rules only when the key was sent.
+        if (in_array('sometimes', $rules, true)) {
+            return false;
+        }
+
         foreach ($rules as $rule) {
-            if ($rule === 'required') {
+            // `present` allows an empty value, but the key itself must be sent.
+            if ($rule === 'required' || $rule === 'present') {
                 return true;
             }
 
