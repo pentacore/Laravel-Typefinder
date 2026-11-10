@@ -460,16 +460,40 @@ export type ErrorResponse = { message: string };
 TS;
     }
 
+    /**
+     * Render a category barrel: one re-export line per file.
+     *
+     * @param  list<string>|array<string, list<string>>  $typeNames  the file names, each exporting the type it
+     *                                                               is named after; or the exported type names by file name
+     */
     public function renderBarrelIndex(array $typeNames): string
     {
-        sort($typeNames, SORT_STRING);
+        $exportsByFile = array_is_list($typeNames)
+            ? array_combine($typeNames, array_map(fn (string $name): array => [$name], $typeNames))
+            : $typeNames;
 
-        $lines = array_map(
-            fn (string $name): string => sprintf("export type { %s } from './%s';", $name, $name),
-            $typeNames
-        );
+        ksort($exportsByFile, SORT_STRING);
+
+        $lines = [];
+        foreach ($exportsByFile as $file => $names) {
+            $lines[] = sprintf("export type { %s } from './%s';", implode(', ', $names), $file);
+        }
 
         return self::FILE_HEADER."\n".implode("\n", $lines)."\n";
+    }
+
+    /**
+     * The types a rendered file exports: the one the file is named after
+     * first, then the others (write shapes, a query type, extracted nested
+     * types) in file order.
+     *
+     * @return list<string>
+     */
+    public static function exportedTypeNames(string $content, string $own): array
+    {
+        preg_match_all('/^export type ([A-Za-z_$][\w$]*)/m', $content, $matches);
+
+        return array_values(array_unique([$own, ...$matches[1]]));
     }
 
     /**
