@@ -46,7 +46,7 @@ php artisan typefinder:generate [--debug] [--json] [--check] [--strict]
 | `AsStringable` / `AsUri` / `AsHtmlString` | `string` |
 | `AsEnumCollection:{Enum}` / `AsEnumArrayObject:{Enum}` | inferred enum type, e.g. `PostStatus[]` |
 | Parameterised cast `Name:args` with no exact mapping | resolved as `Name` |
-| Unknown cast (no `#[TypefinderCast]` attribute, no `Typefinder::registerCast()` entry, not a backed enum) | `unknown` (warning emitted) |
+| Unknown cast (no `#[TypefinderCast]` attribute, no `Typefinder::registerCast()` entry, no `typefinder.casts.type_map` entry, not a backed enum) | `unknown` (warning emitted) |
 
 ## Type resolution precedence — models, resources, requests
 

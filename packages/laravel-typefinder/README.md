@@ -75,7 +75,7 @@ Scans configured directories, resolves types, and writes `.d.ts` files to `outpu
 | `--check` | Dry-run: generate into a temp directory, compare against the on-disk output, exit non-zero if they differ. A CI gate for **committed** output only. See [Using typefinder in CI](#using-typefinder-in-ci). |
 | `--debug` | Print line-oriented diagnostic output prefixed with `[typefinder]`. Includes per-class parsing lines so you can pinpoint a failing class. |
 | `--json` | Output a single JSON object to stdout (machine-readable, used by the Vite plugin). |
-| `--strict` | Exit non-zero when the run produced any warning (unknown column types, skipped classes, …). Combine with `--check` for a CI gate on committed output, or add it to the regular generate step in CI. |
+| `--strict` | Exit non-zero when the run produced any warning (unknown column types, casts with no TypeScript mapping, PHPDoc fields emitted as `unknown`, skipped classes, …). Combine with `--check` for a CI gate on committed output, or add it to the regular generate step in CI. |
 | `--only=<path>` | Re-extract only the given absolute paths instead of the full tree. Repeatable (`--only=/a/Foo.php --only=/a/Bar.php`). Used by the Vite plugin's watch loop for incremental regeneration; rarely useful by hand. |
 
 ### Watching for changes
@@ -88,7 +88,7 @@ Starts a long-lived generator process that reads incremental regeneration reques
 
 ### Using typefinder in CI
 
-`--strict` works with both workflows below. Existing benign warnings (unknown column types, skipped classes) must be fixed, or the classes ignored with `#[TypefinderIgnore]`, before enabling it.
+`--strict` works with both workflows below. Existing benign warnings (unknown column types, unmapped casts, PHPDoc fields emitted as `unknown`, skipped classes) must be fixed, or the classes ignored with `#[TypefinderIgnore]`, before enabling it.
 
 Choose one of two workflows. They differ in whether the generated files are committed, and `--check` only makes sense in the first.
 

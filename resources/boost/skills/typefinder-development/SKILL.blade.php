@@ -59,7 +59,7 @@ import type { Post } from '@typefinder/models/Post'
 ## After running
 
 - If frontend code imports from the regenerated types, verify it still type-checks (`tsc --noEmit` or the project's build/check script).
-- If `warnings[]` is non-empty, relay them. A typical warning is "unknown cast type fell back to `unknown`" — the fix is either a `#[\Pentacore\Typefinder\Attributes\TypefinderCast('T')]` attribute on the cast class (if the user owns it) or a `Typefinder::registerCast(...)` call from a service provider (for third-party casts).
+- If `warnings[]` is non-empty, relay them. A typical warning is "`Model.column`: cast '…' has no TypeScript mapping — emitted as `unknown`". Fix it with one of: a `#[\Pentacore\Typefinder\Attributes\TypefinderCast('T')]` attribute on the cast class (if the user owns it), a `Typefinder::registerCast(...)` call from a service provider (for third-party casts), or an entry in `typefinder.casts.type_map` in `config/typefinder.php`.
 - Do **not** edit files under the output path (default `resources/js/typefinder/`). They are regenerated on every run and edits will be lost. The correct escape hatch is the `#[TypefinderOverrides([...])]` attribute on the source class.
 
 ## Debug mode
