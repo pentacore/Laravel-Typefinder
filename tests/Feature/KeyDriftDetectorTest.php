@@ -1279,6 +1279,42 @@ final class KeyDriftDetectorTest extends TestCase
         ], $this->modelDrift($class, Product::class, ['owner_id', 'created_at', 'updated_at'], ['label' => 'string']));
     }
 
+    public function test_optional_extend_key_missing_from_code_has_no_model_drift(): void
+    {
+        $class = $this->loadClass(<<<'PHP'
+            class {CLASS} extends \Illuminate\Http\Resources\Json\JsonResource
+            {
+                public function toArray(\Illuminate\Http\Request $request): array
+                {
+                    return ['id' => $this->id, 'name' => $this->name];
+                }
+            }
+            PHP);
+
+        $this->assertSame([], $this->modelDrift($class, Product::class, ['owner_id', 'created_at', 'updated_at'], ['label?' => 'string']));
+    }
+
+    public function test_model_column_missing_from_one_return_is_not_always_returned(): void
+    {
+        $class = $this->loadClass(<<<'PHP'
+            class {CLASS} extends \Illuminate\Http\Resources\Json\JsonResource
+            {
+                public function toArray(\Illuminate\Http\Request $request): array
+                {
+                    if ($request->boolean('brief')) {
+                        return ['id' => $this->id];
+                    }
+
+                    return ['id' => $this->id, 'name' => $this->name];
+                }
+            }
+            PHP);
+
+        $warnings = $this->modelDrift($class, Tag::class, only: ['id', 'name']);
+        $this->assertCount(1, $warnings);
+        $this->assertStringContainsString('typed as (by name): does not always return "name" — ', $warnings[0]);
+    }
+
     public function test_relation_via_when_loaded_is_optional_and_conditional(): void
     {
         $class = $this->loadClass(<<<'PHP'
