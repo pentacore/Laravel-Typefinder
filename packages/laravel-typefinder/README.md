@@ -279,7 +279,7 @@ The name convention assumes the resource returns the model's attributes. If your
 
 **Upgrading:** a resource that already documents `@return array{…}` on `toArray()` and has no `#[TypefinderResource]` attribute now gets that shape instead of the same-named model. To keep the old type, add `#[TypefinderResource(model: User::class)]`. This release also adds `nikic/php-parser` ^5 and `phpstan/phpdoc-parser` ^2 as dependencies; apps pinned to phpdoc-parser ^1 must upgrade.
 
-**Known limits:** in watch / `--only` runs, editing a parent resource's `toArray()` doc, a trait that provides `toArray()`, or a class that defines an imported `@phpstan-type` alias, does not re-render the resources that use it; run a full `typefinder:generate` to refresh.
+**Known limits:** in watch / `--only` runs, editing a parent resource's `toArray()` doc, a trait that provides `toArray()`, or a class that defines an imported `@phpstan-type` alias, does not re-render the resources that use it; run a full `typefinder:generate` to refresh. Trait conflict resolution (`insteadof` / `as`) is not considered: the first trait in `use` order that declares `toArray()` is read.
 
 ### Pages (opt-in, `typefinder.inertia.enabled`)
 

@@ -72,6 +72,13 @@ final class PhpDocTypeMapper
         'scalar' => 'string | number | boolean',
     ];
 
+    /** keyword() markers for keywords that are not plain TypeScript text. */
+    private const string KEYWORD_LIST = ':list';
+
+    private const string KEYWORD_SELF = ':self';
+
+    private const string KEYWORD_UNSUPPORTED = ':unsupported';
+
     private const string CLASS_NAME = '/^\\\\?[A-Za-z_\x80-\xff][A-Za-z0-9_\x80-\xff]*(\\\\[A-Za-z_\x80-\xff][A-Za-z0-9_\x80-\xff]*)*$/';
 
     private readonly ?Closure $onWarn;
@@ -136,34 +143,15 @@ final class PhpDocTypeMapper
      */
     private function mapIdentifier(IdentifierTypeNode $type, PhpDocScope $scope, string $fieldPath): array
     {
-        $keyword = strtolower($type->name);
+        $keyword = $this->keyword($type->name);
 
-        if (isset(self::SIMPLE_KEYWORDS[$keyword])) {
-            return $this->ts(self::SIMPLE_KEYWORDS[$keyword]);
-        }
-
-        if (in_array($keyword, self::INT_KEYWORDS, true)) {
-            return $this->ts('number');
-        }
-
-        if (str_ends_with($keyword, '-string')) {
-            return $this->ts('string');
-        }
-
-        if (in_array($keyword, self::ARRAY_KEYWORDS, true) || $keyword === 'object') {
-            return $this->ts(self::RECORD);
-        }
-
-        if (in_array($keyword, self::LIST_KEYWORDS, true)) {
-            return ['kind' => 'array', 'of' => $this->ts('unknown')];
-        }
-
-        if (in_array($keyword, self::UNSUPPORTED_KEYWORDS, true)) {
-            return $this->unsupported($type, $scope, $fieldPath);
-        }
-
-        if ($keyword === 'static' || $keyword === 'self') {
-            return $this->leaf('resource', $scope->selfFqcn);
+        if ($keyword !== null) {
+            return match ($keyword) {
+                self::KEYWORD_LIST => ['kind' => 'array', 'of' => $this->ts('unknown')],
+                self::KEYWORD_SELF => $this->leaf('resource', $scope->selfFqcn),
+                self::KEYWORD_UNSUPPORTED => $this->unsupported($type, $scope, $fieldPath),
+                default => $this->ts($keyword),
+            };
         }
 
         $alias = $scope->alias($type->name);
@@ -352,7 +340,7 @@ final class PhpDocTypeMapper
         $remaining = array_values(array_filter(
             $type->types,
             fn (TypeNode $member): bool => ! $member instanceof IdentifierTypeNode
-                || $this->isKeyword($member->name)
+                || $this->keyword($member->name) !== null
                 || $this->resolveClass($member->name, $scope) !== MissingValue::class,
         ));
 
@@ -398,16 +386,24 @@ final class PhpDocTypeMapper
     }
 
     /**
-     * Whether a docblock identifier is a PHPDoc type keyword rather than a
-     * class name (so it is never handed to the autoloader).
+     * The single source of keyword knowledge: the TypeScript text a bare
+     * PHPDoc keyword maps to (or a KEYWORD_* marker), or null when the
+     * identifier is not a keyword and so names a class or alias.
      */
-    private function isKeyword(string $name): bool
+    private function keyword(string $name): ?string
     {
         $keyword = strtolower($name);
 
-        return isset(self::SIMPLE_KEYWORDS[$keyword])
-            || str_ends_with($keyword, '-string')
-            || in_array($keyword, ['object', 'static', 'self', ...self::INT_KEYWORDS, ...self::ARRAY_KEYWORDS, ...self::LIST_KEYWORDS, ...self::UNSUPPORTED_KEYWORDS], true);
+        return match (true) {
+            isset(self::SIMPLE_KEYWORDS[$keyword]) => self::SIMPLE_KEYWORDS[$keyword],
+            in_array($keyword, self::INT_KEYWORDS, true) => 'number',
+            str_ends_with($keyword, '-string') => 'string',
+            in_array($keyword, self::ARRAY_KEYWORDS, true), $keyword === 'object' => self::RECORD,
+            in_array($keyword, self::LIST_KEYWORDS, true) => self::KEYWORD_LIST,
+            in_array($keyword, self::UNSUPPORTED_KEYWORDS, true) => self::KEYWORD_UNSUPPORTED,
+            $keyword === 'static', $keyword === 'self' => self::KEYWORD_SELF,
+            default => null,
+        };
     }
 
     /**
