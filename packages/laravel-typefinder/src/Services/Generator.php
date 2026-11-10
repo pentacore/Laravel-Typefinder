@@ -1045,7 +1045,7 @@ final class Generator
             && $reflectionClass->getAttributes(TypefinderIgnore::class, ReflectionAttribute::IS_INSTANCEOF) === [];
     }
 
-    private function extractSingleModel(string $className, array $config, callable $warn): array
+    private function extractSingleModel(string $className, array $config, callable $warn): ?array
     {
         $castOverrides = $config['casts']['type_map'] ?? [];
         $modelExtractor = new ModelExtractor(
@@ -1053,6 +1053,12 @@ final class Generator
             new CastTypeResolver($castOverrides, $this->typefinderRegistry),
             $warn,
         );
+
+        // A full run emits nothing for an abstract or #[TypefinderIgnore]d
+        // model, so an incremental one must not either.
+        if (! $modelExtractor->isEmittable($className)) {
+            return null;
+        }
 
         $extraction = $modelExtractor->extract($className);
         $morphToResolver = new MorphToResolver;

@@ -19,6 +19,7 @@ use Illuminate\Database\Eloquent\Relations\MorphToMany;
 use Illuminate\Database\Eloquent\Relations\Pivot;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 use Pentacore\Typefinder\Attributes\TypefinderIgnore;
 use Pentacore\Typefinder\Attributes\TypefinderOverrides;
 use Pentacore\Typefinder\Attributes\TypefinderWriteShape;
@@ -34,6 +35,16 @@ use Symfony\Component\Finder\Finder;
 
 class ModelExtractor
 {
+    /** PHP scalar types an accessor can declare, as TypeScript. */
+    private const array SCALAR_TYPES = [
+        'string' => 'string',
+        'int' => 'number',
+        'float' => 'number',
+        'bool' => 'boolean',
+        'true' => 'true',
+        'false' => 'false',
+    ];
+
     public function __construct(
         protected ColumnTypeResolver $columnTypeResolver,
         protected CastTypeResolver $castTypeResolver,
@@ -59,8 +70,9 @@ class ModelExtractor
         return [
             'name' => $reflectionClass->getShortName(),
             'fqcn' => $modelClass,
-            'columns' => $columns,
+            'columns' => [...$columns, ...$this->extractAppends($model, $reflectionClass, $columns)],
             'relationships' => $relationships,
+            // Appended attributes are read-only: computed before they join the columns.
             'assignable_columns' => $this->filterAssignable($model, $columns),
         ];
     }
@@ -98,7 +110,7 @@ class ModelExtractor
                 continue;
             }
 
-            if ($this->isIgnored($className)) {
+            if (! $this->isEmittable($className)) {
                 continue;
             }
 
@@ -204,6 +216,93 @@ class ModelExtractor
     }
 
     /**
+     * Attributes in `$appends` are part of the serialized model, after the
+     * columns. `$hidden`/`$visible` apply as they do to columns, and an
+     * appended name that is also a column keeps the column's entry.
+     *
+     * @param  list<array{name: string}>  $columns
+     * @return list<array{name: string, type: string, nullable: bool, is_primary: bool, is_server_filled: bool, is_appended: bool}>
+     */
+    protected function extractAppends(Model $model, ReflectionClass $reflectionClass, array $columns): array
+    {
+        $overrides = $this->getTypeOverrides($model);
+        $hidden = $model->getHidden();
+        $visible = $model->getVisible();
+        $taken = array_column($columns, 'name');
+        $appends = [];
+
+        foreach ($model->getAppends() as $name) {
+            if (in_array($name, $taken, true) || in_array($name, $hidden, true)) {
+                continue;
+            }
+
+            if (! empty($visible) && ! in_array($name, $visible, true)) {
+                continue;
+            }
+
+            $taken[] = $name;
+            [$type, $nullable] = isset($overrides[$name])
+                ? [$overrides[$name], false]
+                : $this->accessorType($reflectionClass, $name);
+
+            $appends[] = [
+                'type' => $type,
+                'name' => $name,
+                'nullable' => $nullable,
+                'is_primary' => false,
+                'is_server_filled' => true,
+                'is_appended' => true,
+            ];
+        }
+
+        return $appends;
+    }
+
+    /**
+     * The TypeScript type of an accessor, read from `getFooAttribute()`'s
+     * return type or from the `Attribute<TGet, TSet>` generic documented on
+     * `foo()`. Anything else is `unknown`.
+     *
+     * @return array{string, bool} type and nullability
+     */
+    protected function accessorType(ReflectionClass $reflectionClass, string $name): array
+    {
+        $legacy = 'get'.Str::studly($name).'Attribute';
+        if ($reflectionClass->hasMethod($legacy)) {
+            $returnType = $reflectionClass->getMethod($legacy)->getReturnType();
+            if ($returnType instanceof ReflectionNamedType) {
+                return [
+                    self::SCALAR_TYPES[$returnType->getName()] ?? 'unknown',
+                    $returnType->allowsNull() && $returnType->getName() !== 'mixed',
+                ];
+            }
+
+            return ['unknown', false];
+        }
+
+        $modern = Str::camel($name);
+        $doc = $reflectionClass->hasMethod($modern) ? $reflectionClass->getMethod($modern)->getDocComment() : false;
+        if ($doc === false || preg_match('/@return\s+[\w\\\\]*Attribute<([^,<>]+),/', $doc, $match) !== 1) {
+            return ['unknown', false];
+        }
+
+        $members = array_map(trim(...), explode('|', ltrim(trim($match[1]), '?')));
+        $nullable = str_starts_with(trim($match[1]), '?') || in_array('null', $members, true);
+        $members = array_values(array_filter($members, fn (string $member): bool => $member !== 'null'));
+
+        $types = [];
+        foreach ($members as $member) {
+            if (! isset(self::SCALAR_TYPES[$member])) {
+                return ['unknown', false];
+            }
+
+            $types[] = self::SCALAR_TYPES[$member];
+        }
+
+        return $types === [] ? ['unknown', false] : [implode(' | ', array_unique($types)), $nullable];
+    }
+
+    /**
      * @return list<string>
      */
     protected function getContractServerFilled(Model $model): array
@@ -275,7 +374,9 @@ class ModelExtractor
         $relationships = [];
 
         foreach ($reflectionClass->getMethods(ReflectionMethod::IS_PUBLIC) as $reflectionMethod) {
-            if ($reflectionMethod->class !== $reflectionClass->getName()) {
+            // Relations declared on a parent model are inherited; only the
+            // framework base class itself has none to offer.
+            if ($reflectionMethod->class === Model::class) {
                 continue;
             }
 
@@ -381,11 +482,15 @@ class ModelExtractor
     }
 
     /**
-     * Resolve the fully qualified class name from a PHP file.
+     * Whether a model class gets a type of its own: not `#[TypefinderIgnore]`d,
+     * and not abstract (a base model has no table to read; its relations and
+     * accessors are emitted on the models that extend it).
      */
-    protected function isIgnored(string $className): bool
+    public function isEmittable(string $className): bool
     {
-        return new ReflectionClass($className)
-            ->getAttributes(TypefinderIgnore::class, ReflectionAttribute::IS_INSTANCEOF) !== [];
+        $reflectionClass = new ReflectionClass($className);
+
+        return ! $reflectionClass->isAbstract()
+            && $reflectionClass->getAttributes(TypefinderIgnore::class, ReflectionAttribute::IS_INSTANCEOF) === [];
     }
 }
