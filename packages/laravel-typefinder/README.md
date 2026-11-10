@@ -27,6 +27,7 @@ Laravel Typefinder introspects your database schema, `$casts` declarations, vali
   - [Pages](#pages-opt-in-typefinderinertiaenabled)
   - [Broadcasting](#broadcasting-opt-in-typefinderbroadcastingenabled)
   - [Helpers](#helpers-always-emitted)
+  - [Drift checks](#drift-checks)
 - [Attribute reference](#attribute-reference)
 - [Custom casts](#custom-casts)
 - [Configuration](#configuration)
@@ -279,7 +280,7 @@ The name convention assumes the resource returns the model's attributes. If your
 
 **Upgrading:** a resource that already documents `@return array{…}` on `toArray()` and has no `#[TypefinderResource]` attribute now gets that shape instead of the same-named model. To keep the old type, add `#[TypefinderResource(model: User::class)]`. This release also adds `nikic/php-parser` ^5 and `phpstan/phpdoc-parser` ^2 as dependencies; apps pinned to phpdoc-parser ^1 must upgrade.
 
-**Known limits:** in watch / `--only` runs, editing a parent resource's `toArray()` doc, a trait that provides `toArray()`, or a class that defines an imported `@phpstan-type` alias, does not re-render the resources that use it; run a full `typefinder:generate` to refresh. Trait conflict resolution (`insteadof` / `as`) is not considered: the first trait in `use` order that declares `toArray()` is read.
+**Known limits:** in watch / `--only` runs, editing a parent resource's `toArray()` doc, a trait that provides `toArray()`, or a class that defines an imported `@phpstan-type` alias, does not re-render the resources that use it; run a full `typefinder:generate` to refresh. Trait conflict resolution (`insteadof` / `as`) is not considered: the first trait in `use` order that declares `toArray()` is read. In watch mode, method bodies are re-read from disk on every change, but attributes (`#[TypefinderResource]`, `#[TypefinderPage]`) of a class the watcher has already loaded keep their old values, so drift warnings may compare the new code with the old attribute until the dev server restarts.
 
 ### Pages (opt-in, `typefinder.inertia.enabled`)
 
@@ -319,6 +320,31 @@ ErrorResponse                           { message: string }
 ```
 
 Consumers write `WrappedResource<UserResource>` or `PaginatedResourceCollection<PostResource>` at the fetch site. When you return a raw paginator from `Model::paginate()` without wrapping in a Resource, use `PaginatedModel<User>` instead.
+
+### Drift checks
+
+Generation compares what you declare with what your code actually produces, by key name only (types are never compared), and reports mismatches as warnings:
+
+- **Resources:** the keys of a declared shape (`#[TypefinderResource(shape: [...])]`, or a PHPDoc `@return array{…}`) against the literal keys returned by the `toArray()` in the resource's own file. Inherited or trait-provided `toArray()` methods are not read.
+- **Pages:** the props of a `#[TypefinderPage]` against the props the same action passes to `Inertia::render()` or the `inertia()` helper for that component (literal arrays, `compact()`, chained `->with()` calls, and `Inertia::optional|lazy|defer` wrappers). Several `#[TypefinderPage]` attributes for one component on one action are merged first, as in the generated type: a prop is optional when any of them leaves it out or lists it in `optional`. Only with `typefinder.inertia.enabled`.
+
+The checks favour precision. When the code is not fully literal (a spread, `parent::toArray()`, a computed key), only "undeclared key" warnings are reported, since a key that is certainly returned and not declared is still a fact, while a missing key cannot be proven. Only renders the action makes directly are read, not renders in a helper method or a base controller: an action whose every return is such a call gets no page warnings, and an action that also returns anything other than a direct render of the page (a helper call, a redirect, another page, a bare `return;`) gets only "undeclared prop" warnings. A key is called conditional only when it is conditional everywhere it appears (`$this->when*()` without a default, `mergeWhen()`). An early `return [];` guard in `toArray()` does not make the other keys "not always returned". A file that fails to parse produces no drift warnings.
+
+Shared Inertia props are never reported as not passed: `errors` (shared by Inertia itself), the literal keys returned by `share()` in middleware under `app/Http/Middleware` that extends `Inertia\Middleware` (`return array_merge(parent::share($request), [...])` or `[...parent::share($request), ...]`), and, in an action that calls `Inertia::share()` itself, every prop. Passing a shared prop explicitly without declaring it is still reported.
+
+Warnings (`{R}` is the resource class, `{C}::{m}` the controller method):
+
+- `{R}::toArray() returns key "k" not declared in #[TypefinderResource] shape` (or `PHPDoc @return shape`)
+- `{R}::toArray(): #[TypefinderResource] shape declares "k" but toArray() never returns it`
+- `{R}::toArray(): … declares "k" as required but toArray() does not always return it (make it optional?)`
+- `{R}::toArray(): "k" is conditional in code but required in …`
+- `{R}: #[TypefinderResource] shape and PHPDoc @return shape disagree (only in attribute: {…}; only in PHPDoc: {…})`
+- `{C}::{m}() passes prop "k" to Inertia page "X" but #[TypefinderPage] does not declare it`
+- `{C}::{m}(): #[TypefinderPage] declares prop "k" for "X" but it is never passed`
+- `{C}::{m}(): #[TypefinderPage] declares prop "k" for "X" as required but it is not always passed (add it to optional?)`
+- `{C}::{m}(): prop "k" of "X" is optional or deferred in code but required in #[TypefinderPage] (add it to optional?)`
+
+Drift never changes the emitted types. Full, `--only` and watch runs report it for the files they process; add `--strict` to turn these warnings into a failing exit code.
 
 ## Attribute reference
 

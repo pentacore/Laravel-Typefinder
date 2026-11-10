@@ -30,6 +30,7 @@ use PhpParser\Node\Stmt\ClassMethod;
 use PhpParser\Node\Stmt\Function_;
 use PhpParser\Node\Stmt\Return_;
 use PhpParser\Node\VariadicPlaceholder;
+use PhpParser\NodeFinder;
 use PhpParser\NodeTraverser;
 use PhpParser\NodeVisitor;
 use PhpParser\NodeVisitorAbstract;
@@ -62,9 +63,15 @@ final readonly class KeyDriftDetector
         'Inertia\\Inertia::defer',
     ];
 
+    /** Props Inertia's own middleware shares with every page. */
+    private const array INERTIA_SHARED = ['errors'];
+
     private PhpDocShapeResolver $phpDocShapes;
 
     private ReturnedArrayReader $reader;
+
+    /** @var list<string> */
+    private array $sharedPageProps;
 
     /**
      * @param  ?PhpDocShapeResolver  $phpDocShapes  Reads the PHPDoc shape of a
@@ -72,11 +79,15 @@ final readonly class KeyDriftDetector
      *                                              `onWarn` so its warnings are not repeated.
      * @param  ?ReturnedArrayReader  $reader  Defaults to one that treats
      *                                        `Inertia::optional|lazy|defer()` as conditional.
+     * @param  list<string>  $sharedPageProps  Props the app shares with every
+     *                                         page ({@see InertiaSharedProps}); with `errors`, never reported
+     *                                         as not passed.
      */
-    public function __construct(?PhpDocShapeResolver $phpDocShapes = null, ?ReturnedArrayReader $reader = null)
+    public function __construct(?PhpDocShapeResolver $phpDocShapes = null, ?ReturnedArrayReader $reader = null, array $sharedPageProps = [])
     {
         $this->phpDocShapes = $phpDocShapes ?? new PhpDocShapeResolver(new GeneratedClasses);
         $this->reader = $reader ?? new ReturnedArrayReader(self::INERTIA_WRAPPERS);
+        $this->sharedPageProps = array_values(array_unique([...self::INERTIA_SHARED, ...array_map(strval(...), $sharedPageProps)]));
     }
 
     /**
@@ -124,11 +135,40 @@ final readonly class KeyDriftDetector
     }
 
     /**
+     * {@see self::checkPage()} for each action and component, after merging
+     * the `#[TypefinderPage]` entries one action declares for one component
+     * (the attribute is repeatable) key by key, as the generated type does:
+     * every declared prop counts, and a prop is optional when any entry
+     * lacks it or lists it as optional. Types are not compared.
+     *
+     * @param  list<array{component: string, props: array<array-key, string>, optional: list<string>, source: string}>  $pages
+     * @return list<string>
+     */
+    public function checkPages(array $pages): array
+    {
+        $groups = [];
+
+        foreach ($pages as $page) {
+            $groups[$page['source']."\0".$page['component']][] = $page;
+        }
+
+        $warnings = [];
+
+        foreach ($groups as $entries) {
+            $warnings = [...$warnings, ...$this->checkPage($this->mergedPage($entries))];
+        }
+
+        return $this->unique($warnings);
+    }
+
+    /**
      * Drift between a `#[TypefinderPage]` and the props its own action
      * passes to `Inertia::render('X', …)` / `inertia('X', …)` for the same
      * component (each matching call, with any chained `->with()`, is one
      * set of props). An action that renders elsewhere (a helper, a base
-     * controller) has no matching call and reports nothing.
+     * controller) has no matching call and reports nothing. Shared props
+     * (`errors`, the app's shared props) are never reported as not passed,
+     * and an action that calls `Inertia::share()` itself may pass any prop.
      *
      * @param  array{component: string, props: array<array-key, string>, optional: list<string>, source: string}  $page
      * @return list<string>
@@ -149,12 +189,95 @@ final readonly class KeyDriftDetector
             array_keys($page['props']),
         );
 
-        return $this->unique($this->compare($declared, false, $this->renders($node, $component), [
+        $renders = $this->renders($node, $component);
+
+        $share = $this->shareCall($node);
+
+        if ($share instanceof Expr) {
+            // Whatever it shares joins every render of this request.
+            $renders = array_map(
+                fn (ReturnedArray $props): ReturnedArray => new ReturnedArray([...$props->parts, $this->open($share)]),
+                $renders,
+            );
+        }
+
+        return $this->unique($this->compare($declared, false, $renders, [
             'undeclared' => static fn (string $key): string => sprintf('%s::%s() passes prop "%s" to Inertia page "%s" but #[TypefinderPage] does not declare it', $class, $method, $key, $component),
             'never' => static fn (string $key): string => sprintf('%s::%s(): #[TypefinderPage] declares prop "%s" for "%s" but it is never passed', $class, $method, $key, $component),
             'notAlways' => static fn (string $key): string => sprintf('%s::%s(): #[TypefinderPage] declares prop "%s" for "%s" as required but it is not always passed (add it to optional?)', $class, $method, $key, $component),
             'conditional' => static fn (string $key): string => sprintf('%s::%s(): prop "%s" of "%s" is optional or deferred in code but required in #[TypefinderPage] (add it to optional?)', $class, $method, $key, $component),
-        ]));
+        ], $this->sharedPageProps));
+    }
+
+    /**
+     * One action's entries for one component as a single entry, merged key
+     * by key like `Generator::mergePages()`, which also fails on type
+     * conflicts and so is not reused here.
+     *
+     * @param  non-empty-list<array{component: string, props: array<array-key, string>, optional: list<string>, source: string}>  $entries
+     * @return array{component: string, props: array<array-key, string>, optional: list<string>, source: string}
+     */
+    private function mergedPage(array $entries): array
+    {
+        if (count($entries) === 1) {
+            return $entries[0];
+        }
+
+        $props = [];
+        $declaredBy = [];
+        $optional = [];
+
+        foreach ($entries as $entry) {
+            $entryOptional = array_map(strval(...), $entry['optional']);
+
+            foreach ($entry['props'] as $key => $type) {
+                $props[$key] ??= $type;
+                $declaredBy[$key] = ($declaredBy[$key] ?? 0) + 1;
+
+                if (in_array((string) $key, $entryOptional, true)) {
+                    $optional[$key] = true;
+                }
+            }
+        }
+
+        foreach ($declaredBy as $key => $count) {
+            if ($count < count($entries)) {
+                $optional[$key] = true;
+            }
+        }
+
+        return [
+            'component' => $entries[0]['component'],
+            'props' => $props,
+            'optional' => array_map(strval(...), array_keys($optional)),
+            'source' => $entries[0]['source'],
+        ];
+    }
+
+    /**
+     * The first `Inertia::share(…)` or `inertia()->share(…)` call anywhere in
+     * the method body, or null.
+     */
+    private function shareCall(ClassMethod $method): ?Expr
+    {
+        $found = new NodeFinder()->findFirst($method->stmts ?? [], static function (Node $node): bool {
+            if ($node instanceof StaticCall) {
+                return $node->class instanceof Name
+                    && $node->name instanceof Identifier
+                    && $node->name->toLowerString() === 'share'
+                    && ReturnedArrayReader::refersTo($node->class, self::INERTIA);
+            }
+
+            return $node instanceof MethodCall
+                && $node->name instanceof Identifier
+                && $node->name->toLowerString() === 'share'
+                && $node->var instanceof FuncCall
+                && $node->var->name instanceof Name
+                && strcasecmp($node->var->name->toString(), 'inertia') === 0
+                && $node->var->args === [];
+        });
+
+        return $found instanceof Expr ? $found : null;
     }
 
     /**
@@ -169,7 +292,14 @@ final readonly class KeyDriftDetector
             return [];
         }
 
-        return $this->compare($declared, $declaredOpen, $this->reader->returns($method), [
+        $returns = $this->reader->returns($method);
+        // An empty-array guard (`if ($this->resource === null) { return []; }`)
+        // does not make keys "not always returned". It holds no keys and is
+        // closed, so that is all dropping it changes; when every return is
+        // empty, they are kept and the declared keys are never returned.
+        $withKeys = array_values(array_filter($returns, static fn (ReturnedArray $returned): bool => $returned->parts !== []));
+
+        return $this->compare($declared, $declaredOpen, $withKeys === [] ? $returns : $withKeys, [
             'undeclared' => static fn (string $key): string => sprintf('%s::toArray() returns key "%s" not declared in %s', $fqcn, $key, $src),
             'never' => static fn (string $key): string => sprintf('%s::toArray(): %s declares "%s" but toArray() never returns it', $fqcn, $src, $key),
             'notAlways' => static fn (string $key): string => sprintf('%s::toArray(): %s declares "%s" as required but toArray() does not always return it (make it optional?)', $fqcn, $src, $key),
@@ -238,14 +368,16 @@ final readonly class KeyDriftDetector
      * A key conditional in one return and unconditional in another is not
      * reported: some path returns it unconditionally, so the code alone does
      * not prove the declaration wrong. Nor is a conditional key in an open
-     * return: the open part may supply it unconditionally.
+     * return: the open part may supply it unconditionally. `$shared` keys are
+     * supplied from elsewhere, so they are never `never` or `notAlways`.
      *
      * @param  list<array{key: string, optional: bool}>  $declared
      * @param  list<ReturnedArray>  $returns
      * @param  array{undeclared: Closure(string): string, never: Closure(string): string, notAlways: Closure(string): string, conditional: Closure(string): string}  $messages
+     * @param  list<string>  $shared
      * @return list<string>
      */
-    private function compare(array $declared, bool $declaredOpen, array $returns, array $messages): array
+    private function compare(array $declared, bool $declaredOpen, array $returns, array $messages, array $shared = []): array
     {
         if ($returns === []) {
             return [];
@@ -281,16 +413,17 @@ final readonly class KeyDriftDetector
             }
 
             $flags = $seen[$key] ?? [];
+            $isShared = in_array($key, $shared, true);
 
             if ($flags === []) {
-                if ($allClosed) {
+                if ($allClosed && ! $isShared) {
                     $warnings[] = $messages['never']($key);
                 }
 
                 continue;
             }
 
-            if ($allClosed && count($flags) < count($returns)) {
+            if ($allClosed && ! $isShared && count($flags) < count($returns)) {
                 $warnings[] = $messages['notAlways']($key);
 
                 continue;
@@ -311,7 +444,10 @@ final readonly class KeyDriftDetector
      * `->with()` calls) that is returned directly, or as an arm of a ternary
      * or `match` that is returned, has exactly the props read; anywhere else
      * (assigned, passed on, receiver of another method) more props may be
-     * added later, so its props are open.
+     * added later, so its props are open. When any of the method's own
+     * returns is something else (a helper or base-controller call, a
+     * redirect, another page, a bare `return;`), that path may render the
+     * component elsewhere with other props, so every render is open.
      *
      * @return list<ReturnedArray>
      */
@@ -329,6 +465,11 @@ final readonly class KeyDriftDetector
             /** @var array<int, true> spl_object_id of expressions returned as they are */
             private array $returned = [];
 
+            /** @var array<int, true> spl_object_id of the matched render expressions */
+            private array $matched = [];
+
+            private bool $bareReturn = false;
+
             /** @param  Closure(Expr, string): ?ReturnedArray  $match */
             public function __construct(private readonly Closure $match, private readonly string $component) {}
 
@@ -338,8 +479,12 @@ final readonly class KeyDriftDetector
                     return NodeVisitor::DONT_TRAVERSE_CHILDREN;
                 }
 
-                if ($node instanceof Return_ && $node->expr instanceof Expr) {
-                    $this->markReturned($node->expr);
+                if ($node instanceof Return_) {
+                    if ($node->expr instanceof Expr) {
+                        $this->markReturned($node->expr);
+                    } else {
+                        $this->bareReturn = true;
+                    }
                 }
 
                 $props = $node instanceof Expr ? ($this->match)($node, $this->component) : null;
@@ -348,11 +493,18 @@ final readonly class KeyDriftDetector
                     return null;
                 }
 
+                $this->matched[spl_object_id($node)] = true;
                 $this->renders[] = isset($this->returned[spl_object_id($node)])
                     ? $props
                     : new ReturnedArray([...$props->parts, new ReturnedPart(ReturnedPart::EXPR, expr: $node)]);
 
                 return NodeVisitor::DONT_TRAVERSE_CHILDREN;
+            }
+
+            /** Some return of the method is not a matched render. */
+            public function hasOtherReturn(): bool
+            {
+                return $this->bareReturn || array_diff_key($this->returned, $this->matched) !== [];
             }
 
             private function markReturned(Expr $expr): void
@@ -378,7 +530,15 @@ final readonly class KeyDriftDetector
 
         new NodeTraverser($visitor)->traverse($method->stmts);
 
-        return $visitor->renders;
+        if (! $visitor->hasOtherReturn()) {
+            return $visitor->renders;
+        }
+
+        // An opaque part with no expression: whatever the other path renders.
+        return array_map(
+            static fn (ReturnedArray $props): ReturnedArray => new ReturnedArray([...$props->parts, new ReturnedPart(ReturnedPart::EXPR)]),
+            $visitor->renders,
+        );
     }
 
     /**

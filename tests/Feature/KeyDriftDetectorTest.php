@@ -6,9 +6,11 @@ namespace Tests\Feature;
 
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DriftingPageController;
+use App\Http\Controllers\InSyncPageController;
 use App\Http\Controllers\PlainController;
 use App\Http\Controllers\PostController;
 use App\Http\Controllers\UserController;
+use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Resources\AdminUserResource;
 use App\Http\Resources\ConditionalKeysResource;
 use App\Http\Resources\DoubleDeclaredResource;
@@ -19,6 +21,7 @@ use App\Http\Resources\PostResource;
 use App\Http\Resources\UserResource;
 use App\Models\User;
 use Illuminate\Support\Facades\File;
+use Pentacore\Typefinder\Analysis\InertiaSharedProps;
 use Pentacore\Typefinder\Analysis\KeyDriftDetector;
 use Pentacore\Typefinder\Extractors\ControllerExtractor;
 use Pentacore\Typefinder\Extractors\ResourceExtractor;
@@ -167,6 +170,51 @@ final class KeyDriftDetectorTest extends TestCase
             PHP);
 
         $this->assertSame([], $this->checkResource($class));
+    }
+
+    public function test_empty_guard_return_is_not_a_return_without_the_key(): void
+    {
+        $class = $this->loadClass(<<<'PHP'
+            #[\Pentacore\Typefinder\Attributes\TypefinderResource(shape: ['id' => 'number', 'name' => 'string', 'title' => 'string', 'gone' => 'string'])]
+            class {CLASS} extends \Illuminate\Http\Resources\Json\JsonResource
+            {
+                public function toArray(\Illuminate\Http\Request $request): array
+                {
+                    if ($this->resource === null) {
+                        return [];
+                    }
+
+                    if ($request->boolean('short')) {
+                        return ['id' => 1, 'name' => 'n'];
+                    }
+
+                    return ['id' => 1, 'name' => 'n', 'title' => 't'];
+                }
+            }
+            PHP);
+
+        $this->assertSame([
+            $class.'::toArray(): #[TypefinderResource] shape declares "title" as required but toArray() does not always return it (make it optional?)',
+            $class.'::toArray(): #[TypefinderResource] shape declares "gone" but toArray() never returns it',
+        ], $this->checkResource($class));
+    }
+
+    public function test_only_empty_returns_still_never_return_a_key(): void
+    {
+        $class = $this->loadClass(<<<'PHP'
+            #[\Pentacore\Typefinder\Attributes\TypefinderResource(shape: ['id' => 'number'])]
+            class {CLASS} extends \Illuminate\Http\Resources\Json\JsonResource
+            {
+                public function toArray(\Illuminate\Http\Request $request): array
+                {
+                    return [];
+                }
+            }
+            PHP);
+
+        $this->assertSame([
+            $class.'::toArray(): #[TypefinderResource] shape declares "id" but toArray() never returns it',
+        ], $this->checkResource($class));
     }
 
     public function test_disagreement_ignores_an_inherited_phpdoc_shape(): void
@@ -407,6 +455,226 @@ final class KeyDriftDetectorTest extends TestCase
         }
     }
 
+    public function test_in_sync_page_fixtures_have_no_drift(): void
+    {
+        $pages = new ControllerExtractor()->extract(InSyncPageController::class);
+        $this->assertCount(4, $pages);
+
+        $keyDriftDetector = new KeyDriftDetector(sharedPageProps: InertiaSharedProps::fromDirectory(workbench_path('app/Http/Middleware')));
+
+        $this->assertSame([], $keyDriftDetector->checkPages($pages));
+    }
+
+    public function test_repeated_page_attributes_on_one_action_merge_before_the_check(): void
+    {
+        $class = $this->loadClass(<<<'PHP'
+            use Inertia\Inertia;
+            use Pentacore\Typefinder\Attributes\TypefinderPage;
+
+            class {CLASS}
+            {
+                #[TypefinderPage('Form', ['title' => 'string', 'body' => 'string'])]
+                #[TypefinderPage('Form', ['title' => 'string', 'body' => 'string', 'post' => 'number', 'tags' => 'string[]'], optional: ['body'])]
+                #[TypefinderPage('Other', ['a' => 'number'])]
+                public function form(?int $post)
+                {
+                    if ($post === null) {
+                        return Inertia::render('Form', ['title' => 'New', 'extra' => 1]);
+                    }
+
+                    Inertia::render('Other', ['a' => 1]);
+
+                    return Inertia::render('Form', ['body' => '', 'post' => $post]);
+                }
+            }
+            PHP, 'Controller');
+
+        $this->assertSame([
+            $class.'::form() passes prop "extra" to Inertia page "Form" but #[TypefinderPage] does not declare it',
+            $class.'::form(): #[TypefinderPage] declares prop "title" for "Form" as required but it is not always passed (add it to optional?)',
+        ], $this->keyDriftDetector->checkPages(new ControllerExtractor()->extract($class)));
+    }
+
+    public function test_pages_of_different_actions_are_checked_apart(): void
+    {
+        $class = $this->loadClass(<<<'PHP'
+            use Inertia\Inertia;
+
+            class {CLASS}
+            {
+                public function create()
+                {
+                    return Inertia::render('Form', ['title' => 'New']);
+                }
+
+                public function edit()
+                {
+                    return Inertia::render('Form', ['title' => 'Edit', 'post' => 1]);
+                }
+            }
+            PHP, 'Controller');
+
+        $this->assertSame([
+            $class.'::create(): #[TypefinderPage] declares prop "post" for "Form" but it is never passed',
+        ], $this->keyDriftDetector->checkPages([
+            $this->page($class, 'create', 'Form', ['title' => 'string', 'post' => 'number']),
+            $this->page($class, 'edit', 'Form', ['title' => 'string', 'post' => 'number']),
+        ]));
+    }
+
+    public function test_errors_prop_is_never_reported_missing(): void
+    {
+        $class = $this->loadClass(<<<'PHP'
+            use Inertia\Inertia;
+
+            class {CLASS}
+            {
+                public function show(bool $flag)
+                {
+                    if ($flag) {
+                        return Inertia::render('X', ['a' => 1, 'errors' => []]);
+                    }
+
+                    return Inertia::render('X', ['a' => 1]);
+                }
+
+                public function bare()
+                {
+                    return Inertia::render('X', ['a' => 1]);
+                }
+            }
+            PHP, 'Controller');
+
+        $this->assertSame([], $this->keyDriftDetector->checkPage($this->page($class, 'show', 'X', ['a' => 'number', 'errors' => 'object'])));
+        $this->assertSame([], $this->keyDriftDetector->checkPage($this->page($class, 'bare', 'X', ['a' => 'number', 'errors' => 'object'])));
+    }
+
+    public function test_shared_page_props_are_never_reported_missing_but_still_undeclared(): void
+    {
+        $class = $this->loadClass(<<<'PHP'
+            use Inertia\Inertia;
+
+            class {CLASS}
+            {
+                public function show(bool $flag)
+                {
+                    if ($flag) {
+                        return Inertia::render('X', ['a' => 1, 'auth' => 1]);
+                    }
+
+                    return Inertia::render('X', ['a' => 1, 'flash' => 1]);
+                }
+            }
+            PHP, 'Controller');
+
+        $keyDriftDetector = new KeyDriftDetector(sharedPageProps: ['auth', 'flash']);
+
+        $this->assertSame([], $keyDriftDetector->checkPage($this->page($class, 'show', 'X', ['a' => 'number', 'auth' => 'object', 'flash' => 'object'])));
+        $this->assertSame([
+            $class.'::show() passes prop "flash" to Inertia page "X" but #[TypefinderPage] does not declare it',
+        ], $keyDriftDetector->checkPage($this->page($class, 'show', 'X', ['a' => 'number', 'auth' => 'object', 'gone' => 'number'], ['gone'])));
+    }
+
+    public function test_inertia_share_in_the_action_opens_its_renders(): void
+    {
+        $class = $this->loadClass(<<<'PHP'
+            use Inertia\Inertia;
+
+            class {CLASS}
+            {
+                public function facade()
+                {
+                    Inertia::share(['notice' => 'Saved']);
+
+                    return Inertia::render('X', ['a' => 1, 'x' => 2]);
+                }
+
+                public function helper()
+                {
+                    inertia()->share('notice', 'Saved');
+
+                    return Inertia::render('X', ['a' => 1]);
+                }
+
+                public function other()
+                {
+                    $this->share('notice', 'Saved');
+
+                    return Inertia::render('X', ['a' => 1]);
+                }
+            }
+            PHP, 'Controller');
+
+        $declared = ['a' => 'number', 'notice' => 'string'];
+
+        $this->assertSame([
+            $class.'::facade() passes prop "x" to Inertia page "X" but #[TypefinderPage] does not declare it',
+        ], $this->keyDriftDetector->checkPage($this->page($class, 'facade', 'X', $declared)));
+        $this->assertSame([], $this->keyDriftDetector->checkPage($this->page($class, 'helper', 'X', $declared)));
+        $this->assertSame([
+            $class.'::other(): #[TypefinderPage] declares prop "notice" for "X" but it is never passed',
+        ], $this->keyDriftDetector->checkPage($this->page($class, 'other', 'X', $declared)));
+    }
+
+    public function test_shared_props_are_read_from_inertia_middleware(): void
+    {
+        $this->assertSame(['auth', 'flash'], InertiaSharedProps::fromDirectory(workbench_path('app/Http/Middleware')));
+        $this->assertFalse(class_exists(HandleInertiaRequests::class, false), 'the middleware fixture must not be loaded');
+    }
+
+    public function test_shared_props_middleware_variants(): void
+    {
+        $dir = $this->tempDir();
+        File::ensureDirectoryExists($dir.'/Nested');
+        File::put($dir.'/Spread.php', <<<'PHP'
+            <?php
+            namespace Scratch\Shared;
+
+            class Spread extends \Inertia\Middleware
+            {
+                public function share($request): array
+                {
+                    if ($request->ajax()) {
+                        return [...parent::share($request), 'ajax' => true];
+                    }
+
+                    return [...parent::share($request), 'auth' => 1, $request->key() => 2];
+                }
+            }
+            PHP);
+        File::put($dir.'/Nested/Imported.php', <<<'PHP'
+            <?php
+            namespace Scratch\Shared;
+
+            use Inertia\Middleware as InertiaMiddleware;
+
+            class Imported extends InertiaMiddleware
+            {
+                public function share($request): array
+                {
+                    return ['locale' => 'en', 'auth' => 1];
+                }
+            }
+            PHP);
+        File::put($dir.'/NotInertia.php', <<<'PHP'
+            <?php
+            namespace Scratch\Shared;
+
+            class NotInertia extends Middleware
+            {
+                public function share($request): array
+                {
+                    return ['unrelated' => 1];
+                }
+            }
+            PHP);
+        File::put($dir.'/Broken.php', "<?php\nclass Broken extends \\Inertia\\Middleware {");
+        File::put($dir.'/notes.txt', 'not php');
+
+        $this->assertEqualsCanonicalizing(['ajax', 'auth', 'locale'], InertiaSharedProps::fromDirectory($dir));
+        $this->assertSame([], InertiaSharedProps::fromDirectory($dir.'/missing'));
+    }
+
     public function test_global_inertia_alias_is_matched(): void
     {
         $class = $this->loadClass(<<<'PHP'
@@ -624,6 +892,92 @@ final class KeyDriftDetectorTest extends TestCase
         $this->assertSame([], $this->keyDriftDetector->checkPage($this->page($class, 'argument', 'X', ['a' => 'number', 'b' => 'number'])));
     }
 
+    public function test_render_via_a_helper_on_another_path_opens_the_direct_render(): void
+    {
+        $class = $this->loadClass(<<<'PHP'
+            use Inertia\Inertia;
+
+            class {CLASS}
+            {
+                public function form(?int $post)
+                {
+                    if ($post !== null) {
+                        return $this->renderForm($post);
+                    }
+
+                    return Inertia::render('Form', ['title' => 'New', 'extra' => 1]);
+                }
+
+                private function renderForm(int $post)
+                {
+                    return Inertia::render('Form', ['title' => 'Edit', 'post' => $post]);
+                }
+            }
+            PHP, 'Controller');
+
+        $this->assertSame([
+            $class.'::form() passes prop "extra" to Inertia page "Form" but #[TypefinderPage] does not declare it',
+        ], $this->keyDriftDetector->checkPage($this->page($class, 'form', 'Form', ['title' => 'string', 'post' => 'number'])));
+    }
+
+    /**
+     * Precision trade-off: any return that is not a direct render of the
+     * component (a redirect, a bare `return;`, another page, a ternary arm)
+     * might be a render made elsewhere, so missing props are not reported
+     * for that action even when the other path plainly renders nothing.
+     */
+    public function test_any_other_return_suppresses_missing_prop_warnings(): void
+    {
+        $class = $this->loadClass(<<<'PHP'
+            use Inertia\Inertia;
+
+            class {CLASS}
+            {
+                public function redirects(bool $ok)
+                {
+                    if (! $ok) {
+                        return redirect()->back();
+                    }
+
+                    return Inertia::render('X', ['a' => 1, 'x' => 2]);
+                }
+
+                public function bare(bool $ok)
+                {
+                    if (! $ok) {
+                        return;
+                    }
+
+                    return Inertia::render('X', ['a' => 1]);
+                }
+
+                public function otherPage(bool $ok)
+                {
+                    return $ok ? Inertia::render('X', ['a' => 1]) : Inertia::render('Y', ['b' => 1]);
+                }
+
+                public function nested(bool $ok)
+                {
+                    $render = fn () => redirect()->back();
+
+                    return Inertia::render('X', ['a' => 1]);
+                }
+            }
+            PHP, 'Controller');
+
+        $declared = ['a' => 'number', 'b' => 'number'];
+
+        $this->assertSame([
+            $class.'::redirects() passes prop "x" to Inertia page "X" but #[TypefinderPage] does not declare it',
+        ], $this->keyDriftDetector->checkPage($this->page($class, 'redirects', 'X', $declared)));
+        $this->assertSame([], $this->keyDriftDetector->checkPage($this->page($class, 'bare', 'X', $declared)));
+        $this->assertSame([], $this->keyDriftDetector->checkPage($this->page($class, 'otherPage', 'X', $declared)));
+        // A return inside a closure is not the action's own.
+        $this->assertSame([
+            $class.'::nested(): #[TypefinderPage] declares prop "b" for "X" but it is never passed',
+        ], $this->keyDriftDetector->checkPage($this->page($class, 'nested', 'X', $declared)));
+    }
+
     public function test_render_as_a_ternary_or_match_arm_of_a_return_is_closed(): void
     {
         $class = $this->loadClass(<<<'PHP'
@@ -700,9 +1054,7 @@ final class KeyDriftDetectorTest extends TestCase
     private function loadClass(string $body, string $suffix = 'Resource'): string
     {
         $id = str_replace('.', '', uniqid('', true));
-        $dir = sys_get_temp_dir().'/typefinder-drift-'.$id;
-        File::ensureDirectoryExists($dir);
-        $this->tempDirs[] = $dir;
+        $dir = $this->tempDir($id);
 
         $namespace = 'Scratch\Drift'.$id;
         $class = 'Drift'.$id.$suffix;
@@ -711,5 +1063,14 @@ final class KeyDriftDetectorTest extends TestCase
         require (string) realpath($file);
 
         return $namespace.'\\'.$class;
+    }
+
+    private function tempDir(?string $id = null): string
+    {
+        $dir = sys_get_temp_dir().'/typefinder-drift-'.($id ?? str_replace('.', '', uniqid('', true)));
+        File::ensureDirectoryExists($dir);
+        $this->tempDirs[] = $dir;
+
+        return $dir;
     }
 }

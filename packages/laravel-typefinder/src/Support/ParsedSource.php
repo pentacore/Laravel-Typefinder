@@ -9,6 +9,7 @@ use PhpParser\NameContext;
 use PhpParser\Node;
 use PhpParser\Node\Identifier;
 use PhpParser\Node\Name;
+use PhpParser\Node\Stmt\Class_;
 use PhpParser\Node\Stmt\ClassLike;
 use PhpParser\Node\Stmt\ClassMethod;
 use PhpParser\NodeTraverser;
@@ -28,7 +29,7 @@ final class ParsedSource
     private static array $cache = [];
 
     /**
-     * @param  array<string, array{context: NameContext, doc: ?string, methods: array<string, ClassMethod>}>  $classes
+     * @param  array<string, array{context: NameContext, doc: ?string, parent: ?string, methods: array<string, ClassMethod>}>  $classes
      */
     private function __construct(private readonly array $classes) {}
 
@@ -61,6 +62,16 @@ final class ParsedSource
     public function classDoc(string $classFqcn): ?string
     {
         return $this->classes[$classFqcn]['doc'] ?? null;
+    }
+
+    /**
+     * The fully qualified name the class `extends`, resolved against the
+     * file's namespace and imports (the parent need not exist). Null when it
+     * extends nothing or is not declared in this file.
+     */
+    public function parentName(string $classFqcn): ?string
+    {
+        return $this->classes[$classFqcn]['parent'] ?? null;
     }
 
     public function methodDoc(string $classFqcn, string $method): ?string
@@ -107,7 +118,7 @@ final class ParsedSource
         $nameResolver = new NameResolver;
         $collector = new class($nameResolver) extends NodeVisitorAbstract
         {
-            /** @var array<string, array{context: NameContext, doc: ?string, methods: array<string, ClassMethod>}> */
+            /** @var array<string, array{context: NameContext, doc: ?string, parent: ?string, methods: array<string, ClassMethod>}> */
             public array $classes = [];
 
             public function __construct(private readonly NameResolver $nameResolver) {}
@@ -129,6 +140,7 @@ final class ParsedSource
                     // Snapshot: the live context mutates as traversal moves on.
                     'context' => clone $this->nameResolver->getNameContext(),
                     'doc' => $node->getDocComment()?->getText(),
+                    'parent' => $node instanceof Class_ && $node->extends instanceof Name ? $node->extends->toString() : null,
                     'methods' => $methods,
                 ];
 

@@ -15,6 +15,8 @@ use PhpParser\Node\Expr;
  *   `$combine` saying how: `spread` (`...$x`), `merge` (an `array_merge()`
  *   argument or a `merge()`/`mergeWhen()` argument that is not a literal
  *   array), `plus` (an operand of `+`) or `whole` (the entire expression).
+ *   `$expr` is null when the unknown keys come from outside any expression
+ *   (props an action may pass on another code path).
  *
  * `$conditional` is set on items whose presence depends on runtime state
  * (`when*()` without a default, `mergeWhen()` items, configured wrappers such
