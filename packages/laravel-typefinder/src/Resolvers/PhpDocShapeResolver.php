@@ -82,7 +82,8 @@ final readonly class PhpDocShapeResolver
         }
 
         [$type, $declaring] = $found;
-        $scope = $this->scopeFor($declaring, $resource->getName(), []);
+        $scopes = [];
+        $scope = $this->scopeFor($declaring, $resource->getName(), $scopes);
         $shape = $scope instanceof PhpDocScope ? $this->shapeOf($type, $scope) : null;
 
         return $shape === null ? null : $this->phpDocTypeMapper->map($shape[0], $shape[1], '');
@@ -248,9 +249,7 @@ final readonly class PhpDocShapeResolver
     {
         $seen = [];
 
-        while ($type instanceof IdentifierTypeNode && isset($scope->aliases[$type->name])) {
-            $alias = $scope->aliases[$type->name];
-
+        while ($type instanceof IdentifierTypeNode && ($alias = $scope->alias($type->name)) !== null) {
             if (isset($seen[spl_object_id($alias['type'])])) {
                 break;
             }
@@ -280,33 +279,36 @@ final readonly class PhpDocShapeResolver
 
     /**
      * Scope for a doc declared in $class: its file's names and its class-level
-     * aliases, including imported ones (resolved in their own file).
+     * aliases. Imported aliases are looked up on demand, one at a time, and
+     * memoised, so classes that import from each other cost one lookup per
+     * alias used rather than every scope they could reach.
      *
-     * @param  list<string>  $visiting  `Class::Alias` imports being resolved (cycle guard); a pair, not a
-     *                                  class, so two classes may import independent aliases from each other
+     * @param  array<string, ?PhpDocScope>  $scopes  scopes built during this resolve(), by class; one
+     *                                               scope (and one parse of its doc) per class keeps alias
+     *                                               type nodes stable for the mapper's recursion guard
      */
-    private function scopeFor(string $class, string $resource, array $visiting): ?PhpDocScope
+    private function scopeFor(string $class, string $resource, array &$scopes): ?PhpDocScope
     {
+        if (array_key_exists($class, $scopes)) {
+            return $scopes[$class];
+        }
+
         $file = new ReflectionClass($class)->getFileName();
         $source = $file === false ? null : ParsedSource::forFile($file);
 
         if (! $source instanceof ParsedSource) {
-            return null;
+            return $scopes[$class] = null;
         }
 
         $nameResolver = static fn (string $name): string => $source->resolveName($class, $name);
-        $names = new PhpDocScope($resource, $resource, $nameResolver);
         $doc = $this->parseDoc($source->classDoc($class));
         $aliases = [];
+        $imports = [];
 
         if ($doc instanceof PhpDocNode) {
             foreach (self::IMPORT_TAGS as $tag) {
                 foreach ($doc->getTypeAliasImportTagValues($tag) as $import) {
-                    $imported = $this->importAlias($import, $names, $resource, $visiting);
-
-                    if ($imported !== null) {
-                        $aliases[$import->importedAs ?? $import->importedAlias] = $imported;
-                    }
+                    $imports[$import->importedAs ?? $import->importedAlias] = $import;
                 }
             }
 
@@ -317,18 +319,37 @@ final readonly class PhpDocShapeResolver
             }
         }
 
-        return new PhpDocScope($resource, $resource, $nameResolver, $aliases);
+        $names = new PhpDocScope($resource, $resource, $nameResolver);
+        $resolved = [];
+        $importedAlias = function (string $name) use ($imports, $names, $resource, &$scopes, &$resolved): ?array {
+            if (! isset($imports[$name])) {
+                return null;
+            }
+
+            if (array_key_exists($name, $resolved)) {
+                return $resolved[$name];
+            }
+
+            // Null while in progress: an import chain that leads back to this
+            // (class, alias) pair is a cycle and resolves to nothing.
+            $resolved[$name] = null;
+
+            return $resolved[$name] = $this->importAlias($imports[$name], $names, $resource, $scopes);
+        };
+
+        return $scopes[$class] = new PhpDocScope($resource, $resource, $nameResolver, $aliases, $importedAlias);
     }
 
     /**
-     * A missing class or alias yields null: the local name then fails to
-     * resolve in the mapper and becomes `unknown` with a warning.
+     * Resolve one imported alias in the class it is imported from. A missing
+     * class or alias yields null: the local name then fails to resolve in the
+     * mapper and becomes `unknown` with a warning.
      *
-     * @param  PhpDocScope  $names  the importing file's names (no aliases yet)
-     * @param  list<string>  $visiting
+     * @param  PhpDocScope  $names  the importing file's names
+     * @param  array<string, ?PhpDocScope>  $scopes
      * @return ?array{type: TypeNode, scope: PhpDocScope}
      */
-    private function importAlias(TypeAliasImportTagValueNode $import, PhpDocScope $names, string $resource, array $visiting): ?array
+    private function importAlias(TypeAliasImportTagValueNode $import, PhpDocScope $names, string $resource, array &$scopes): ?array
     {
         if (! $import->importedFrom instanceof IdentifierTypeNode) {
             return null;
@@ -344,14 +365,8 @@ final readonly class PhpDocShapeResolver
             return null;
         }
 
-        $key = $from.'::'.$import->importedAlias;
-
-        if (in_array($key, $visiting, true)) {
-            return null;
-        }
-
-        $source = $this->scopeFor($from, $resource, [...$visiting, $key]);
-        $alias = $source?->aliases[$import->importedAlias] ?? null;
+        $source = $this->scopeFor($from, $resource, $scopes);
+        $alias = $source?->alias($import->importedAlias);
 
         return $alias === null ? null : ['type' => $alias['type'], 'scope' => $alias['scope'] ?? $source];
     }

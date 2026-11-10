@@ -23,6 +23,7 @@ use Tests\Fixtures\Resources\PhpDoc\InheritDocShapeResource;
 use Tests\Fixtures\Resources\PhpDoc\InheritedShapeResource;
 use Tests\Fixtures\Resources\PhpDoc\LaravelUnionShapeResource;
 use Tests\Fixtures\Resources\PhpDoc\ListTopLevelResource;
+use Tests\Fixtures\Resources\PhpDoc\ManyImportsResource;
 use Tests\Fixtures\Resources\PhpDoc\MissingImportResource;
 use Tests\Fixtures\Resources\PhpDoc\MutualImportResource;
 use Tests\Fixtures\Resources\PhpDoc\NestedTraitToArrayResource;
@@ -30,6 +31,7 @@ use Tests\Fixtures\Resources\PhpDoc\NoOverrideResource;
 use Tests\Fixtures\Resources\PhpDoc\PlainArrayResource;
 use Tests\Fixtures\Resources\PhpDoc\PrecedenceResource;
 use Tests\Fixtures\Resources\PhpDoc\PsalmReturnResource;
+use Tests\Fixtures\Resources\PhpDoc\RecursiveImportResource;
 use Tests\Fixtures\Resources\PhpDoc\StubDefaultResource;
 use Tests\Fixtures\Resources\PhpDoc\TraitAliasToArrayResource;
 use Tests\Fixtures\Resources\PhpDoc\TraitToArrayResource;
@@ -235,6 +237,38 @@ final class PhpDocShapeResolverTest extends TestCase
             $this->resolve(MutualImportResource::class),
         );
         $this->assertSame([], $this->warnings);
+    }
+
+    public function test_many_mutual_imports_resolve_one_alias_at_a_time(): void
+    {
+        $started = microtime(true);
+        $shape = $this->resolve(ManyImportsResource::class);
+
+        $this->assertLessThan(5.0, microtime(true) - $started);
+        $this->assertSame(
+            $this->object([
+                $this->field('x', $this->object([
+                    $this->field('b1', $this->object([$this->field('a1', $this->ts('number'))])),
+                ])),
+            ]),
+            $shape,
+        );
+        $this->assertSame([], $this->warnings);
+    }
+
+    public function test_recursive_types_across_imports_terminate_with_unknown(): void
+    {
+        $this->assertSame(
+            $this->object([
+                $this->field('root', $this->object([
+                    $this->field('leaf', $this->object([$this->field('branch', $this->ts('unknown'))])),
+                ])),
+            ]),
+            $this->resolve(RecursiveImportResource::class),
+        );
+        $this->assertSame([
+            RecursiveImportResource::class.'::toArray() @return: "root.leaf.branch" has unsupported type Branch — emitted as unknown',
+        ], $this->warnings);
     }
 
     public function test_import_cycle_is_unknown_with_one_warning(): void

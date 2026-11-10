@@ -166,8 +166,10 @@ final class PhpDocTypeMapper
             return $this->leaf('resource', $scope->selfFqcn);
         }
 
-        if (isset($scope->aliases[$type->name])) {
-            return $this->expandAlias($type, $scope, $fieldPath);
+        $alias = $scope->alias($type->name);
+
+        if ($alias !== null) {
+            return $this->expandAlias($type, $alias, $scope, $fieldPath);
         }
 
         $fqcn = $this->resolveClass($type->name, $scope);
@@ -178,11 +180,11 @@ final class PhpDocTypeMapper
     }
 
     /**
+     * @param  array{type: TypeNode, scope: ?PhpDocScope}  $alias
      * @return array<string, mixed>
      */
-    private function expandAlias(IdentifierTypeNode $type, PhpDocScope $scope, string $fieldPath): array
+    private function expandAlias(IdentifierTypeNode $type, array $alias, PhpDocScope $scope, string $fieldPath): array
     {
-        $alias = $scope->aliases[$type->name];
         $id = spl_object_id($alias['type']);
 
         if (in_array($id, $this->expanding, true)) {
