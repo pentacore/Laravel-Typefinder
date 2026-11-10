@@ -16,13 +16,18 @@ use App\Models\Role;
 use App\Models\Tag;
 use App\Models\User;
 use Pentacore\Typefinder\Extractors\ModelExtractor;
+use Pentacore\Typefinder\Renderers\TypeScriptRenderer;
 use Pentacore\Typefinder\Resolvers\CastTypeResolver;
 use Pentacore\Typefinder\Resolvers\ColumnTypeResolver;
 use Pentacore\Typefinder\TypefinderRegistry;
+use Tests\Fixtures\AbstractModels\Label;
 use Tests\Fixtures\Casts\UnmappedCast;
+use Tests\Fixtures\Models\Badge;
 use Tests\Fixtures\Models\JsonCastQuest;
 use Tests\Fixtures\Models\ParameterisedCastQuest;
+use Tests\Fixtures\Models\SpecialTag;
 use Tests\Fixtures\Models\UnmappedCastQuest;
+use Tests\Fixtures\Models\VisibleBadge;
 use Tests\TestCase;
 
 use function Orchestra\Testbench\workbench_path;
@@ -334,6 +339,148 @@ final class ModelExtractorTest extends TestCase
 
         $this->assertSame('manyWithPivot', $rel['type']);
         $this->assertSame(Post::class, $rel['related']);
+    }
+
+    public function test_extracts_relations_declared_on_a_parent_model(): void
+    {
+        $result = $this->modelExtractor->extract(SpecialTag::class);
+        $rel = $this->findRelationship($result, 'posts');
+
+        $this->assertNotNull($rel, 'posts() is declared on the parent Tag model');
+        $this->assertSame('manyWithPivot', $rel['type']);
+        $this->assertSame(Post::class, $rel['related']);
+        $this->assertSame('taggables', $rel['pivot']['table']);
+    }
+
+    public function test_inherited_relations_are_listed_once(): void
+    {
+        $result = $this->modelExtractor->extract(SpecialTag::class);
+
+        $this->assertSame(['posts'], array_column($result['relationships'], 'name'));
+    }
+
+    public function test_abstract_models_are_skipped_and_their_relations_inherited(): void
+    {
+        $results = $this->modelExtractor->extractFromDirectory(__DIR__.'/../Fixtures/AbstractModels');
+
+        $this->assertSame([Label::class], array_column($results, 'fqcn'));
+        $this->assertSame(['posts'], array_column($results[0]['relationships'], 'name'));
+    }
+
+    public function test_appended_attribute_is_typed_from_the_accessor_return_type(): void
+    {
+        $result = $this->modelExtractor->extract(Badge::class);
+
+        $shout = $this->findColumn($result, 'shout');
+        $this->assertNotNull($shout, '$appends attributes are part of the serialized model');
+        $this->assertSame('string', $shout['type']);
+        $this->assertFalse($shout['nullable']);
+
+        $this->assertSame('number', $this->findColumn($result, 'length')['type']);
+    }
+
+    public function test_appended_attribute_with_nullable_return_type_is_nullable(): void
+    {
+        $subtitle = $this->findColumn($this->modelExtractor->extract(Badge::class), 'subtitle');
+
+        $this->assertSame('string', $subtitle['type']);
+        $this->assertTrue($subtitle['nullable']);
+    }
+
+    public function test_appended_attribute_is_typed_from_the_attribute_generic(): void
+    {
+        $initial = $this->findColumn($this->modelExtractor->extract(Badge::class), 'initial');
+
+        $this->assertSame('string', $initial['type']);
+        $this->assertTrue($initial['nullable']);
+    }
+
+    public function test_appended_attribute_without_a_readable_type_is_unknown(): void
+    {
+        $mystery = $this->findColumn($this->modelExtractor->extract(Badge::class), 'mystery');
+
+        $this->assertSame('unknown', $mystery['type']);
+        $this->assertFalse($mystery['nullable']);
+    }
+
+    public function test_accessor_without_a_return_type_is_unknown(): void
+    {
+        $raw = $this->findColumn($this->modelExtractor->extract(Badge::class), 'raw');
+
+        $this->assertSame('unknown', $raw['type']);
+        $this->assertFalse($raw['nullable']);
+    }
+
+    public function test_attribute_generic_that_is_not_a_scalar_is_unknown(): void
+    {
+        $stamp = $this->findColumn($this->modelExtractor->extract(Badge::class), 'stamp');
+
+        $this->assertSame('unknown', $stamp['type']);
+        $this->assertFalse($stamp['nullable']);
+    }
+
+    public function test_type_override_applies_to_an_appended_attribute(): void
+    {
+        $palette = $this->findColumn($this->modelExtractor->extract(Badge::class), 'palette');
+
+        $this->assertSame('{ primary: string }', $palette['type']);
+    }
+
+    public function test_hidden_appended_attribute_is_excluded(): void
+    {
+        $result = $this->modelExtractor->extract(Badge::class);
+
+        $this->assertNull($this->findColumn($result, 'secret'));
+    }
+
+    public function test_visible_filters_appended_attributes(): void
+    {
+        $result = $this->modelExtractor->extract(VisibleBadge::class);
+
+        $this->assertSame(['id', 'shout'], array_column($result['columns'], 'name'));
+    }
+
+    public function test_appended_attribute_named_like_a_column_keeps_the_column(): void
+    {
+        $result = $this->modelExtractor->extract(Badge::class);
+
+        $names = array_column($result['columns'], 'name');
+        $this->assertSame(1, count(array_keys($names, 'name', true)));
+        $this->assertSame('string', $this->findColumn($result, 'name')['type']);
+    }
+
+    public function test_appended_attributes_follow_the_columns(): void
+    {
+        $result = $this->modelExtractor->extract(Badge::class);
+
+        $this->assertSame(
+            ['id', 'name', 'created_at', 'updated_at', 'shout', 'length', 'subtitle', 'initial', 'mystery', 'raw', 'stamp', 'palette'],
+            array_column($result['columns'], 'name'),
+        );
+    }
+
+    public function test_appended_attributes_are_not_assignable(): void
+    {
+        $result = $this->modelExtractor->extract(Badge::class);
+
+        $this->assertSame(
+            ['id', 'name', 'created_at', 'updated_at'],
+            array_column($result['assignable_columns'], 'name'),
+        );
+    }
+
+    public function test_appended_attributes_render_on_the_model_but_not_its_write_shapes(): void
+    {
+        $model = $this->modelExtractor->extract(Badge::class);
+
+        $output = new TypeScriptRenderer()->renderModelFile($model, [], [], true, []);
+        [$read, $write] = explode('export type BadgeCreate', $output, 2);
+
+        $this->assertStringContainsString("  shout: string;\n", $read);
+        $this->assertStringContainsString("  subtitle: string | null;\n", $read);
+        $this->assertStringContainsString("  mystery: unknown;\n", $read);
+        $this->assertStringContainsString("  name: string;\n", $write);
+        $this->assertStringNotContainsString('shout', $write);
     }
 
     public function test_extract_flags_primary_key_and_timestamps_as_server_filled(): void
