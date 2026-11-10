@@ -273,11 +273,7 @@ final readonly class PhpDocShapeResolver
             return true;
         }
 
-        try {
-            $fqcn = ltrim(($scope->nameResolver)($type->name), '\\');
-        } catch (Throwable) {
-            return false;
-        }
+        $fqcn = $scope->resolveName($type->name);
 
         return $fqcn === Arrayable::class || $fqcn === JsonSerializable::class;
     }
@@ -299,13 +295,14 @@ final readonly class PhpDocShapeResolver
         }
 
         $nameResolver = static fn (string $name): string => $source->resolveName($class, $name);
+        $names = new PhpDocScope($resource, $resource, $nameResolver);
         $doc = $this->parseDoc($source->classDoc($class));
         $aliases = [];
 
         if ($doc instanceof PhpDocNode) {
             foreach (self::IMPORT_TAGS as $tag) {
                 foreach ($doc->getTypeAliasImportTagValues($tag) as $import) {
-                    $imported = $this->importAlias($import, $nameResolver, $resource, $visiting);
+                    $imported = $this->importAlias($import, $names, $resource, $visiting);
 
                     if ($imported !== null) {
                         $aliases[$import->importedAs ?? $import->importedAlias] = $imported;
@@ -327,20 +324,20 @@ final readonly class PhpDocShapeResolver
      * A missing class or alias yields null: the local name then fails to
      * resolve in the mapper and becomes `unknown` with a warning.
      *
-     * @param  Closure(string): string  $nameResolver
+     * @param  PhpDocScope  $names  the importing file's names (no aliases yet)
      * @param  list<string>  $visiting
      * @return ?array{type: TypeNode, scope: PhpDocScope}
      */
-    private function importAlias(TypeAliasImportTagValueNode $import, Closure $nameResolver, string $resource, array $visiting): ?array
+    private function importAlias(TypeAliasImportTagValueNode $import, PhpDocScope $names, string $resource, array $visiting): ?array
     {
         if (! $import->importedFrom instanceof IdentifierTypeNode) {
             return null;
         }
 
-        try {
-            $from = ltrim($nameResolver($import->importedFrom->name), '\\');
+        $from = $names->resolveName($import->importedFrom->name);
 
-            if (! class_exists($from) && ! interface_exists($from)) {
+        try {
+            if ($from === null || (! class_exists($from) && ! interface_exists($from))) {
                 return null;
             }
         } catch (Throwable) {

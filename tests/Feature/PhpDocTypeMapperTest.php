@@ -304,7 +304,7 @@ final class PhpDocTypeMapperTest extends TestCase
     public function test_bare_collection_is_unknown_array_with_warning(): void
     {
         $this->assertSame($this->arrayOf(self::ts('unknown')), $this->map('Collection', 'tags'));
-        $this->assertSame([$this->warning('tags', 'Collection')], $this->warnings);
+        $this->assertSame([$this->warning('tags', 'Collection', 'unknown[]')], $this->warnings);
     }
 
     public function test_missing_value_member_makes_field_optional(): void
@@ -317,6 +317,28 @@ final class PhpDocTypeMapperTest extends TestCase
             $this->map('array{posts: PostResource[]|MissingValue, owner: User|null|MissingValue}'),
         );
         $this->assertSame([], $this->warnings);
+    }
+
+    public function test_missing_value_check_does_not_resolve_keywords_as_classes(): void
+    {
+        $resolved = [];
+        $scope = new PhpDocScope(self::SELF, self::SELF, static function (string $name) use (&$resolved): string {
+            $resolved[] = $name;
+
+            return self::NAMES[$name] ?? $name;
+        });
+
+        $this->phpDocTypeMapper->map($this->parse('array{a: int|null|MissingValue, b: string|bool}'), $scope, '');
+
+        $this->assertSame(['MissingValue'], $resolved);
+    }
+
+    public function test_identical_warnings_are_emitted_once_per_map_call(): void
+    {
+        $this->map('array{a: callable|callable}');
+        $this->map('array{a: callable}');
+
+        $this->assertSame([$this->warning('a', 'callable'), $this->warning('a', 'callable')], $this->warnings);
     }
 
     public function test_unsupported_types_warn_once_each(): void
@@ -455,9 +477,9 @@ final class PhpDocTypeMapperTest extends TestCase
         return $typeParser->parse(new TokenIterator($lexer->tokenize($type)));
     }
 
-    private function warning(string $field, string $type): string
+    private function warning(string $field, string $type, string $emitted = 'unknown'): string
     {
-        return sprintf('%s::toArray() @return: "%s" has unsupported type %s — emitted as unknown', self::SELF, $field, $type);
+        return sprintf('%s::toArray() @return: "%s" has unsupported type %s — emitted as %s', self::SELF, $field, $type, $emitted);
     }
 
     /** @return array{kind: 'ts', ts: string} */

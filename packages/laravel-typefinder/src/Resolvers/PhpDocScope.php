@@ -6,6 +6,7 @@ namespace Pentacore\Typefinder\Resolvers;
 
 use Closure;
 use PHPStan\PhpDocParser\Ast\Type\TypeNode;
+use Throwable;
 
 /**
  * Where a PHPDoc type is read: the resource being generated, how class names
@@ -26,4 +27,17 @@ final readonly class PhpDocScope
         public Closure $nameResolver,
         public array $aliases = [],
     ) {}
+
+    /**
+     * A docblock identifier as a class name without a leading backslash, or
+     * null when the name resolver rejects it. Does not check that it exists.
+     */
+    public function resolveName(string $name): ?string
+    {
+        try {
+            return ltrim(($this->nameResolver)($name), '\\');
+        } catch (Throwable) {
+            return null;
+        }
+    }
 }

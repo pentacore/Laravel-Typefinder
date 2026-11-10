@@ -56,12 +56,31 @@ final class PhpDocTypeMapper
 
     private const array UNSUPPORTED_KEYWORDS = ['void', 'never', 'callable', 'closure', 'resource'];
 
+    /** Keywords with a fixed TypeScript type. */
+    private const array SIMPLE_KEYWORDS = [
+        'float' => 'number',
+        'double' => 'number',
+        'string' => 'string',
+        'numeric' => 'number | string',
+        'bool' => 'boolean',
+        'boolean' => 'boolean',
+        'true' => 'true',
+        'false' => 'false',
+        'null' => 'null',
+        'mixed' => 'unknown',
+        'array-key' => 'string | number',
+        'scalar' => 'string | number | boolean',
+    ];
+
     private const string CLASS_NAME = '/^\\\\?[A-Za-z_\x80-\xff][A-Za-z0-9_\x80-\xff]*(\\\\[A-Za-z_\x80-\xff][A-Za-z0-9_\x80-\xff]*)*$/';
 
     private readonly ?Closure $onWarn;
 
     /** @var list<int> object ids of the alias types being expanded (cycle guard) */
     private array $expanding = [];
+
+    /** @var array<string, true> warnings already emitted by the current map() call */
+    private array $warned = [];
 
     /**
      * @param  null|callable(string): void  $onWarn
@@ -72,17 +91,29 @@ final class PhpDocTypeMapper
     }
 
     /**
+     * Map one type tree. Identical warnings within one call are emitted once.
+     *
      * @return array<string, mixed>
      */
     public function map(TypeNode $type, PhpDocScope $scope, string $fieldPath): array
     {
+        $this->warned = [];
+
+        return $this->mapType($type, $scope, $fieldPath);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function mapType(TypeNode $type, PhpDocScope $scope, string $fieldPath): array
+    {
         return match (true) {
             $type instanceof IdentifierTypeNode => $this->mapIdentifier($type, $scope, $fieldPath),
             $type instanceof ThisTypeNode => $this->leaf('resource', $scope->selfFqcn),
-            $type instanceof NullableTypeNode => $this->union([$this->map($type->type, $scope, $fieldPath), $this->ts('null')]),
+            $type instanceof NullableTypeNode => $this->union([$this->mapType($type->type, $scope, $fieldPath), $this->ts('null')]),
             $type instanceof UnionTypeNode => $this->union($this->mapEach($type->types, $scope, $fieldPath)),
             $type instanceof IntersectionTypeNode => ['kind' => 'intersection', 'of' => $this->mapEach($type->types, $scope, $fieldPath)],
-            $type instanceof ArrayTypeNode => ['kind' => 'array', 'of' => $this->map($type->type, $scope, $fieldPath)],
+            $type instanceof ArrayTypeNode => ['kind' => 'array', 'of' => $this->mapType($type->type, $scope, $fieldPath)],
             $type instanceof GenericTypeNode => $this->mapGeneric($type, $scope, $fieldPath),
             $type instanceof ArrayShapeNode => $this->mapArrayShape($type, $scope, $fieldPath),
             $type instanceof ObjectShapeNode => $this->mapFields($type->items, false, $scope, $fieldPath),
@@ -97,7 +128,7 @@ final class PhpDocTypeMapper
      */
     private function mapEach(array $types, PhpDocScope $scope, string $fieldPath): array
     {
-        return array_values(array_map(fn (TypeNode $type): array => $this->map($type, $scope, $fieldPath), $types));
+        return array_values(array_map(fn (TypeNode $type): array => $this->mapType($type, $scope, $fieldPath), $types));
     }
 
     /**
@@ -107,11 +138,15 @@ final class PhpDocTypeMapper
     {
         $keyword = strtolower($type->name);
 
-        if (in_array($keyword, self::INT_KEYWORDS, true) || $keyword === 'float' || $keyword === 'double') {
+        if (isset(self::SIMPLE_KEYWORDS[$keyword])) {
+            return $this->ts(self::SIMPLE_KEYWORDS[$keyword]);
+        }
+
+        if (in_array($keyword, self::INT_KEYWORDS, true)) {
             return $this->ts('number');
         }
 
-        if ($keyword === 'string' || str_ends_with($keyword, '-string')) {
+        if (str_ends_with($keyword, '-string')) {
             return $this->ts('string');
         }
 
@@ -125,20 +160,6 @@ final class PhpDocTypeMapper
 
         if (in_array($keyword, self::UNSUPPORTED_KEYWORDS, true)) {
             return $this->unsupported($type, $scope, $fieldPath);
-        }
-
-        $simple = match ($keyword) {
-            'numeric' => 'number | string',
-            'bool', 'boolean' => 'boolean',
-            'true', 'false', 'null' => $keyword,
-            'mixed' => 'unknown',
-            'array-key' => 'string | number',
-            'scalar' => 'string | number | boolean',
-            default => null,
-        };
-
-        if ($simple !== null) {
-            return $this->ts($simple);
         }
 
         if ($keyword === 'static' || $keyword === 'self') {
@@ -171,7 +192,7 @@ final class PhpDocTypeMapper
         $this->expanding[] = $id;
 
         try {
-            return $this->map($alias['type'], $alias['scope'] ?? $scope, $fieldPath);
+            return $this->mapType($alias['type'], $alias['scope'] ?? $scope, $fieldPath);
         } finally {
             array_pop($this->expanding);
         }
@@ -187,7 +208,7 @@ final class PhpDocTypeMapper
         }
 
         if ($this->isCollection($fqcn)) {
-            $this->warn($type, $scope, $fieldPath);
+            $this->warn($type, $scope, $fieldPath, 'unknown[]');
 
             return ['kind' => 'array', 'of' => $this->ts('unknown')];
         }
@@ -220,7 +241,7 @@ final class PhpDocTypeMapper
         $args = array_values($type->genericTypes);
 
         if (in_array($base, self::LIST_KEYWORDS, true)) {
-            return ['kind' => 'array', 'of' => $this->map($args[count($args) - 1], $scope, $fieldPath)];
+            return ['kind' => 'array', 'of' => $this->mapType($args[count($args) - 1], $scope, $fieldPath)];
         }
 
         if (in_array($base, self::ARRAY_KEYWORDS, true)) {
@@ -256,7 +277,7 @@ final class PhpDocTypeMapper
      */
     private function mapElements(array $args, PhpDocScope $scope, string $fieldPath): array
     {
-        $of = $this->map($args[count($args) - 1], $scope, $fieldPath);
+        $of = $this->mapType($args[count($args) - 1], $scope, $fieldPath);
 
         return ['kind' => count($args) === 1 || $this->isIntKey($args[0]) ? 'array' : 'record', 'of' => $of];
     }
@@ -273,7 +294,7 @@ final class PhpDocTypeMapper
         $items = [];
         foreach (array_values($type->items) as $index => $item) {
             $items[] = [
-                'type' => $this->map($item->valueType, $scope, $this->path($fieldPath, (string) $index)),
+                'type' => $this->mapType($item->valueType, $scope, $this->path($fieldPath, (string) $index)),
                 'optional' => $item->optional,
             ];
         }
@@ -306,7 +327,7 @@ final class PhpDocTypeMapper
 
             $fields[] = [
                 'name' => $name,
-                'type' => $this->map($valueType, $scope, $this->path($fieldPath, $name)),
+                'type' => $this->mapType($valueType, $scope, $this->path($fieldPath, $name)),
                 'optional' => $item->optional || $missing,
             ];
         }
@@ -329,6 +350,7 @@ final class PhpDocTypeMapper
         $remaining = array_values(array_filter(
             $type->types,
             fn (TypeNode $member): bool => ! $member instanceof IdentifierTypeNode
+                || $this->isKeyword($member->name)
                 || $this->resolveClass($member->name, $scope) !== MissingValue::class,
         ));
 
@@ -363,15 +385,27 @@ final class PhpDocTypeMapper
             return null;
         }
 
-        try {
-            $fqcn = ltrim(($scope->nameResolver)($name), '\\');
+        $fqcn = $scope->resolveName($name);
 
-            return class_exists($fqcn) || interface_exists($fqcn) ? $fqcn : null;
+        try {
+            return $fqcn !== null && (class_exists($fqcn) || interface_exists($fqcn)) ? $fqcn : null;
         } catch (Throwable) {
-            // An invalid name (InvalidArgumentException from the resolver) or a
-            // class file that fails to load is as unknown as a missing class.
+            // A class file that fails to load is as unknown as a missing class.
             return null;
         }
+    }
+
+    /**
+     * Whether a docblock identifier is a PHPDoc type keyword rather than a
+     * class name (so it is never handed to the autoloader).
+     */
+    private function isKeyword(string $name): bool
+    {
+        $keyword = strtolower($name);
+
+        return isset(self::SIMPLE_KEYWORDS[$keyword])
+            || str_ends_with($keyword, '-string')
+            || in_array($keyword, ['object', 'static', 'self', ...self::INT_KEYWORDS, ...self::ARRAY_KEYWORDS, ...self::LIST_KEYWORDS, ...self::UNSUPPORTED_KEYWORDS], true);
     }
 
     /**
@@ -384,15 +418,19 @@ final class PhpDocTypeMapper
         return $this->ts('unknown');
     }
 
-    private function warn(TypeNode $type, PhpDocScope $scope, string $fieldPath): void
+    private function warn(TypeNode $type, PhpDocScope $scope, string $fieldPath, string $emitted = 'unknown'): void
     {
-        if ($this->onWarn instanceof Closure) {
-            ($this->onWarn)(sprintf(
-                '%s::toArray() @return: "%s" has unsupported type %s — emitted as unknown',
-                $scope->resourceFqcn,
-                $fieldPath,
-                (string) $type,
-            ));
+        $message = sprintf(
+            '%s::toArray() @return: "%s" has unsupported type %s — emitted as %s',
+            $scope->resourceFqcn,
+            $fieldPath,
+            (string) $type,
+            $emitted,
+        );
+
+        if ($this->onWarn instanceof Closure && ! isset($this->warned[$message])) {
+            $this->warned[$message] = true;
+            ($this->onWarn)($message);
         }
     }
 
