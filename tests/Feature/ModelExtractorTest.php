@@ -147,15 +147,7 @@ final class ModelExtractorTest extends TestCase
     public function test_unknown_column_type_emits_warning_and_falls_back_to_unknown(): void
     {
         $warnings = [];
-        $modelExtractor = new ModelExtractor(
-            new ColumnTypeResolver,
-            new CastTypeResolver,
-            function (string $message) use (&$warnings): void {
-                $warnings[] = $message;
-            },
-        );
-
-        $result = $modelExtractor->extract(QuirkyThing::class);
+        $result = $this->warningExtractor($warnings)->extract(QuirkyThing::class);
 
         $shapeCol = $this->findColumn($result, 'shape');
         $this->assertSame('unknown', $shapeCol['type']);

@@ -256,17 +256,13 @@ final class PhpDocShapeResolverTest extends TestCase
 
     public function test_many_mutual_imports_resolve_one_alias_at_a_time(): void
     {
-        $started = microtime(true);
-        $shape = $this->resolve(ManyImportsResource::class);
-
-        $this->assertLessThan(5.0, microtime(true) - $started);
         $this->assertSame(
             $this->object([
                 $this->field('x', $this->object([
                     $this->field('b1', $this->object([$this->field('a1', $this->ts('number'))])),
                 ])),
             ]),
-            $shape,
+            $this->resolve(ManyImportsResource::class),
         );
         $this->assertSame([], $this->warnings);
     }

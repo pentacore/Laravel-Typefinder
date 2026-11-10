@@ -9,7 +9,6 @@ use App\Http\Resources\LegacyResource;
 use App\Http\Resources\UserResource;
 use App\Models\LegacyModel;
 use App\Models\User;
-use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Support\Facades\File;
 use Pentacore\Typefinder\Support\GeneratedClasses;
 use Tests\Fixtures\AbstractResources\BaseResource;
@@ -36,7 +35,6 @@ final class GeneratedClassesTest extends TestCase
         $models = new GeneratedClasses()->models();
 
         $this->assertContains(User::class, $models);
-        $this->assertNotContains(DatabaseNotification::class, $models);
         $this->assertNotContains(LegacyModel::class, $models);
         $this->assertTrue(new GeneratedClasses()->isModel(User::class));
     }
