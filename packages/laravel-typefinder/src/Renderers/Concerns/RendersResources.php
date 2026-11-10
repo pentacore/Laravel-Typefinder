@@ -118,7 +118,7 @@ trait RendersResources
 
     /**
      * Render a type-tree node (see PhpDocTypeMapper) to a TypeScript type string.
-     * Class leaves resolve through `resolveClassString`, imported relative to `resources/`.
+     * Class leaves resolve through `resolveClassReference`, imported relative to `resources/`.
      *
      * @param  array<string, mixed>  $node
      * @param  list<string>  $imports  Collected import statements (by reference).
@@ -139,9 +139,8 @@ trait RendersResources
             case 'model':
             case 'enum':
             case 'resource':
-                $resolved = $this->resolveClassString('\\'.$node['fqcn'], 'resources', $allModels, $allEnums, $allResources, $imports, $selfFqcn);
-
-                return str_contains($resolved, '\\') ? 'unknown' : $resolved;
+                return $this->resolveClassReference(ltrim((string) $node['fqcn'], '\\'), 'resources', $allModels, $allEnums, $allResources, $imports, $selfFqcn)
+                    ?? 'unknown';
             case 'array':
                 $element = $render($node['of']);
 

@@ -10,6 +10,9 @@ use App\Http\Resources\PostResource;
 use App\Http\Resources\UserResource;
 use App\Models\User;
 use Pentacore\Typefinder\Renderers\TypeScriptRenderer;
+use Pentacore\Typefinder\Resolvers\PhpDocShapeResolver;
+use Pentacore\Typefinder\Support\GeneratedClasses;
+use ReflectionClass;
 use Tests\TestCase;
 
 final class JsonResourceRenderTest extends TestCase
@@ -291,6 +294,50 @@ final class JsonResourceRenderTest extends TestCase
         $this->assertStringContainsString("import type { PostStatus } from '../enums';", $output);
         $this->assertStringNotContainsString("from './PostResource'", $output);
         $this->assertStringContainsString('  children: PostResource[];', $output);
+    }
+
+    public function test_phpdoc_namespace_less_classes_render_their_names_and_imports(): void
+    {
+        foreach (['TypefinderGlobalModel', 'TypefinderGlobalStatus', 'TypefinderGlobalItemResource', 'TypefinderGlobalResource'] as $fixture) {
+            require_once __DIR__.'/../Fixtures/GlobalNamespace/'.$fixture.'.php';
+        }
+
+        $warnings = [];
+        $shape = new PhpDocShapeResolver(
+            new GeneratedClasses(
+                models: ['TypefinderGlobalModel'],
+                enums: ['TypefinderGlobalStatus'],
+                resources: ['TypefinderGlobalItemResource', 'TypefinderGlobalResource'],
+            ),
+            static function (string $message) use (&$warnings): void {
+                $warnings[] = $message;
+            },
+        )->resolve(new ReflectionClass('TypefinderGlobalResource'));
+
+        $this->assertNotNull($shape);
+        $this->assertSame([], $warnings);
+
+        $output = (new TypeScriptRenderer)->renderResource(
+            ['name' => 'TypefinderGlobalResource', 'fqcn' => 'TypefinderGlobalResource', 'shape' => ['kind' => 'phpdoc', 'type' => $shape]],
+            [['name' => 'TypefinderGlobalModel', 'fqcn' => 'TypefinderGlobalModel']],
+            [['name' => 'TypefinderGlobalStatus', 'fqcn' => 'TypefinderGlobalStatus']],
+            [
+                ['name' => 'TypefinderGlobalItemResource', 'fqcn' => 'TypefinderGlobalItemResource'],
+                ['name' => 'TypefinderGlobalResource', 'fqcn' => 'TypefinderGlobalResource'],
+            ],
+        );
+
+        $this->assertStringContainsString(
+            "import type { TypefinderGlobalItemResource } from './TypefinderGlobalItemResource';\n"
+            ."import type { TypefinderGlobalModel } from '../models';\n"
+            ."import type { TypefinderGlobalStatus } from '../enums';\n\n",
+            $output,
+        );
+        $this->assertStringContainsString('  owner: TypefinderGlobalModel;', $output);
+        $this->assertStringContainsString('  status: TypefinderGlobalStatus;', $output);
+        $this->assertStringContainsString('  item: TypefinderGlobalItemResource;', $output);
+        $this->assertStringContainsString('  self: TypefinderGlobalResource;', $output);
+        $this->assertStringNotContainsString("from './TypefinderGlobalResource'", $output);
     }
 
     public function test_phpdoc_unresolvable_class_leaf_renders_unknown(): void
