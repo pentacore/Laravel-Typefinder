@@ -1,3 +1,13 @@
+## [8.1.0](https://github.com/pentacore/Laravel-Typefinder/compare/v8.0.1...v8.1.0) (2026-11-10)
+
+### Features
+
+* emit rule keys tagged [@query](https://github.com/query) as a {Name}Query type ([#101](https://github.com/pentacore/Laravel-Typefinder/issues/101)) ([96326d9](https://github.com/pentacore/Laravel-Typefinder/commit/96326d9f29a6e13044542a5209c7d92151cc4180))
+
+### Bug Fixes
+
+* type present keys as required and sometimes keys as optional in form requests ([#102](https://github.com/pentacore/Laravel-Typefinder/issues/102), [#103](https://github.com/pentacore/Laravel-Typefinder/issues/103)) ([b5a71a4](https://github.com/pentacore/Laravel-Typefinder/commit/b5a71a4d0c88a6f42cdef342e906fe8a52caf9c8))
+
 ## [8.0.1](https://github.com/pentacore/Laravel-Typefinder/compare/v8.0.0...v8.0.1) (2026-11-10)
 
 ### Bug Fixes
