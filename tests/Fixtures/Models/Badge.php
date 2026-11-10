@@ -18,7 +18,7 @@ final class Badge extends Model
 
     protected $hidden = ['secret'];
 
-    protected $appends = ['shout', 'length', 'subtitle', 'initial', 'mystery', 'palette', 'secret', 'name'];
+    protected $appends = ['shout', 'length', 'subtitle', 'initial', 'mystery', 'raw', 'stamp', 'palette', 'secret', 'name'];
 
     public function getShoutAttribute(): string
     {
@@ -46,6 +46,19 @@ final class Badge extends Model
     protected function mystery(): Attribute
     {
         return Attribute::get(fn (): array => []);
+    }
+
+    public function getRawAttribute()
+    {
+        return $this->name;
+    }
+
+    /**
+     * @return Attribute<\DateTimeInterface|null, never>
+     */
+    protected function stamp(): Attribute
+    {
+        return Attribute::get(fn (): ?\DateTimeInterface => $this->created_at);
     }
 
     public function getPaletteAttribute(): array

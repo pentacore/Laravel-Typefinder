@@ -403,6 +403,22 @@ final class ModelExtractorTest extends TestCase
         $this->assertFalse($mystery['nullable']);
     }
 
+    public function test_accessor_without_a_return_type_is_unknown(): void
+    {
+        $raw = $this->findColumn($this->modelExtractor->extract(Badge::class), 'raw');
+
+        $this->assertSame('unknown', $raw['type']);
+        $this->assertFalse($raw['nullable']);
+    }
+
+    public function test_attribute_generic_that_is_not_a_scalar_is_unknown(): void
+    {
+        $stamp = $this->findColumn($this->modelExtractor->extract(Badge::class), 'stamp');
+
+        $this->assertSame('unknown', $stamp['type']);
+        $this->assertFalse($stamp['nullable']);
+    }
+
     public function test_type_override_applies_to_an_appended_attribute(): void
     {
         $palette = $this->findColumn($this->modelExtractor->extract(Badge::class), 'palette');
@@ -438,7 +454,7 @@ final class ModelExtractorTest extends TestCase
         $result = $this->modelExtractor->extract(Badge::class);
 
         $this->assertSame(
-            ['id', 'name', 'created_at', 'updated_at', 'shout', 'length', 'subtitle', 'initial', 'mystery', 'palette'],
+            ['id', 'name', 'created_at', 'updated_at', 'shout', 'length', 'subtitle', 'initial', 'mystery', 'raw', 'stamp', 'palette'],
             array_column($result['columns'], 'name'),
         );
     }
