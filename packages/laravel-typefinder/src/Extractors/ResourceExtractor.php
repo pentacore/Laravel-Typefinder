@@ -93,17 +93,15 @@ class ResourceExtractor
         }
 
         // A documented toArray() shape is a declaration, so it applies even
-        // with name-convention inference off. Abstract resources are never
-        // returned by an API and fall through as before.
-        if (! $reflectionClass->isAbstract()) {
-            $type = $this->phpDocShapeResolver->resolve($reflectionClass);
-            if ($type !== null) {
-                return [
-                    'name' => $reflectionClass->getShortName(),
-                    'fqcn' => $resourceClass,
-                    'shape' => ['kind' => 'phpdoc', 'type' => $type],
-                ];
-            }
+        // with name-convention inference off. The resolver skips abstract
+        // resources (never returned by an API), which fall through as before.
+        $type = $this->phpDocShapeResolver->resolve($reflectionClass);
+        if ($type !== null) {
+            return [
+                'name' => $reflectionClass->getShortName(),
+                'fqcn' => $resourceClass,
+                'shape' => ['kind' => 'phpdoc', 'type' => $type],
+            ];
         }
 
         $short = $reflectionClass->getShortName();
