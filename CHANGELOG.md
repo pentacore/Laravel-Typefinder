@@ -1,3 +1,9 @@
+## [8.2.0](https://github.com/pentacore/Laravel-Typefinder/compare/v8.1.0...v8.2.0) (2026-11-10)
+
+### Features
+
+* re-export companion types from the category barrels ([#104](https://github.com/pentacore/Laravel-Typefinder/issues/104)) ([37ab320](https://github.com/pentacore/Laravel-Typefinder/commit/37ab320c1190834449ca00185d8eb04174bb433f))
+
 ## [8.1.0](https://github.com/pentacore/Laravel-Typefinder/compare/v8.0.1...v8.1.0) (2026-11-10)
 
 ### Features
