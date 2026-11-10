@@ -324,7 +324,7 @@ final readonly class KeyDriftDetector
             return [];
         }
 
-        $type = $this->phpDocShapes->resolve(new ReflectionClass($fqcn));
+        $type = $this->phpDocShapes->resolveDocumented(new ReflectionClass($fqcn));
 
         if ($type === null) {
             return [];

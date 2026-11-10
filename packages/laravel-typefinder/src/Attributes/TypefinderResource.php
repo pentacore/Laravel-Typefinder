@@ -9,13 +9,16 @@ use Attribute;
 /**
  * Declare the TypeScript shape of a `JsonResource` subclass.
  *
- * Typefinder can't statically walk `toArray()` method bodies (they're arbitrary
- * PHP code), so resource shapes are declared. The first match wins:
+ * Typefinder can't evaluate `toArray()` method bodies (they're arbitrary PHP
+ * code), so resource shapes are declared. The first match wins:
  *
  *   1. `shape` — explicit key-by-key declaration (Tier 1).
  *   2. `model` + `omit` / `extend` — "wrap this model with tweaks" (Tier 2).
  *   3. A PHPDoc `@return array{…}` (or `@phpstan-return` / `@psalm-return`)
- *      on `toArray()`, with no attribute present. Applies even when the name
+ *      on `toArray()`, with no attribute present — or, without one on the
+ *      resource's own `toArray()`, a shape composed from the documented
+ *      helpers (`$this->m()`, `self::m()`, `static::m()`) and documented
+ *      `parent::toArray()` its body returns. Applies even when the name
  *      convention is off; never to abstract resources.
  *   4. Class-name convention — if the resource is named `{Model}Resource`,
  *      no attribute or PHPDoc shape is present and `{Model}` is one of the
