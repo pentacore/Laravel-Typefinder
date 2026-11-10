@@ -199,7 +199,7 @@ Handy for `<select options={Object.values(PostStatus)}>` and similar runtime pat
 
 ### Form Requests
 
-Validation rules map to TypeScript types. `required` → non-optional; `nullable` → adds `| null`; `sometimes` and conditional `required_*` rules → optional. Fields without `required` are optional.
+Validation rules map to TypeScript types. `required` and `present` → non-optional; `nullable` → adds `| null`; `sometimes` (also next to `required` or `present`) and conditional `required_*` / `present_*` rules → optional. Fields without `required` or `present` are optional.
 
 ```typescript
 import type { PostStatus } from '../enums';
@@ -242,6 +242,36 @@ export type StoreWebhookRequest = {
 - Two shapes cannot be expressed and produce a warning (so `--strict` fails): a wildcard at the top level (`'*.name'`, the body itself is a list) is left out, and a parent with both `parent.*` and named keys keeps the array shape and drops the named keys. Use `#[TypefinderOverrides]` for those fields.
 
 With `extract_nested: true`, every nested object becomes a named type, named after its path (`StorePostRequestMetadata`, `StoreWebhookRequestRequestHeaders`).
+
+#### Query-string parameters
+
+A form request can validate query-string parameters next to the body fields (`PUT /things/{key}?scope=a`). Tag those rule keys with a `@query` PHPDoc tag (the tag [Scramble](https://scramble.dedoc.co) reads for the same purpose) and they move out of the request type into a `{Name}Query` type in the same file:
+
+```php
+public function rules(): array
+{
+    return [
+        'value' => ['required', 'string'],
+        /** @query */
+        'scope' => ['sometimes', 'string', 'max:100'],
+    ];
+}
+```
+
+```typescript
+export type SetValueRequest = {
+  value: string;
+};
+
+export type SetValueRequestQuery = {
+  scope?: string;
+};
+```
+
+- The tag is read from the source of the `rules()` method the request uses (its own, an inherited one or one from a trait), on array items with a string-literal key. A tag on any other key (a constant, an expression) is ignored with a warning.
+- A tagged key takes its whole top-level field along: tagging `filter` or `filter.status` puts all of `filter` in the query type.
+- A request without tagged keys gets no `{Name}Query` type. One with only tagged keys gets `Record<string, never>` as its request type.
+- `{Name}Query` lives in the request's file and is imported from there (`requests/SetValueRequest`), like the `{Model}Create` / `{Model}Update` companions of a model.
 
 ### Pivots
 

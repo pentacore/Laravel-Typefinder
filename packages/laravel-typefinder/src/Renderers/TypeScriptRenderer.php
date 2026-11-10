@@ -273,18 +273,32 @@ class TypeScriptRenderer
     }
 
     /**
-     * Render a request to a .d.ts file content string.
+     * Render a request to a .d.ts file content string: the request (body)
+     * type, then `{Name}Query` when the request has query-string parameters.
      *
      * @param  list<array>  $allEnums
      */
     public function renderRequest(array $request, array $allEnums, bool $extractNested = false): string
     {
-        $imports = [];
-        $extractedTypes = [];
-        $lines = [];
+        $name = $request['name'];
+        $queryFields = $request['query'] ?? [];
+        $queryName = $name.'Query';
 
+        $imports = [];
+        // Reserved, so a nested type of the body (a `query` field) gets another name.
+        $extractedTypes = $queryFields === [] ? [] : [$queryName => ''];
+
+        $lines = [];
         foreach ($request['fields'] as $field) {
-            $this->renderRequestField($field, $request['name'], $allEnums, $imports, $lines, $extractedTypes, $extractNested);
+            $this->renderRequestField($field, $name, $allEnums, $imports, $lines, $extractedTypes, $extractNested);
+        }
+
+        unset($extractedTypes[$queryName]);
+        $bodyTypes = $extractedTypes;
+
+        $queryLines = [];
+        foreach ($queryFields as $queryField) {
+            $this->renderRequestField($queryField, $queryName, $allEnums, $imports, $queryLines, $extractedTypes, $extractNested);
         }
 
         $imports = array_values(array_unique($imports));
@@ -295,18 +309,34 @@ class TypeScriptRenderer
             $output .= implode("\n", $imports)."\n\n";
         }
 
+        $output .= $this->requestTypeBlock($name, $lines, $bodyTypes);
+
+        if ($queryFields !== []) {
+            $output .= "\n".$this->requestTypeBlock($queryName, $queryLines, array_diff_key($extractedTypes, $bodyTypes));
+        }
+
+        return $output;
+    }
+
+    /**
+     * One request type, preceded by the nested types extracted from it.
+     *
+     * @param  list<string>  $lines
+     * @param  array<string, string>  $extractedTypes
+     */
+    protected function requestTypeBlock(string $name, array $lines, array $extractedTypes): string
+    {
+        $output = '';
+
         foreach ($extractedTypes as $extractedType) {
             $output .= $extractedType."\n\n";
         }
 
         if ($lines === []) {
-            return $output."export type {$request['name']} = Record<string, never>;\n";
+            return $output."export type {$name} = Record<string, never>;\n";
         }
 
-        $output .= "export type {$request['name']} = {\n";
-        $output .= implode("\n", $lines)."\n";
-
-        return $output."};\n";
+        return $output."export type {$name} = {\n".implode("\n", $lines)."\n};\n";
     }
 
     /**
