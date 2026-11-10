@@ -98,6 +98,53 @@ final class IncrementalRegenTest extends TestCase
         $this->assertFileDoesNotExist($this->output.'/models/LegacyModel.d.ts');
     }
 
+    public function test_generate_paths_skips_an_ignored_enum(): void
+    {
+        $dir = __DIR__.'/../Fixtures/Ignored/Enums';
+        config(['typefinder.enums.paths' => [workbench_path('app/Enums'), $dir]]);
+
+        $generator = app(Generator::class);
+        $generator->generateFull();
+        $this->assertFileDoesNotExist($this->output.'/enums/IgnoredStatus.d.ts');
+
+        $regenResult = $generator->generatePaths([$dir.'/IgnoredStatus.php']);
+
+        $this->assertSame([], $regenResult->failed);
+        $this->assertSame([], $regenResult->changed);
+        $this->assertFileDoesNotExist($this->output.'/enums/IgnoredStatus.d.ts');
+    }
+
+    public function test_generate_paths_skips_an_unbacked_enum(): void
+    {
+        $dir = __DIR__.'/../Fixtures/Ignored/Enums';
+        config(['typefinder.enums.paths' => [workbench_path('app/Enums'), $dir]]);
+
+        $generator = app(Generator::class);
+        $generator->generateFull();
+
+        $regenResult = $generator->generatePaths([$dir.'/UnbackedStatus.php']);
+
+        $this->assertSame([], $regenResult->failed);
+        $this->assertSame([], $regenResult->changed);
+        $this->assertFileDoesNotExist($this->output.'/enums/UnbackedStatus.d.ts');
+    }
+
+    public function test_generate_paths_skips_an_ignored_request(): void
+    {
+        $dir = __DIR__.'/../Fixtures/Ignored/Requests';
+        config(['typefinder.requests.paths' => [workbench_path('app/Http/Requests'), $dir]]);
+
+        $generator = app(Generator::class);
+        $generator->generateFull();
+        $this->assertFileDoesNotExist($this->output.'/requests/IgnoredRequest.d.ts');
+
+        $regenResult = $generator->generatePaths([$dir.'/IgnoredRequest.php']);
+
+        $this->assertSame([], $regenResult->failed);
+        $this->assertSame([], $regenResult->changed);
+        $this->assertFileDoesNotExist($this->output.'/requests/IgnoredRequest.d.ts');
+    }
+
     public function test_generate_paths_with_empty_list_does_full_regen(): void
     {
         $generator = app(Generator::class);

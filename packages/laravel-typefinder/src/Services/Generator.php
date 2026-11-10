@@ -963,7 +963,7 @@ final class Generator
         };
 
         $extraction = match ($category) {
-            'enums' => (new EnumExtractor)->extract($className),
+            'enums' => $this->extractSingleEnum($className),
             'models' => $this->extractSingleModel($className, $config, $warn),
             'requests' => $this->extractSingleRequest($className, $warn),
             'resources' => $this->extractSingleResource($className, $config, $warn),
@@ -1010,9 +1010,25 @@ final class Generator
         return $cached !== null && ($cached['fqcn'] ?? null) === $model && isset($cached['columns'], $cached['relationships']) ? $cached : null;
     }
 
-    private function extractSingleRequest(string $className, callable $warn): array
+    /**
+     * Like the model and request cases below, applies the filter a full run
+     * applies in extractFromDirectory(), so both emit the same set of types.
+     */
+    private function extractSingleEnum(string $className): ?array
     {
-        $request = (new RequestExtractor)->extract($className);
+        $enumExtractor = new EnumExtractor;
+
+        return $enumExtractor->isEmittable($className) ? $enumExtractor->extract($className) : null;
+    }
+
+    private function extractSingleRequest(string $className, callable $warn): ?array
+    {
+        $requestExtractor = new RequestExtractor;
+        if (! $requestExtractor->isEmittable($className)) {
+            return null;
+        }
+
+        $request = $requestExtractor->extract($className);
         array_map($warn, $request['warnings'] ?? []);
 
         return $request;

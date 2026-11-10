@@ -158,6 +158,17 @@ class RequestExtractor
     }
 
     /**
+     * Whether a form request gets a type of its own: not `#[TypefinderIgnore]`d.
+     *
+     * @param  class-string  $requestClass
+     */
+    public function isEmittable(string $requestClass): bool
+    {
+        return new ReflectionClass($requestClass)
+            ->getAttributes(TypefinderIgnore::class, ReflectionAttribute::IS_INSTANCEOF) === [];
+    }
+
+    /**
      * Discover and extract all FormRequests from a directory.
      *
      * @return list<array{name: string, fqcn: class-string, fields: list<array>}>
@@ -190,7 +201,7 @@ class RequestExtractor
                 continue;
             }
 
-            if (new ReflectionClass($className)->getAttributes(TypefinderIgnore::class, ReflectionAttribute::IS_INSTANCEOF) !== []) {
+            if (! $this->isEmittable($className)) {
                 continue;
             }
 

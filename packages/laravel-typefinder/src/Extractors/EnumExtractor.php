@@ -67,13 +67,7 @@ class EnumExtractor
                 continue;
             }
 
-            $reflection = new ReflectionEnum($className);
-
-            if (! $reflection->isBacked()) {
-                continue;
-            }
-
-            if ($reflection->getAttributes(TypefinderIgnore::class, \ReflectionAttribute::IS_INSTANCEOF) !== []) {
+            if (! $this->isEmittable($className)) {
                 continue;
             }
 
@@ -85,5 +79,19 @@ class EnumExtractor
         }
 
         return $results;
+    }
+
+    /**
+     * Whether an enum gets a type of its own: backed (a pure enum has no
+     * values to emit) and not `#[TypefinderIgnore]`d.
+     *
+     * @param  class-string<\UnitEnum>  $enumClass
+     */
+    public function isEmittable(string $enumClass): bool
+    {
+        $reflectionEnum = new ReflectionEnum($enumClass);
+
+        return $reflectionEnum->isBacked()
+            && $reflectionEnum->getAttributes(TypefinderIgnore::class, \ReflectionAttribute::IS_INSTANCEOF) === [];
     }
 }
