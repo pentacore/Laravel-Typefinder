@@ -569,15 +569,18 @@ PHP);
             $this->assertStringContainsString("'./{$name}'", $barrel);
         }
 
-        // The composition warning, exactly once; no drift or other warning for these resources.
+        // The composition warning, exactly once; no other warning for these resources.
         foreach ([ComposedResource::class, ComposedParentResource::class, ComposedLiteralResource::class, TagResource::class] as $class) {
             $mentions = array_values(array_filter(
                 $regenResult->warnings,
                 static fn (string $warning): bool => str_contains($warning, $class.':'),
             ));
-            $expected = $class === ComposedLiteralResource::class
-                ? [ComposedLiteralResource::class.'::toArray() composes a shape but "note" has no documented type — add @return array{…} to toArray()']
-                : [];
+            $expected = match ($class) {
+                ComposedLiteralResource::class => [ComposedLiteralResource::class.'::toArray() composes a shape but "note" has no documented type — add @return array{…} to toArray()'],
+                // Typed `Tag` by name, but `toArray()` adds a key the model lacks: model drift.
+                TagResource::class => [TagResource::class.'::toArray() does not match the Tag model type it is typed as (by name): returns undeclared "x" — adjust it with #[TypefinderResource(model: …, omit: …, extend: …)], declare its shape with #[TypefinderResource(shape: …)] or a PHPDoc @return array{…} on toArray(), or set typefinder.resources.infer_from_model_name to false'],
+                default => [],
+            };
             $this->assertSame($expected, $mentions, $class);
         }
     }

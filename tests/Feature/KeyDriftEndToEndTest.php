@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use App\Http\Controllers\DriftingPageController;
+use App\Http\Resources\CategoryResource;
 use App\Http\Resources\ConditionalKeysResource;
 use App\Http\Resources\DoubleDeclaredResource;
 use App\Http\Resources\DriftingResource;
 use App\Http\Resources\OpenReturnResource;
+use App\Http\Resources\TagResource;
 use Closure;
 use Illuminate\Support\Facades\File;
 use Pentacore\Typefinder\Services\Generator;
@@ -89,6 +91,19 @@ final class KeyDriftEndToEndTest extends TestCase
     /**
      * @return list<string>
      */
+    private function modelDrift(): array
+    {
+        $by = ' — adjust it with #[TypefinderResource(model: …, omit: …, extend: …)], declare its shape with #[TypefinderResource(shape: …)] or a PHPDoc @return array{…} on toArray(), or set typefinder.resources.infer_from_model_name to false';
+
+        return [
+            CategoryResource::class.'::toArray() does not match the Category model type it is typed as (by name): returns undeclared "slug"; never returns "parent_id", "featured_status", "owner_snapshot", "root_snapshot", "created_at", "updated_at"'.$by,
+            TagResource::class.'::toArray() does not match the Tag model type it is typed as (by name): returns undeclared "x"'.$by,
+        ];
+    }
+
+    /**
+     * @return list<string>
+     */
     private function pageDrift(): array
     {
         return [
@@ -104,13 +119,13 @@ final class KeyDriftEndToEndTest extends TestCase
         $regenResult = app(Generator::class)->generateFull();
         $drift = $this->driftWarnings($regenResult->warnings);
 
-        foreach ([...$this->resourceDrift(), ...$this->pageDrift()] as $expected) {
+        foreach ([...$this->resourceDrift(), ...$this->modelDrift(), ...$this->pageDrift()] as $expected) {
             $this->assertSame(1, count(array_keys($drift, $expected, true)), $expected."\n".implode("\n", $drift));
         }
 
-        $this->assertCount(12, $drift, implode("\n", $drift));
+        $this->assertCount(14, $drift, implode("\n", $drift));
 
-        foreach (['PostResource', 'AdminUserResource', 'UserResource', 'UserController', 'DashboardController', 'PostController', 'PlainController'] as $clean) {
+        foreach (['PostResource', 'AdminUserResource', 'UserResource', 'PostSummaryResource', 'ProductResource', 'ProductCardResource', 'NotComposableResource', 'UserController', 'DashboardController', 'PostController', 'PlainController'] as $clean) {
             foreach ($drift as $warning) {
                 $this->assertStringNotContainsString('\\'.$clean.'::', $warning);
                 $this->assertStringNotContainsString('\\'.$clean.':', $warning);
@@ -124,7 +139,7 @@ final class KeyDriftEndToEndTest extends TestCase
 
         $drift = $this->driftWarnings(app(Generator::class)->generateFull()->warnings);
 
-        $this->assertCount(8, $drift, implode("\n", $drift));
+        $this->assertCount(10, $drift, implode("\n", $drift));
     }
 
     public function test_only_run_on_a_resource_reports_its_warnings_once(): void
@@ -138,6 +153,39 @@ final class KeyDriftEndToEndTest extends TestCase
             [$this->resourceDrift()[0], $this->resourceDrift()[1]],
             $this->driftWarnings($regenResult->warnings),
         );
+    }
+
+    public function test_only_run_on_a_model_typed_resource_reports_its_drift_once_when_the_cache_is_warm(): void
+    {
+        $generator = app(Generator::class);
+        $generator->generateFull();
+
+        $regenResult = $generator->generatePaths([workbench_path('app/Http/Resources/CategoryResource.php')]);
+
+        $this->assertSame([$this->modelDrift()[0]], $this->driftWarnings($regenResult->warnings));
+    }
+
+    public function test_only_run_on_a_clean_model_typed_resource_reports_no_drift(): void
+    {
+        $generator = app(Generator::class);
+        $generator->generateFull();
+
+        $regenResult = $generator->generatePaths([workbench_path('app/Http/Resources/ProductCardResource.php')]);
+
+        $this->assertSame([], $this->driftWarnings($regenResult->warnings));
+    }
+
+    public function test_only_run_with_a_cold_cache_skips_the_model_check_silently(): void
+    {
+        $generator = app(Generator::class);
+        $generator->generateFull();
+        // Without a cached model extraction the model type is unknown (extracting it needs the DB schema).
+        @unlink(storage_path('framework/cache/typefinder/extractions.json'));
+
+        $regenResult = $generator->generatePaths([workbench_path('app/Http/Resources/CategoryResource.php')]);
+
+        $this->assertSame([], $this->driftWarnings($regenResult->warnings));
+        $this->assertFileExists($this->output.'/resources/CategoryResource.d.ts');
     }
 
     public function test_only_run_on_a_controller_reports_its_page_warnings_once(): void

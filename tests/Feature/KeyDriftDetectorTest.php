@@ -1251,7 +1251,7 @@ final class KeyDriftDetectorTest extends TestCase
     public function test_convention_typed_resource_reports_one_aggregated_warning(): void
     {
         $this->assertSame([
-            CategoryResource::class.'::toArray() does not match the Category model type it is typed as (by name): returns undeclared "slug"; never returns "parent_id", "featured_status", "owner_snapshot", "root_snapshot", "created_at", "updated_at" — declare its shape with #[TypefinderResource(shape: …)] or a PHPDoc @return array{…} on toArray(), or set typefinder.resources.infer_from_model_name to false',
+            CategoryResource::class.'::toArray() does not match the Category model type it is typed as (by name): returns undeclared "slug"; never returns "parent_id", "featured_status", "owner_snapshot", "root_snapshot", "created_at", "updated_at" — adjust it with #[TypefinderResource(model: …, omit: …, extend: …)], declare its shape with #[TypefinderResource(shape: …)] or a PHPDoc @return array{…} on toArray(), or set typefinder.resources.infer_from_model_name to false',
         ], $this->checkModelResource(CategoryResource::class));
     }
 
@@ -1417,7 +1417,7 @@ final class KeyDriftDetectorTest extends TestCase
     public function test_open_return_reports_only_undeclared_model_keys(): void
     {
         $this->assertSame([
-            TagResource::class.'::toArray() does not match the Tag model type it is typed as (by name): returns undeclared "x" — declare its shape with #[TypefinderResource(shape: …)] or a PHPDoc @return array{…} on toArray(), or set typefinder.resources.infer_from_model_name to false',
+            TagResource::class.'::toArray() does not match the Tag model type it is typed as (by name): returns undeclared "x" — adjust it with #[TypefinderResource(model: …, omit: …, extend: …)], declare its shape with #[TypefinderResource(shape: …)] or a PHPDoc @return array{…} on toArray(), or set typefinder.resources.infer_from_model_name to false',
         ], $this->checkModelResource(TagResource::class));
     }
 

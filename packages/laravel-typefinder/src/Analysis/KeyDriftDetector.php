@@ -230,7 +230,7 @@ final readonly class KeyDriftDetector
             implode('; ', $clauses),
             $viaAttribute
                 ? 'adjust omit/extend in #[TypefinderResource] or declare a shape instead'
-                : 'declare its shape with #[TypefinderResource(shape: …)] or a PHPDoc @return array{…} on toArray(), or set typefinder.resources.infer_from_model_name to false',
+                : 'adjust it with #[TypefinderResource(model: …, omit: …, extend: …)], declare its shape with #[TypefinderResource(shape: …)] or a PHPDoc @return array{…} on toArray(), or set typefinder.resources.infer_from_model_name to false',
         )];
     }
 

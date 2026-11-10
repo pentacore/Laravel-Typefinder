@@ -88,7 +88,7 @@ Every generation run produces a tree under `output_path` (default `resources/js/
 
 Default-off categories are gated because they depend on optional Laravel features (Inertia, broadcasting). The rest default on per the gating rule above.
 
-Drift checks: `Analysis\KeyDriftDetector` (run from `Generator`, full and incremental) warns when a resource's declared shape or a `#[TypefinderPage]` disagrees with the literal keys `toArray()` / `Inertia::render()` produce; never changes emitted types. Shared Inertia props come from `Analysis\InertiaSharedProps` (parses `app/Http/Middleware`).
+Drift checks: `Analysis\KeyDriftDetector` (run from `Generator`, full and incremental) warns when a resource's declared shape, a model-typed resource's model type (one aggregated warning; incremental runs use the cached model extraction and skip silently without one) or a `#[TypefinderPage]` disagrees with the literal keys `toArray()` / `Inertia::render()` produce; never changes emitted types. Shared Inertia props come from `Analysis\InertiaSharedProps` (parses `app/Http/Middleware`).
 
 ## Attributes
 
