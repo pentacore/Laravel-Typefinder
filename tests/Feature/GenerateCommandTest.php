@@ -35,6 +35,81 @@ final class GenerateCommandTest extends TestCase
         parent::tearDown();
     }
 
+    public function test_plain_mode_prints_warnings(): void
+    {
+        config(['typefinder.resources.paths' => [workbench_path('app/Http/Resources')]]);
+
+        $this->artisan('typefinder:generate')
+            ->expectsOutputToContain('[typefinder] warning: skipped App\Http\Resources\OrphanResource')
+            ->assertSuccessful();
+    }
+
+    public function test_json_mode_does_not_print_plain_warnings(): void
+    {
+        config(['typefinder.resources.paths' => [workbench_path('app/Http/Resources')]]);
+
+        $this->artisan('typefinder:generate --json')
+            ->doesntExpectOutputToContain('[typefinder] warning:')
+            ->assertSuccessful();
+    }
+
+    public function test_strict_fails_when_warnings_exist_and_still_writes_files(): void
+    {
+        config(['typefinder.resources.paths' => [workbench_path('app/Http/Resources')]]);
+
+        $this->artisan('typefinder:generate --strict')
+            ->expectsOutputToContain('[typefinder] warning: skipped App\Http\Resources\OrphanResource')
+            ->expectsOutputToContain('--strict')
+            ->assertFailed();
+
+        $this->assertFileExists($this->outputPath.'/enums/PostStatus.d.ts');
+    }
+
+    public function test_strict_passes_without_warnings(): void
+    {
+        config(['typefinder.models.enabled' => false, 'typefinder.requests.enabled' => false, 'typefinder.resources.enabled' => false]);
+
+        $this->artisan('typefinder:generate --strict')->assertSuccessful();
+    }
+
+    public function test_check_and_strict_fail_on_warnings_without_drift(): void
+    {
+        config(['typefinder.resources.paths' => [workbench_path('app/Http/Resources')]]);
+        $this->artisan('typefinder:generate')->assertSuccessful();
+
+        $this->artisan('typefinder:generate --check')->assertSuccessful();
+        $this->artisan('typefinder:generate --check --strict')->assertFailed();
+    }
+
+    public function test_json_strict_reports_success_false(): void
+    {
+        config(['typefinder.resources.paths' => [workbench_path('app/Http/Resources')]]);
+
+        $exit = Artisan::call('typefinder:generate', ['--json' => true, '--strict' => true]);
+        $output = Artisan::output();
+        $payload = json_decode($output, true, flags: JSON_THROW_ON_ERROR);
+
+        $this->assertSame(1, $exit);
+        $this->assertFalse($payload['success']);
+        $this->assertNotEmpty($payload['warnings']);
+        $this->assertSame([sprintf('--strict: %d warning(s) produced', count($payload['warnings']))], $payload['errors']);
+        $this->assertStringNotContainsString('[typefinder]', $output);
+    }
+
+    public function test_strict_does_not_mask_pipeline_exception(): void
+    {
+        // Point output_path at a regular file so the pipeline throws on mkdir.
+        $file = $this->outputPath.'.file';
+        file_put_contents($file, '');
+        config(['typefinder.output_path' => $file]);
+
+        try {
+            $this->artisan('typefinder:generate --strict')->expectsOutputToContain('Not a directory')->assertFailed();
+        } finally {
+            @unlink($file);
+        }
+    }
+
     public function test_command_runs_successfully(): void
     {
         $this->artisan('typefinder:generate')

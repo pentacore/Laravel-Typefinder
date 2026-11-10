@@ -255,6 +255,8 @@ final class Generator
             $resourceExtractor = new ResourceExtractor(
                 inferFromModelName: (bool) config('typefinder.resources.infer_from_model_name', true),
                 modelClasses: array_column($allModels, 'fqcn'),
+                enumClasses: array_column($allEnums, 'fqcn'),
+                onWarn: $warn,
             );
             $paths = config('typefinder.resources.paths', []);
 
@@ -925,6 +927,7 @@ final class Generator
     {
         $resourceExtractor = new ResourceExtractor(
             inferFromModelName: (bool) ($config['resources']['infer_from_model_name'] ?? true),
+            onWarn: $warn,
         );
 
         $extraction = $resourceExtractor->extract($className);

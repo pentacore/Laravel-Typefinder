@@ -116,7 +116,7 @@ Every cell below is exercised in CI on every push and PR.
 
 Full documentation for each package:
 
-- [packages/laravel-typefinder/README.md](packages/laravel-typefinder/README.md) — configuration, every generated category (models / enums / requests / resources / pivots / pages / broadcasting / helpers), the full attribute reference, the third-party cast registry, and the artisan commands (`typefinder:generate`, `typefinder:watch`) with flags (`--check`, `--json`, `--debug`, `--only=`).
+- [packages/laravel-typefinder/README.md](packages/laravel-typefinder/README.md) — configuration, every generated category (models / enums / requests / resources / pivots / pages / broadcasting / helpers), the full attribute reference, the third-party cast registry, and the artisan commands (`typefinder:generate`, `typefinder:watch`) with flags (`--check`, `--strict`, `--json`, `--debug`, `--only=`).
 - [packages/vite-plugin-laravel-typefinder/README.md](packages/vite-plugin-laravel-typefinder/README.md) — plugin options, debounce behaviour, alternative install from vendor
 
 ## Development

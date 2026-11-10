@@ -66,7 +66,7 @@ This copies `config/typefinder.php` into your application's `config/` directory.
 php artisan typefinder:generate
 ```
 
-Scans configured directories, resolves types, and writes `.d.ts` files to `output_path`. Only files whose content has changed are rewritten; stale generated files are pruned automatically. By default the `output_path` is added to your project `.gitignore` on first run (`gitignore_generated`). Decide whether to commit the output before setting up CI; see [Using typefinder in CI](#using-typefinder-in-ci).
+Scans configured directories, resolves types, and writes `.d.ts` files to `output_path`. Only files whose content has changed are rewritten; stale generated files are pruned automatically. By default the `output_path` is added to your project `.gitignore` on first run (`gitignore_generated`). Decide whether to commit the output before setting up CI; see [Using typefinder in CI](#using-typefinder-in-ci). Warnings from the run (unknown column types, skipped classes, and so on) are printed as `[typefinder] warning: …` lines.
 
 ### Flags
 
@@ -75,6 +75,7 @@ Scans configured directories, resolves types, and writes `.d.ts` files to `outpu
 | `--check` | Dry-run: generate into a temp directory, compare against the on-disk output, exit non-zero if they differ. A CI gate for **committed** output only. See [Using typefinder in CI](#using-typefinder-in-ci). |
 | `--debug` | Print line-oriented diagnostic output prefixed with `[typefinder]`. Includes per-class parsing lines so you can pinpoint a failing class. |
 | `--json` | Output a single JSON object to stdout (machine-readable, used by the Vite plugin). |
+| `--strict` | Exit non-zero when the run produced any warning (unknown column types, casts with no TypeScript mapping, PHPDoc fields emitted as `unknown`, skipped classes, …). Combine with `--check` for a CI gate on committed output, or add it to the regular generate step in CI. |
 | `--only=<path>` | Re-extract only the given absolute paths instead of the full tree. Repeatable (`--only=/a/Foo.php --only=/a/Bar.php`). Used by the Vite plugin's watch loop for incremental regeneration; rarely useful by hand. |
 
 ### Watching for changes
@@ -87,11 +88,14 @@ Starts a long-lived generator process that reads incremental regeneration reques
 
 ### Using typefinder in CI
 
+`--strict` works with both workflows below. Existing benign warnings (unknown column types, unmapped casts, PHPDoc fields emitted as `unknown`, skipped classes) must be fixed, or the classes ignored with `#[TypefinderIgnore]`, before enabling it.
+
 Choose one of two workflows. They differ in whether the generated files are committed, and `--check` only makes sense in the first.
 
 **1. Committed output.** Set `'gitignore_generated' => false` and commit `output_path`.
 
 - Run `php artisan typefinder:generate --check` in CI. It fails when someone changed a model, enum, request or resource without regenerating. The job needs a migrated database, since model columns are read from the schema.
+- Add `--strict` to also fail on warnings (`typefinder:generate --check --strict`).
 - Frontend-only jobs (no PHP runtime) can type-check against the committed files. Set the Vite plugin's `buildCommand: false` there.
 
 ```yaml
@@ -103,6 +107,7 @@ Choose one of two workflows. They differ in whether the generated files are comm
 
 - Generate before anything that type-checks: `php artisan typefinder:generate`, or let the Vite plugin do it in `vite build` (its default `buildCommand`). The job needs PHP, the app's Composer dependencies and a database connection with the schema migrated, because model columns are read from the schema.
 - Do not use `--check` here. A fresh checkout has nothing on disk to compare against, so it fails with a hint that the output path does not exist. Generating first and then running `--check` only compares the generator with itself.
+- `--strict` works here too (`typefinder:generate --strict`): the files are still written, but the command exits non-zero if any warning was produced.
 
 ```yaml
 - run: php artisan migrate --force
@@ -223,15 +228,58 @@ export type UserRolePivot = {
 
 ### Resources (default-on)
 
-Classes extending `JsonResource`. Three declaration tiers are tried in order:
+Classes extending `JsonResource`. The type comes from the first of these that applies:
 
 1. **Explicit shape** via `#[TypefinderResource(shape: [...])]`.
 2. **Model extension** via `#[TypefinderResource(model: User::class, omit: [...], extend: [...])]` → `Omit<User, ...> & { ... }`.
-3. **Name convention** — `UserResource` → `User` automatically, when `User` is one of the models typefinder generates (found under `models.paths` and not ignored). Models from other packages and models outside `models.paths` are never matched.
+3. **PHPDoc array shape** on `toArray()` — `@return array{…}` (or `@phpstan-return` / `@psalm-return`, which take precedence). Applies whether or not the name convention is on.
+4. **Name convention** — `UserResource` → `User` automatically, when `User` is one of the models typefinder generates (found under `models.paths` and not ignored). Models from other packages and models outside `models.paths` are never matched.
+5. Otherwise the resource is skipped with a warning.
 
-Resources that match none of the above are skipped with a warning.
+`#[TypefinderIgnore]` skips a resource before any of these run.
 
-The name convention assumes the resource returns the model's attributes. If your resources rename fields, flatten relations or add computed keys, the inferred type is wrong and nothing flags it. Set `'resources.infer_from_model_name' => false` to turn the convention off; every resource then needs an attribute (or `#[TypefinderIgnore]`), and undeclared ones are reported as warnings.
+A documented shape is what the API returns, so it beats the name convention:
+
+```php
+class CommentResource extends JsonResource
+{
+    /**
+     * @return array{
+     *     id: int,
+     *     body: non-empty-string,
+     *     author: UserResource,
+     *     status: CommentStatus,
+     *     replies: list<CommentResource>|MissingValue,
+     *     created_at: string|null,
+     * }
+     */
+    public function toArray(Request $request): array { /* … */ }
+}
+```
+
+```typescript
+import type { CommentStatus } from '../enums';
+import type { UserResource } from './UserResource';
+
+export type CommentResource = {
+  id: number;
+  body: string;
+  author: UserResource;
+  status: CommentStatus;
+  replies?: CommentResource[];
+  created_at: string | null;
+};
+```
+
+Only an `array{…}` (or `object{…}`) shape counts. The `make:resource` stub's `@return array<string, mixed>`, a plain `array`, `list<…>` and other generics fall through to the name convention, unchanged. Nested shapes, lists, `array<string, T>`, unions, literals, `?T`, collections (`Collection<int, X>` → `X[]`), Carbon/`DateTimeInterface` (→ `string`), `@phpstan-type` aliases and `@phpstan-import-type` are understood. A `X|MissingValue` field (the `whenLoaded()` / `when()` idiom) becomes optional. A `toArray()` provided by a trait is read from the trait's file. A subclass that does not override `toArray()`, or whose doc is only `{@inheritDoc}`, uses its parent's doc; `static` in it refers to the subclass. An abstract resource never takes a PHPDoc shape (it falls through to the attribute/name-convention tiers as before).
+
+Only types typefinder generates resolve: models it generates, backed enums under `enums.paths`, and resources under `resources.paths`. Any other class (a vendor model, a plain value object), and types with no JSON equivalent (`callable`, `Closure`, …), become `unknown` with a warning naming the resource and field.
+
+The name convention assumes the resource returns the model's attributes. If your resources rename fields, flatten relations or add computed keys, the inferred type is wrong and nothing flags it. Set `'resources.infer_from_model_name' => false` to turn the convention off; every resource then needs an attribute or a PHPDoc shape (or `#[TypefinderIgnore]`), and undeclared ones are reported as warnings.
+
+**Upgrading:** a resource that already documents `@return array{…}` on `toArray()` and has no `#[TypefinderResource]` attribute now gets that shape instead of the same-named model. To keep the old type, add `#[TypefinderResource(model: User::class)]`. This release also adds `nikic/php-parser` ^5 and `phpstan/phpdoc-parser` ^2 as dependencies; apps pinned to phpdoc-parser ^1 must upgrade.
+
+**Known limits:** in watch / `--only` runs, editing a parent resource's `toArray()` doc, a trait that provides `toArray()`, or a class that defines an imported `@phpstan-type` alias, does not re-render the resources that use it; run a full `typefinder:generate` to refresh. Trait conflict resolution (`insteadof` / `as`) is not considered: the first trait in `use` order that declares `toArray()` is read.
 
 ### Pages (opt-in, `typefinder.inertia.enabled`)
 
@@ -281,7 +329,7 @@ All attributes live under `Pentacore\Typefinder\Attributes\`.
 | `#[TypefinderIgnore]` | class | Skip any model, enum, form request, resource, controller, or event. |
 | `#[TypefinderOverrides(['col' => 'T'])]` | model, form request | Override or add fields. Highest priority in type resolution. |
 | `#[TypefinderWriteShape(serverFilled, respectMassAssignment, immutableOnUpdate)]` | model | Tune the Create/Update companions. |
-| `#[TypefinderResource(shape / model / omit / extend)]` | `JsonResource` subclass | Declare a resource's TS shape or model extension. |
+| `#[TypefinderResource(shape / model / omit / extend)]` | `JsonResource` subclass | Declare a resource's TS shape or model extension. Takes precedence over a PHPDoc `@return array{…}` on `toArray()` and the name convention. |
 | `#[TypefinderPage(component, props, optional)]` | controller action method | Map the method to an Inertia page component. Repeatable. |
 | `#[TypefinderBroadcast(payload, as, channel, channelType)]` | broadcast event class | Override reflection for events with dynamic `broadcastOn()`/`broadcastWith()`. |
 | `#[TypefinderCast('T')]` | custom cast class | Declare the TS shape for a cast you own. |
@@ -346,7 +394,8 @@ When a cast is encountered, the resolver tries in order:
 3. `#[TypefinderCast]` attribute on the cast class.
 4. Built-in name map (`datetime`, `array`, etc.) and class map (`AsCollection::class`, etc.).
 5. `BackedEnum` detection → emits a reference to the generated enum type.
-6. Fall back to `unknown` (emits a warning in `--json` mode).
+6. Parameterised casts (`decimal:2`, `datetime:Y-m-d`, `MyCast::class.':arg'`) with no exact match: steps 1–5 retried with the part before the first `:`. `AsEnumCollection:` / `AsEnumArrayObject:` arguments emit the enum array type.
+7. Fall back to `unknown` (emits a warning).
 
 ## Configuration
 
@@ -380,7 +429,7 @@ return [
     'resources' => [
         'enabled' => true,                              // default-on; ships with Laravel core
         'paths' => [app_path('Http/Resources')],
-        'infer_from_model_name' => true,                // UserResource → User when no attribute
+        'infer_from_model_name' => true,                // UserResource → User when no attribute or PHPDoc shape
     ],
 
     'inertia' => [

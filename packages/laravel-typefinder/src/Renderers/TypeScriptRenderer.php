@@ -202,34 +202,58 @@ class TypeScriptRenderer
             return $type;
         }
 
-        $prefix = $fromDir === '' ? './' : '../';
-
         return (string) preg_replace_callback(
             '/\\\\?[A-Za-z_][A-Za-z0-9_]*(?:\\\\[A-Za-z_][A-Za-z0-9_]*)+/',
-            function (array $match) use ($fromDir, $prefix, $allModels, $allEnums, $allResources, &$imports, $selfFqcn): string {
-                $class = ltrim($match[0], '\\');
-
-                if (class_exists($class) && is_subclass_of($class, JsonResource::class)) {
-                    $short = $this->resolveResourceName($class, $allResources);
-                    $from = $fromDir === 'resources' ? './'.$short : $prefix.'resources';
-                } elseif (class_exists($class) && is_subclass_of($class, Model::class)) {
-                    $short = $this->resolveModelName($class, $allModels);
-                    $from = $fromDir === 'models' ? './'.$short : $prefix.'models';
-                } elseif (enum_exists($class)) {
-                    $short = $this->resolveEnumName($class, $allEnums);
-                    $from = $prefix.'enums';
-                } else {
-                    return $match[0];
-                }
-
-                if ($class !== $selfFqcn) {
-                    $imports[] = sprintf("import type { %s } from '%s';", $short, $from);
-                }
-
-                return $short;
+            // A closure (not an arrow fn) so `$imports` is captured by reference.
+            function (array $match) use ($fromDir, $allModels, $allEnums, $allResources, &$imports, $selfFqcn): string {
+                return $this->resolveClassReference(ltrim($match[0], '\\'), $fromDir, $allModels, $allEnums, $allResources, $imports, $selfFqcn)
+                    ?? $match[0];
             },
             $type,
         );
+    }
+
+    /**
+     * The generated type name for one class, recording the import it needs;
+     * null when the class is not a resource, model or enum.
+     *
+     * @param  string  $fqcn  Without a leading backslash; may have no namespace.
+     * @param  string  $fromDir  See resolveClassString().
+     * @param  list<array>  $allModels
+     * @param  list<array>  $allEnums
+     * @param  list<array>  $allResources
+     * @param  list<string>  $imports
+     * @param  ?string  $selfFqcn  The class the file declares; never imported.
+     */
+    protected function resolveClassReference(
+        string $fqcn,
+        string $fromDir,
+        array $allModels,
+        array $allEnums,
+        array $allResources,
+        array &$imports,
+        ?string $selfFqcn = null,
+    ): ?string {
+        $prefix = $fromDir === '' ? './' : '../';
+
+        if (class_exists($fqcn) && is_subclass_of($fqcn, JsonResource::class)) {
+            $short = $this->resolveResourceName($fqcn, $allResources);
+            $from = $fromDir === 'resources' ? './'.$short : $prefix.'resources';
+        } elseif (class_exists($fqcn) && is_subclass_of($fqcn, Model::class)) {
+            $short = $this->resolveModelName($fqcn, $allModels);
+            $from = $fromDir === 'models' ? './'.$short : $prefix.'models';
+        } elseif (enum_exists($fqcn)) {
+            $short = $this->resolveEnumName($fqcn, $allEnums);
+            $from = $prefix.'enums';
+        } else {
+            return null;
+        }
+
+        if ($fqcn !== $selfFqcn) {
+            $imports[] = sprintf("import type { %s } from '%s';", $short, $from);
+        }
+
+        return $short;
     }
 
     /**

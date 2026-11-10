@@ -29,7 +29,7 @@ Any of these changes should trigger a regenerate:
 - A model changed `$casts`, `$hidden`, `$visible`, `$fillable`, `$guarded`, a relationship method, or a `#[TypefinderOverrides]` / `#[TypefinderWriteShape]` attribute.
 - A `FormRequest`'s `rules()` or `#[TypefinderOverrides]` changed.
 - A backed enum was added, renamed, or had cases changed.
-- A `JsonResource` was added or its `#[TypefinderResource]` attribute changed.
+- A `JsonResource` was added, its `#[TypefinderResource]` attribute changed, or the PHPDoc `@return array{…}` on its `toArray()` changed.
 - A controller action was tagged (or untagged) with `#[TypefinderPage]`.
 - A class implementing `ShouldBroadcast` was added or its payload changed.
 - A custom cast class was added/modified, or a `Typefinder::registerCast(...)` entry was added to a service provider.
@@ -48,7 +48,7 @@ The command emits a single JSON object on stdout. Relevant fields:
 - `files[]` — each entry has `{ path, written }`. `written: true` means the file changed. If every entry is `written: false`, nothing in the backend changed in a way that affects frontend types.
 - `warnings[]` — non-fatal notices. Surface these to the user verbatim.
 
-For a CI-style regression check (fails when regeneration would change anything on disk) use `--check` instead of `--json`; it needs the generated output committed (`gitignore_generated` => false). For a human-readable step-by-step trace use `--debug`.
+For a CI-style regression check (fails when regeneration would change anything on disk) use `--check` instead of `--json`; it needs the generated output committed (`gitignore_generated` => false). Add `--strict` to either workflow to also fail when the run produced any warning. For a human-readable step-by-step trace use `--debug`.
 
 ### Import Patterns
 @boostsnippet("Typefinder type import", "typescript")
@@ -59,7 +59,7 @@ import type { Post } from '@typefinder/models/Post'
 ## After running
 
 - If frontend code imports from the regenerated types, verify it still type-checks (`tsc --noEmit` or the project's build/check script).
-- If `warnings[]` is non-empty, relay them. A typical warning is "unknown cast type fell back to `unknown`" — the fix is either a `#[\Pentacore\Typefinder\Attributes\TypefinderCast('T')]` attribute on the cast class (if the user owns it) or a `Typefinder::registerCast(...)` call from a service provider (for third-party casts).
+- If `warnings[]` is non-empty, relay them. A typical warning is "`Model.column`: cast '…' has no TypeScript mapping — emitted as `unknown`". Fix it with one of: a `#[\Pentacore\Typefinder\Attributes\TypefinderCast('T')]` attribute on the cast class (if the user owns it), a `Typefinder::registerCast(...)` call from a service provider (for third-party casts), or an entry in `typefinder.casts.type_map` in `config/typefinder.php`.
 - Do **not** edit files under the output path (default `resources/js/typefinder/`). They are regenerated on every run and edits will be lost. The correct escape hatch is the `#[TypefinderOverrides([...])]` attribute on the source class.
 
 ## Debug mode
