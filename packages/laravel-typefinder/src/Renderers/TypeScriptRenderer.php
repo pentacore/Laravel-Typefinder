@@ -46,6 +46,22 @@ class TypeScriptRenderer
         return $type.' | null';
     }
 
+    /**
+     * A property key as it must be written in a type literal: bare when it
+     * is an identifier, single-quoted otherwise (`'content-type'`, `'a.b'`).
+     */
+    public static function propertyKey(string $name): string
+    {
+        return self::isIdentifier($name)
+            ? $name
+            : "'".str_replace(['\\', "'"], ['\\\\', "\\'"], $name)."'";
+    }
+
+    private static function isIdentifier(string $name): bool
+    {
+        return preg_match('/^[A-Za-z_$][A-Za-z0-9_$]*$/', $name) === 1;
+    }
+
     private static function unionContainsNull(string $type): bool
     {
         $depth = 0;
@@ -534,11 +550,15 @@ TS;
     }
 
     /**
-     * Render a request field (top-level line only; nested recursion handled here).
+     * Render a request field. Nested objects and object arrays recurse, to
+     * any depth: inline, or as a named type each when $extractNested is on.
+     *
+     * @param  string  $typeName  the type the field belongs to; prefixes the names of extracted nested types
+     * @param  array<string, string>  $extractedTypes  extracted nested types by name, in output order
      */
     protected function renderRequestField(
         array $field,
-        string $requestName,
+        string $typeName,
         array $allEnums,
         array &$imports,
         array &$lines,
@@ -547,39 +567,66 @@ TS;
         int $indent = 1,
     ): void {
         $prefix = str_repeat('  ', $indent);
+        $key = self::propertyKey((string) $field['name']);
         $optional = $field['required'] ? '' : '?';
         $nullable = (bool) $field['nullable'];
 
         $isObjectArray = $field['type'] === 'object-array';
 
-        if (($field['type'] === 'object' || $isObjectArray) && isset($field['children'])) {
-            if ($extractNested) {
-                $nestedName = $requestName.ucfirst((string) $field['name']);
-                $nestedLines = [];
-                foreach ($field['children'] as $child) {
-                    $childOptional = $child['required'] ? '' : '?';
-                    $childType = $this->resolveTypeString($child['type'], $child['nullable'], $allEnums, $imports, 'requests');
-                    $nestedLines[] = sprintf('  %s%s: %s;', $child['name'], $childOptional, self::appendNullable($childType, (bool) $child['nullable']));
-                }
+        if ($field['type'] !== 'object' && ! $isObjectArray || ! isset($field['children'])) {
+            $typeStr = $this->resolveTypeString($field['type'], $nullable, $allEnums, $imports, 'requests');
+            $lines[] = sprintf('%s%s%s: %s;', $prefix, $key, $optional, self::appendNullable($typeStr, $nullable));
 
-                $extractedTypes[] = "export type {$nestedName} = {\n".implode("\n", $nestedLines)."\n};";
-                $reference = $isObjectArray ? $nestedName.'[]' : $nestedName;
-                $lines[] = sprintf('%s%s%s: %s;', $prefix, $field['name'], $optional, self::appendNullable($reference, $nullable));
-            } else {
-                $lines[] = sprintf('%s%s%s: {', $prefix, $field['name'], $optional);
-                foreach ($field['children'] as $child) {
-                    $childOptional = $child['required'] ? '' : '?';
-                    $childType = $this->resolveTypeString($child['type'], $child['nullable'], $allEnums, $imports, 'requests');
-                    $lines[] = sprintf('%s  %s%s: %s;', $prefix, $child['name'], $childOptional, self::appendNullable($childType, (bool) $child['nullable']));
-                }
-
-                $closer = $isObjectArray ? '}[]' : '}';
-                $lines[] = sprintf('%s%s%s;', $prefix, $closer, $nullable ? ' | null' : '');
-            }
-        } else {
-            $typeStr = $this->resolveTypeString($field['type'], $field['nullable'], $allEnums, $imports, 'requests');
-            $lines[] = sprintf('%s%s%s: %s;', $prefix, $field['name'], $optional, self::appendNullable($typeStr, $nullable));
+            return;
         }
+
+        // `items.*.*.name` is an array of arrays of objects.
+        $arraySuffix = $isObjectArray ? str_repeat('[]', max(1, (int) ($field['arrayDepth'] ?? 1))) : '';
+
+        if ($extractNested) {
+            $nestedName = $this->nestedTypeName($typeName, (string) $field['name'], $extractedTypes);
+            // Reserve the name and the position: a parent is listed before its own nested types.
+            $extractedTypes[$nestedName] = '';
+
+            $nestedLines = [];
+            foreach ($field['children'] as $child) {
+                $this->renderRequestField($child, $nestedName, $allEnums, $imports, $nestedLines, $extractedTypes, true);
+            }
+
+            $extractedTypes[$nestedName] = "export type {$nestedName} = {\n".implode("\n", $nestedLines)."\n};";
+            $lines[] = sprintf('%s%s%s: %s;', $prefix, $key, $optional, self::appendNullable($nestedName.$arraySuffix, $nullable));
+
+            return;
+        }
+
+        $lines[] = sprintf('%s%s%s: {', $prefix, $key, $optional);
+        foreach ($field['children'] as $child) {
+            $this->renderRequestField($child, $typeName, $allEnums, $imports, $lines, $extractedTypes, false, $indent + 1);
+        }
+
+        $lines[] = sprintf('%s}%s%s;', $prefix, $arraySuffix, $nullable ? ' | null' : '');
+    }
+
+    /**
+     * Name for an extracted nested type: the owning type's name plus the
+     * field name, made a valid identifier and unique within the file.
+     *
+     * @param  array<string, string>  $taken
+     */
+    protected function nestedTypeName(string $typeName, string $fieldName, array $taken): string
+    {
+        $suffix = self::isIdentifier($fieldName)
+            ? ucfirst($fieldName)
+            : implode('', array_map(ucfirst(...), preg_split('/[^A-Za-z0-9_$]+/', $fieldName, -1, PREG_SPLIT_NO_EMPTY) ?: []));
+
+        $name = $typeName.($suffix === '' ? 'Field' : $suffix);
+        $candidate = $name;
+
+        for ($n = 2; isset($taken[$candidate]); $n++) {
+            $candidate = $name.$n;
+        }
+
+        return $candidate;
     }
 
     protected function resolveEnumName(string $fqcn, array $allEnums): string

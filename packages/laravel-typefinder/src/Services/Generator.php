@@ -6,6 +6,8 @@ namespace Pentacore\Typefinder\Services;
 
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Facades\File;
+use Pentacore\Typefinder\Analysis\InertiaSharedProps;
+use Pentacore\Typefinder\Analysis\KeyDriftDetector;
 use Pentacore\Typefinder\Attributes\TypefinderIgnore;
 use Pentacore\Typefinder\Attributes\TypefinderWriteShape;
 use Pentacore\Typefinder\Cache\CacheKeyFactory;
@@ -20,7 +22,9 @@ use Pentacore\Typefinder\Renderers\TypeScriptRenderer;
 use Pentacore\Typefinder\Resolvers\CastTypeResolver;
 use Pentacore\Typefinder\Resolvers\ColumnTypeResolver;
 use Pentacore\Typefinder\Resolvers\MorphToResolver;
+use Pentacore\Typefinder\Resolvers\PhpDocShapeResolver;
 use Pentacore\Typefinder\Support\ClassNameResolver;
+use Pentacore\Typefinder\Support\GeneratedClasses;
 use Pentacore\Typefinder\TypefinderRegistry;
 use ReflectionAttribute;
 use ReflectionClass;
@@ -237,6 +241,8 @@ final class Generator
             $this->assertUniqueTypeNames('requests', $allRequests);
 
             foreach ($allRequests as $allRequest) {
+                array_map($warn, $allRequest['warnings'] ?? []);
+
                 $absolutePath = new ReflectionClass($allRequest['fqcn'])->getFileName();
                 if ($absolutePath !== false) {
                     $extractionCache->put($absolutePath, 'requests', $allRequest);
@@ -251,6 +257,13 @@ final class Generator
         }
 
         $allResources = [];
+        $keyDriftDetector = new KeyDriftDetector(
+            new PhpDocShapeResolver(new GeneratedClasses(
+                array_column($allModels, 'fqcn'),
+                array_column($allEnums, 'fqcn'),
+            )),
+            sharedPageProps: config('typefinder.inertia.enabled', false) ? $this->keyDrift($this->sharedPageProps(...)) : [],
+        );
         if (config('typefinder.resources.enabled', true)) {
             $resourceExtractor = new ResourceExtractor(
                 inferFromModelName: (bool) config('typefinder.resources.infer_from_model_name', true),
@@ -267,6 +280,10 @@ final class Generator
             $this->assertUniqueTypeNames('resources', $allResources);
 
             foreach ($allResources as $allResource) {
+                foreach ($this->keyDrift(static fn (): array => $keyDriftDetector->checkResource($allResource)) as $message) {
+                    $warn($message);
+                }
+
                 $absolutePath = new ReflectionClass($allResource['fqcn'])->getFileName();
                 if ($absolutePath !== false) {
                     $extractionCache->put($absolutePath, 'resources', $allResource);
@@ -286,6 +303,10 @@ final class Generator
             $allPages = [];
             foreach ($paths as $path) {
                 $allPages = array_merge($allPages, $controllerExtractor->extractFromDirectory($path, null, $onSkip));
+            }
+
+            foreach ($this->keyDrift(static fn (): array => $keyDriftDetector->checkPages($allPages)) as $message) {
+                $warn($message);
             }
 
             $allPages = $this->mergePages($allPages);
@@ -694,6 +715,34 @@ final class Generator
     }
 
     /**
+     * Run a drift check. Drift only adds warnings, so a check that fails
+     * (an autoloader throwing, unexpected source) yields none instead of
+     * aborting generation.
+     *
+     * @param  \Closure(): list<string>  $check
+     * @return list<string>
+     */
+    private function keyDrift(\Closure $check): array
+    {
+        try {
+            return $check();
+        } catch (\Throwable) {
+            return [];
+        }
+    }
+
+    /**
+     * Props the app's Inertia middleware shares with every page, for the
+     * page drift checks.
+     *
+     * @return list<string>
+     */
+    private function sharedPageProps(): array
+    {
+        return InertiaSharedProps::fromDirectory(app_path('Http/Middleware'));
+    }
+
+    /**
      * Rebuild pages.d.ts from every configured controller path. Used by
      * incremental runs: one component can be declared across several
      * controllers, so a single changed file is not enough to render it.
@@ -912,15 +961,42 @@ final class Generator
             }
         };
 
-        return match ($category) {
+        $extraction = match ($category) {
             'enums' => (new EnumExtractor)->extract($className),
             'models' => $this->extractSingleModel($className, $config, $warn),
-            'requests' => (new RequestExtractor)->extract($className),
+            'requests' => $this->extractSingleRequest($className, $warn),
             'resources' => $this->extractSingleResource($className, $config, $warn),
             'inertia' => $this->extractSingleController($className),
             'broadcasting' => (new BroadcastExtractor)->extract($className),
             default => null,
         };
+
+        if ($extraction !== null && in_array($category, ['resources', 'inertia'], true)) {
+            // Models/enums come from config discovery here, like the resource extractor's.
+            $messages = $this->keyDrift(function () use ($category, $extraction): array {
+                $keyDriftDetector = new KeyDriftDetector(
+                    new PhpDocShapeResolver(new GeneratedClasses),
+                    sharedPageProps: $category === 'inertia' ? $this->sharedPageProps() : [],
+                );
+
+                return $category === 'resources'
+                    ? $keyDriftDetector->checkResource($extraction)
+                    : $keyDriftDetector->checkPages($extraction);
+            });
+            foreach ($messages as $message) {
+                $warn($message);
+            }
+        }
+
+        return $extraction;
+    }
+
+    private function extractSingleRequest(string $className, callable $warn): array
+    {
+        $request = (new RequestExtractor)->extract($className);
+        array_map($warn, $request['warnings'] ?? []);
+
+        return $request;
     }
 
     private function extractSingleResource(string $className, array $config, callable $warn): ?array
