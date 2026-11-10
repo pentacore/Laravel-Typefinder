@@ -394,7 +394,8 @@ When a cast is encountered, the resolver tries in order:
 3. `#[TypefinderCast]` attribute on the cast class.
 4. Built-in name map (`datetime`, `array`, etc.) and class map (`AsCollection::class`, etc.).
 5. `BackedEnum` detection → emits a reference to the generated enum type.
-6. Fall back to `unknown` (emits a warning).
+6. Parameterised casts (`decimal:2`, `datetime:Y-m-d`, `MyCast::class.':arg'`) with no exact match: steps 1–5 retried with the part before the first `:`. `AsEnumCollection:` / `AsEnumArrayObject:` arguments emit the enum array type.
+7. Fall back to `unknown` (emits a warning).
 
 ## Configuration
 

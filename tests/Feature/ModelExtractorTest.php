@@ -21,6 +21,7 @@ use Pentacore\Typefinder\Resolvers\ColumnTypeResolver;
 use Pentacore\Typefinder\TypefinderRegistry;
 use Tests\Fixtures\Casts\UnmappedCast;
 use Tests\Fixtures\Models\JsonCastQuest;
+use Tests\Fixtures\Models\ParameterisedCastQuest;
 use Tests\Fixtures\Models\UnmappedCastQuest;
 use Tests\TestCase;
 
@@ -212,6 +213,37 @@ final class ModelExtractorTest extends TestCase
         $result = $this->warningExtractor($warnings, new CastTypeResolver([], $registry))
             ->extract(UnmappedCastQuest::class);
         $this->assertSame('unknown', $this->findColumn($result, 'rewards')['type']);
+
+        $this->assertSame([], $warnings);
+    }
+
+    public function test_parameterised_casts_emit_no_warning(): void
+    {
+        $warnings = [];
+        $result = $this->warningExtractor($warnings)->extract(ParameterisedCastQuest::class);
+
+        $this->assertSame('number', $this->findColumn($result, 'party_id')['type']);
+        $this->assertSame('string', $this->findColumn($result, 'completed_at')['type']);
+        $this->assertSame('{ amount: number; currency: string }', $this->findColumn($result, 'rewards')['type']);
+        $this->assertSame([], $warnings);
+    }
+
+    public function test_cast_mapped_to_real_type_via_config_or_registry_emits_no_warning(): void
+    {
+        $warnings = [];
+
+        // typefinder.casts.type_map entry
+        $result = $this->warningExtractor($warnings, new CastTypeResolver([UnmappedCast::class => 'Reward[]']))
+            ->extract(UnmappedCastQuest::class);
+        $this->assertSame('Reward[]', $this->findColumn($result, 'rewards')['type']);
+
+        // Typefinder::registerCast()
+        $registry = new TypefinderRegistry;
+        $registry->registerCast(UnmappedCast::class, 'Loot');
+
+        $result = $this->warningExtractor($warnings, new CastTypeResolver([], $registry))
+            ->extract(UnmappedCastQuest::class);
+        $this->assertSame('Loot', $this->findColumn($result, 'rewards')['type']);
 
         $this->assertSame([], $warnings);
     }

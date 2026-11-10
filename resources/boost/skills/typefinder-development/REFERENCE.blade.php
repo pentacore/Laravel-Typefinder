@@ -34,17 +34,18 @@ php artisan typefinder:generate [--debug] [--json] [--check] [--strict]
 | PHP cast | TS type |
 |---|---|
 | `'string'` / `'alpha'` / `'email'` / `'url'` / `'uuid'` / `'ulid'` / … | `string` |
-| `'integer'` / `'int'` / `'float'` / `'decimal'` / `'numeric'` | `number` |
-| `'boolean'` / `'accepted'` / `'declined'` | `boolean` |
-| `'datetime'` / `'date'` / `'timestamp'` / `'immutable_*'` | `string` |
-| `'array'` / `'collection'` / `'encrypted:array'` | `unknown[]` |
+| `'integer'` / `'int'` / `'float'` / `'decimal:2'` / `'numeric'` | `number` |
+| `'boolean'` / `'bool'` / `'accepted'` / `'declined'` | `boolean` |
+| `'datetime'` / `'date'` / `'timestamp'` / `'immutable_*'` / `'custom_datetime'` (with or without a `:format`) | `string` |
+| `'array'` / `'collection'` / `'encrypted:array'` / `'encrypted:collection'` | `unknown[]` |
 | `'object'` / `'encrypted:object'` | `Record<string, unknown>` |
-| `'json'` | `unknown` |
+| `'json'` / `'encrypted:json'` | `unknown` |
 | `'hashed'` | `string` |
-| `AsArrayObject` | `Record<string, unknown>` |
-| `AsCollection` | `unknown[]` |
-| `AsStringable` | `string` |
-| `AsEnumCollection:{Enum}` | inferred enum type, e.g. `PostStatus[]` |
+| `AsArrayObject` / `AsEncryptedArrayObject` / `AsFluent` | `Record<string, unknown>` |
+| `AsCollection` / `AsEncryptedCollection` (incl. `::using()` / `::of()`) | `unknown[]` |
+| `AsStringable` / `AsUri` / `AsHtmlString` | `string` |
+| `AsEnumCollection:{Enum}` / `AsEnumArrayObject:{Enum}` | inferred enum type, e.g. `PostStatus[]` |
+| Parameterised cast `Name:args` with no exact mapping | resolved as `Name` |
 | Unknown cast (no `#[TypefinderCast]` attribute, no `Typefinder::registerCast()` entry, not a backed enum) | `unknown` (warning emitted) |
 
 ## Type resolution precedence — models, resources, requests
