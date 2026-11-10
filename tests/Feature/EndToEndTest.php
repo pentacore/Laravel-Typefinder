@@ -106,8 +106,8 @@ final class EndToEndTest extends TestCase
         $this->assertStringContainsString("export type * from './requests';", $topBarrel);
 
         $modelBarrel = File::get($this->outputPath.'/models/index.d.ts');
-        $this->assertStringContainsString("export type { User } from './User';", $modelBarrel);
-        $this->assertStringContainsString("export type { Post } from './Post';", $modelBarrel);
+        $this->assertStringContainsString("export type { User, UserCreate, UserUpdate } from './User';", $modelBarrel);
+        $this->assertStringContainsString("export type { Post, PostCreate, PostUpdate } from './Post';", $modelBarrel);
     }
 
     public function test_idempotent_generation(): void

@@ -110,7 +110,7 @@ Inside the cast resolver, priority (highest first):
 ├── models/                 # Eloquent models + derived pivots
 │   ├── {ModelName}.d.ts    # includes the Read, Create, and Update types
 │   ├── {PivotName}Pivot.d.ts
-│   └── index.d.ts          # barrel — re-exports every model + pivot
+│   └── index.d.ts          # barrel — re-exports every model, write shape + pivot
 ├── enums/                  # `.ts` when enums.emit_values is on
 │   ├── {EnumName}.d.ts
 │   └── index.d.ts

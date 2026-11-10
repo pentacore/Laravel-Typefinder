@@ -103,8 +103,15 @@ final class Generator
             }
         }
 
+        $warn = function (string $message) use (&$warnings): void {
+            $warnings[] = $message;
+            if ($this->onWarn !== null) {
+                ($this->onWarn)($message);
+            }
+        };
+
         foreach (array_keys($affectedCategories) as $cat) {
-            $this->rewriteCategoryBarrel($cat, $config, $outputPath, $changed);
+            $this->rewriteCategoryBarrel($cat, $config, $outputPath, $changed, $warn);
         }
 
         if (isset($affectedCategories['inertia'])) {
@@ -159,6 +166,8 @@ final class Generator
         $allRequests = [];
         $allPivots = [];
         $categories = [];
+        // What each category barrel exports, for the cross-category check.
+        $barrelNames = [];
 
         $warn = function (string $message) use (&$warnings): void {
             $warnings[] = $message;
@@ -189,7 +198,7 @@ final class Generator
             }
 
             if ($allEnums !== []) {
-                $this->writeEnums($allEnums, $outputPath, $changed);
+                $barrelNames['enums'] = $this->writeEnums($allEnums, $outputPath, $changed);
                 $categories[] = 'enums';
             }
         }
@@ -225,7 +234,7 @@ final class Generator
             ]);
 
             if ($allModels !== [] || $allPivots !== []) {
-                $this->writeModels($allModels, $allPivots, $allEnums, $outputPath, $changed);
+                $barrelNames['models'] = $this->writeModels($allModels, $allPivots, $allEnums, $outputPath, $changed, $warn);
                 $categories[] = 'models';
             }
         }
@@ -251,7 +260,7 @@ final class Generator
 
             if ($allRequests !== []) {
                 $extractNested = config('typefinder.requests.extract_nested', false);
-                $this->writeRequests($allRequests, $allEnums, $outputPath, $extractNested, $changed);
+                $barrelNames['requests'] = $this->writeRequests($allRequests, $allEnums, $outputPath, $extractNested, $changed, $warn);
                 $categories[] = 'requests';
             }
         }
@@ -292,7 +301,7 @@ final class Generator
             }
 
             if ($allResources !== []) {
-                $this->writeResources($allResources, $allModels, $allEnums, $outputPath, $changed);
+                $barrelNames['resources'] = $this->writeResources($allResources, $allModels, $allEnums, $outputPath, $changed, $warn);
                 $categories[] = 'resources';
             }
         }
@@ -335,12 +344,7 @@ final class Generator
             }
         }
 
-        $this->warnOnCrossCategoryNames([
-            'enums' => $allEnums,
-            'models' => $allModels,
-            'requests' => $allRequests,
-            'resources' => $allResources,
-        ], $warn);
+        $this->warnOnCrossCategoryNames($barrelNames, $warn);
 
         $this->writeHelpers($outputPath, $changed);
         $categories[] = 'helpers';
@@ -364,7 +368,10 @@ final class Generator
         );
     }
 
-    private function writeEnums(array $enums, string $outputPath, array &$changed): void
+    /**
+     * @return list<string> the type names the category barrel exports
+     */
+    private function writeEnums(array $enums, string $outputPath, array &$changed): array
     {
         $dir = $outputPath.'/enums';
         File::ensureDirectoryExists($dir);
@@ -395,6 +402,8 @@ final class Generator
         if ($wrote) {
             $changed[] = $indexPath;
         }
+
+        return $names;
     }
 
     /**
@@ -412,7 +421,10 @@ final class Generator
         return TypeScriptRenderer::FILE_HEADER."\n".implode("\n", $lines)."\n";
     }
 
-    private function writeModels(array $models, array $pivots, array $allEnums, string $outputPath, array &$changed): void
+    /**
+     * @return list<string> the type names the category barrel exports
+     */
+    private function writeModels(array $models, array $pivots, array $allEnums, string $outputPath, array &$changed, callable $warn): array
     {
         $dir = $outputPath.'/models';
         File::ensureDirectoryExists($dir);
@@ -420,27 +432,24 @@ final class Generator
         $emitWriteShapes = (bool) config('typefinder.models.emit_write_shapes', true);
         $globalImmutable = (array) config('typefinder.models.immutable_on_update', ['id', 'created_at', 'updated_at', 'deleted_at']);
 
-        $names = [];
+        $exports = [];
 
         foreach ($models as $model) {
             $immutable = array_values(array_unique([...$globalImmutable, ...$this->getContractImmutable($model['fqcn'])]));
             $content = $this->typeScriptRenderer->renderModelFile($model, $allEnums, $models, $emitWriteShapes, $immutable);
             $this->writeModelFile($dir, $model['name'], $content, $changed);
-            $names[] = $model['name'];
+            $exports[$model['name']] = TypeScriptRenderer::exportedTypeNames($content, $model['name']);
         }
 
         foreach ($pivots as $pivot) {
             $content = $this->typeScriptRenderer->renderPivot($pivot);
             $this->writeModelFile($dir, $pivot['name'], $content, $changed);
-            $names[] = $pivot['name'];
+            $exports[$pivot['name']] = TypeScriptRenderer::exportedTypeNames($content, $pivot['name']);
         }
 
-        $this->pruneStaleFiles($dir, array_map(fn ($n): string => $n.'.d.ts', [...$names, 'index']));
+        $this->pruneStaleFiles($dir, array_map(fn ($n): string => $n.'.d.ts', [...array_keys($exports), 'index']));
 
-        $wrote = $this->writeIfChanged($dir.'/index.d.ts', $this->typeScriptRenderer->renderBarrelIndex($names));
-        if ($wrote) {
-            $changed[] = 'models/index.d.ts';
-        }
+        return $this->writeBarrel('models', $exports, $outputPath, $changed, $warn);
     }
 
     private function writeModelFile(string $dir, string $name, string $content, array &$changed): void
@@ -467,12 +476,15 @@ final class Generator
         return $attrs[0]->newInstance()->immutableOnUpdate;
     }
 
-    private function writeRequests(array $requests, array $allEnums, string $outputPath, bool $extractNested, array &$changed): void
+    /**
+     * @return list<string> the type names the category barrel exports
+     */
+    private function writeRequests(array $requests, array $allEnums, string $outputPath, bool $extractNested, array &$changed, callable $warn): array
     {
         $dir = $outputPath.'/requests';
         File::ensureDirectoryExists($dir);
 
-        $names = [];
+        $exports = [];
         foreach ($requests as $request) {
             $content = $this->typeScriptRenderer->renderRequest($request, $allEnums, $extractNested);
             $relativePath = 'requests/'.$request['name'].'.d.ts';
@@ -481,23 +493,23 @@ final class Generator
                 $changed[] = $relativePath;
             }
 
-            $names[] = $request['name'];
+            $exports[$request['name']] = TypeScriptRenderer::exportedTypeNames($content, $request['name']);
         }
 
-        $this->pruneStaleFiles($dir, array_map(fn ($n): string => $n.'.d.ts', [...$names, 'index']));
+        $this->pruneStaleFiles($dir, array_map(fn ($n): string => $n.'.d.ts', [...array_keys($exports), 'index']));
 
-        $wrote = $this->writeIfChanged($dir.'/index.d.ts', $this->typeScriptRenderer->renderBarrelIndex($names));
-        if ($wrote) {
-            $changed[] = 'requests/index.d.ts';
-        }
+        return $this->writeBarrel('requests', $exports, $outputPath, $changed, $warn);
     }
 
-    private function writeResources(array $resources, array $allModels, array $allEnums, string $outputPath, array &$changed): void
+    /**
+     * @return list<string> the type names the category barrel exports
+     */
+    private function writeResources(array $resources, array $allModels, array $allEnums, string $outputPath, array &$changed, callable $warn): array
     {
         $dir = $outputPath.'/resources';
         File::ensureDirectoryExists($dir);
 
-        $names = [];
+        $exports = [];
         foreach ($resources as $resource) {
             $content = $this->typeScriptRenderer->renderResource($resource, $allModels, $allEnums, $resources);
             $relativePath = 'resources/'.$resource['name'].'.d.ts';
@@ -506,15 +518,77 @@ final class Generator
                 $changed[] = $relativePath;
             }
 
-            $names[] = $resource['name'];
+            $exports[$resource['name']] = TypeScriptRenderer::exportedTypeNames($content, $resource['name']);
         }
 
-        $this->pruneStaleFiles($dir, array_map(fn (string $n): string => $n.'.d.ts', [...$names, 'index']));
+        $this->pruneStaleFiles($dir, array_map(fn (string $n): string => $n.'.d.ts', [...array_keys($exports), 'index']));
 
-        $wrote = $this->writeIfChanged($dir.'/index.d.ts', $this->typeScriptRenderer->renderBarrelIndex($names));
-        if ($wrote) {
-            $changed[] = 'resources/index.d.ts';
+        return $this->writeBarrel('resources', $exports, $outputPath, $changed, $warn);
+    }
+
+    /**
+     * Write a category's `index.d.ts`, re-exporting every type of every file.
+     *
+     * @param  array<string, list<string>>  $exportsByFile  exported type names by file name (without extension)
+     * @return list<string> the type names the barrel exports
+     */
+    private function writeBarrel(string $category, array $exportsByFile, string $outputPath, array &$changed, callable $warn): array
+    {
+        $exportsByFile = $this->barrelExports($category, $exportsByFile, $warn);
+
+        if ($this->writeIfChanged($outputPath.'/'.$category.'/index.d.ts', $this->typeScriptRenderer->renderBarrelIndex($exportsByFile))) {
+            $changed[] = $category.'/index.d.ts';
         }
+
+        return array_merge(...array_values($exportsByFile));
+    }
+
+    /**
+     * What a category barrel re-exports from each file. A name that several
+     * files export can only be re-exported once: the file named after it
+     * keeps it, and when there is none the barrel leaves the name out. The
+     * other types stay importable from their own file.
+     *
+     * @param  array<string, list<string>>  $exportsByFile
+     * @return array<string, list<string>>
+     */
+    private function barrelExports(string $category, array $exportsByFile, callable $warn): array
+    {
+        $filesByName = [];
+        foreach ($exportsByFile as $file => $names) {
+            foreach ($names as $name) {
+                $filesByName[$name][] = (string) $file;
+            }
+        }
+
+        ksort($filesByName, SORT_STRING);
+
+        foreach ($filesByName as $name => $files) {
+            if (count($files) < 2) {
+                continue;
+            }
+
+            sort($files, SORT_STRING);
+            $owner = in_array((string) $name, $files, true) ? (string) $name : null;
+
+            foreach ($files as $file) {
+                if ($file !== $owner) {
+                    $exportsByFile[$file] = array_values(array_diff($exportsByFile[$file], [$name]));
+                }
+            }
+
+            $warn(sprintf(
+                '%s: %s is exported by %s. The barrel re-exports %s.',
+                $category,
+                $name,
+                implode(' and ', array_map(fn (string $file): string => $file.'.d.ts', $files)),
+                $owner === null
+                    ? (count($files) === 2 ? 'neither' : 'none of them').'; import it from its file'
+                    : sprintf('the one from %s.d.ts; import any other from its file', $owner),
+            ));
+        }
+
+        return $exportsByFile;
     }
 
     private function writeHelpers(string $outputPath, array &$changed): void
@@ -602,14 +676,14 @@ final class Generator
      * stays valid, but the top-level index.d.ts re-exports both, which
      * TypeScript reports as ambiguous (TS2308).
      *
-     * @param  array<string, list<array{name: string}>>  $byCategory
+     * @param  array<string, list<string>>  $byCategory  the type names each category barrel exports
      */
     private function warnOnCrossCategoryNames(array $byCategory, callable $warn): void
     {
         $categoriesByName = [];
-        foreach ($byCategory as $category => $extractions) {
-            foreach ($extractions as $extraction) {
-                $categoriesByName[$extraction['name']][$category] = true;
+        foreach ($byCategory as $category => $names) {
+            foreach ($names as $name) {
+                $categoriesByName[$name][$category] = true;
             }
         }
 
@@ -1206,7 +1280,7 @@ final class Generator
     /**
      * Re-render the barrel index for an affected category from what's on disk.
      */
-    private function rewriteCategoryBarrel(string $category, array $config, string $outputPath, array &$changed): void
+    private function rewriteCategoryBarrel(string $category, array $config, string $outputPath, array &$changed, callable $warn): void
     {
         if (in_array($category, ['inertia', 'broadcasting'], true)) {
             return;
@@ -1217,8 +1291,10 @@ final class Generator
             return;
         }
 
-        $names = [];
-        $ext = ($category === 'enums' && ($config['enums']['emit_values'] ?? false)) ? 'ts' : 'd.ts';
+        $valueEnums = $category === 'enums' && ($config['enums']['emit_values'] ?? false);
+        $ext = $valueEnums ? 'ts' : 'd.ts';
+
+        $exports = [];
         foreach (File::files($dir) as $file) {
             $filename = $file->getFilename();
             if ($filename === 'index.'.$ext) {
@@ -1229,23 +1305,29 @@ final class Generator
                 continue;
             }
 
-            if (str_ends_with($filename, '.d.ts')) {
-                $names[] = substr($filename, 0, -5);
-            } elseif (str_ends_with($filename, '.ts')) {
-                $names[] = substr($filename, 0, -3);
+            $name = match (true) {
+                str_ends_with($filename, '.d.ts') => substr($filename, 0, -5),
+                str_ends_with($filename, '.ts') => substr($filename, 0, -3),
+                default => null,
+            };
+
+            if ($name !== null) {
+                // A value barrel re-exports everything, so it needs no names.
+                $exports[$name] = $valueEnums ? [$name] : TypeScriptRenderer::exportedTypeNames($file->getContents(), $name);
             }
         }
 
-        sort($names);
+        ksort($exports, SORT_STRING);
 
-        $barrelContent = ($category === 'enums' && ($config['enums']['emit_values'] ?? false))
-            ? $this->renderValueBarrel($names)
-            : $this->typeScriptRenderer->renderBarrelIndex($names);
+        if ($valueEnums) {
+            if ($this->writeIfChanged($dir.'/index.ts', $this->renderValueBarrel(array_keys($exports)))) {
+                $changed[] = 'enums/index.ts';
+            }
 
-        $barrelRelative = $category.'/index.'.$ext;
-        if ($this->writeIfChanged($dir.'/index.'.$ext, $barrelContent)) {
-            $changed[] = $barrelRelative;
+            return;
         }
+
+        $this->writeBarrel($category, $exports, $outputPath, $changed, $warn);
     }
 
     /**

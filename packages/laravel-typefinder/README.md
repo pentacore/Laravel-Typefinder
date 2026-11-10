@@ -122,6 +122,14 @@ Every run produces a single tree under `output_path` (default `resources/js/type
 
 Each type is named after its class's short name, so two classes with the same short name in one category (for example `Api\StoreUserRequest` and `Web\StoreUserRequest`) would produce the same file. The run fails with both class names instead; rename one, mark one `#[TypefinderIgnore]`, or narrow that category's `paths`. The same name in two different categories (a `Role` model and a `Role` enum) only warns, because the top-level `index.d.ts` then exports `Role` twice. Import it from its category barrel instead.
 
+Every category has a barrel (`models/index.d.ts`, …) that re-exports every type of every file, so the companion types are importable from it too:
+
+```typescript
+import type { User, UserCreate, UserUpdate } from '@/typefinder/models';
+```
+
+A companion type (`{Model}Create` / `{Model}Update`, `{Request}Query`, an extracted nested request type) can have the name of another type in its category: a `PostCreate` model next to the `PostCreate` write shape of `Post`. The barrel then re-exports the type whose file has that name, or neither when no file has it, and the run warns. The left-out type is still importable from its own file (`models/Post`). A companion with the name of a type in another category warns like the `Role` case above.
+
 ```
 resources/js/typefinder/
 ├── index.d.ts                  top-level barrel — re-exports every category
@@ -129,7 +137,7 @@ resources/js/typefinder/
 ├── models/                     Eloquent models + derived pivots
 │   ├── User.d.ts               contains User, UserCreate, UserUpdate
 │   ├── UserRolePivot.d.ts      pivots live alongside their models
-│   └── index.d.ts
+│   └── index.d.ts              category barrel — re-exports every type of every file
 ├── enums/                      backed PHP enums (`.ts` when emit_values is on)
 │   ├── PostStatus.d.ts
 │   └── index.d.ts
@@ -271,7 +279,7 @@ export type SetValueRequestQuery = {
 - The tag is read from the source of the `rules()` method the request uses (its own, an inherited one or one from a trait), on array items with a string-literal key. A tag on any other key (a constant, an expression) is ignored with a warning.
 - A tagged key takes its whole top-level field along: tagging `filter` or `filter.status` puts all of `filter` in the query type.
 - A request without tagged keys gets no `{Name}Query` type. One with only tagged keys gets `Record<string, never>` as its request type.
-- `{Name}Query` lives in the request's file and is imported from there (`requests/SetValueRequest`), like the `{Model}Create` / `{Model}Update` companions of a model.
+- `{Name}Query` lives in the request's file and is re-exported by the `requests` barrel, like the `{Model}Create` / `{Model}Update` companions of a model.
 
 ### Pivots
 
