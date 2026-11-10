@@ -62,7 +62,8 @@ final class KeyDriftEndToEndTest extends TestCase
      */
     private function driftWarnings(array $warnings): array
     {
-        return array_values(array_filter($warnings, static fn (string $w): bool => (str_contains($w, '::toArray()') && ! str_contains($w, '::toArray() @return'))
+        // Mapping (`@return:`) and composition warnings mention toArray() too but are not drift.
+        return array_values(array_filter($warnings, static fn (string $w): bool => (str_contains($w, '::toArray()') && ! str_contains($w, '::toArray() @return') && ! str_contains($w, '::toArray() composes a shape'))
             || str_contains($w, 'Inertia page')
             || str_contains($w, '#[TypefinderPage]')
             || str_contains($w, 'shape and PHPDoc')));

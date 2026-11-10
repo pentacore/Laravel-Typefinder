@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Http\Resources\ComposedLiteralResource;
+use App\Http\Resources\ComposedParentResource;
+use App\Http\Resources\ComposedResource;
+use App\Http\Resources\TagResource;
 use App\Http\Resources\UnmappableShapeResource;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\File;
@@ -455,6 +459,10 @@ PHP);
         $this->assertFileExists($this->outputPath.'/resources/ShapeShowcaseResource.d.ts');
         $this->assertFileExists($this->outputPath.'/resources/UnmappableShapeResource.d.ts');
         $this->assertFileExists($this->outputPath.'/resources/InheritedShapeResource.d.ts');
+        $this->assertFileExists($this->outputPath.'/resources/ComposedResource.d.ts');
+        $this->assertFileExists($this->outputPath.'/resources/ComposedParentResource.d.ts');
+        $this->assertFileExists($this->outputPath.'/resources/ComposedLiteralResource.d.ts');
+        $this->assertFileExists($this->outputPath.'/resources/TagResource.d.ts');
         $this->assertFileDoesNotExist($this->outputPath.'/resources/BaseShapeResource.d.ts');
         $this->assertFileDoesNotExist($this->outputPath.'/resources/LegacyResource.d.ts');
         $this->assertFileDoesNotExist($this->outputPath.'/resources/OrphanResource.d.ts');
@@ -522,6 +530,56 @@ PHP);
             [UnmappableShapeResource::class.'::toArray() @return: "handler" has unsupported type callable — emitted as unknown'],
             array_values($unmappable),
         );
+    }
+
+    public function test_composed_resources_rendered(): void
+    {
+        $regenResult = app(Generator::class)->generateFull();
+        $dir = $this->outputPath.'/resources';
+
+        $composed = File::get($dir.'/ComposedResource.d.ts');
+        $this->assertStringContainsString("import type { PostStatus } from '../enums';\nimport type { UserResource } from './UserResource';\n", $composed);
+        $this->assertStringContainsString(
+            "export type ComposedResource = {\n  id: number;\n  title: string;\n  status: PostStatus;\n  comments_count: number;\n  author?: UserResource;\n};\n",
+            $composed,
+        );
+
+        // `User` comes from the abstract parent's imports, `static` is the child.
+        $parent = File::get($dir.'/ComposedParentResource.d.ts');
+        $this->assertStringContainsString("import type { User } from '../models';\n", $parent);
+        $this->assertStringContainsString(
+            "export type ComposedParentResource = {\n  id: number;\n  owner: User;\n  self: ComposedParentResource | null;\n  tags: string[];\n  featured?: boolean;\n};\n",
+            $parent,
+        );
+
+        $literal = File::get($dir.'/ComposedLiteralResource.d.ts');
+        $this->assertStringNotContainsString('import type', $literal);
+        $this->assertStringContainsString(
+            "export type ComposedLiteralResource = {\n  id: number;\n  title: string;\n  note: unknown;\n};\n",
+            $literal,
+        );
+
+        // parent::toArray() from JsonResource is not composable: the name convention, as before.
+        $tag = File::get($dir.'/TagResource.d.ts');
+        $this->assertStringContainsString("import type { Tag } from '../models';", $tag);
+        $this->assertStringContainsString("export type TagResource = Tag;\n", $tag);
+
+        $barrel = File::get($dir.'/index.d.ts');
+        foreach (['ComposedResource', 'ComposedParentResource', 'ComposedLiteralResource', 'TagResource'] as $name) {
+            $this->assertStringContainsString("'./{$name}'", $barrel);
+        }
+
+        // The composition warning, exactly once; no drift or other warning for these resources.
+        foreach ([ComposedResource::class, ComposedParentResource::class, ComposedLiteralResource::class, TagResource::class] as $class) {
+            $mentions = array_values(array_filter(
+                $regenResult->warnings,
+                static fn (string $warning): bool => str_contains($warning, $class.':'),
+            ));
+            $expected = $class === ComposedLiteralResource::class
+                ? [ComposedLiteralResource::class.'::toArray() composes a shape but "note" has no documented type — add @return array{…} to toArray()']
+                : [];
+            $this->assertSame($expected, $mentions, $class);
+        }
     }
 
     public function test_helpers_file_is_always_emitted(): void

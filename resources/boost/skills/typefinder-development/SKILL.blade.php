@@ -29,7 +29,7 @@ Any of these changes should trigger a regenerate:
 - A model changed `$casts`, `$hidden`, `$visible`, `$fillable`, `$guarded`, a relationship method, or a `#[TypefinderOverrides]` / `#[TypefinderWriteShape]` attribute.
 - A `FormRequest`'s `rules()` or `#[TypefinderOverrides]` changed.
 - A backed enum was added, renamed, or had cases changed.
-- A `JsonResource` was added, its `#[TypefinderResource]` attribute changed, or the PHPDoc `@return array{…}` on its `toArray()` changed.
+- A `JsonResource` was added, its `#[TypefinderResource]` attribute changed, the PHPDoc `@return array{…}` on its `toArray()` changed, or a documented helper (or parent `toArray()`) its undocumented `toArray()` returns changed.
 - A controller action was tagged (or untagged) with `#[TypefinderPage]`.
 - A class implementing `ShouldBroadcast` was added or its payload changed.
 - A custom cast class was added/modified, or a `Typefinder::registerCast(...)` entry was added to a service provider.

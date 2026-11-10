@@ -12,6 +12,9 @@ use App\Http\Controllers\PostController;
 use App\Http\Controllers\UserController;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Resources\AdminUserResource;
+use App\Http\Resources\ComposedLiteralResource;
+use App\Http\Resources\ComposedParentResource;
+use App\Http\Resources\ComposedResource;
 use App\Http\Resources\ConditionalKeysResource;
 use App\Http\Resources\DoubleDeclaredResource;
 use App\Http\Resources\DriftingResource;
@@ -102,6 +105,67 @@ final class KeyDriftDetectorTest extends TestCase
         $this->assertSame([], $this->checkResource(PostResource::class));
         $this->assertSame([], $this->checkResource(AdminUserResource::class));
         $this->assertSame([], $this->checkResource(UserResource::class));
+    }
+
+    public function test_composed_resources_have_no_drift(): void
+    {
+        foreach ([ComposedResource::class, ComposedParentResource::class, ComposedLiteralResource::class] as $class) {
+            $extraction = $this->resourceExtractor->extract($class);
+            $this->assertSame('phpdoc', $extraction['shape']['kind'] ?? null, $class);
+            $this->assertSame([], $this->keyDriftDetector->checkResource($extraction), $class);
+        }
+    }
+
+    public function test_composed_shape_with_conditional_literals_and_several_returns_has_no_drift(): void
+    {
+        $class = $this->loadClass(<<<'PHP'
+            class {CLASS} extends \Illuminate\Http\Resources\Json\JsonResource
+            {
+                public function toArray(\Illuminate\Http\Request $request): array
+                {
+                    if ($this->resource === null) {
+                        return ['id' => null];
+                    }
+
+                    return [...$this->base(), 'posts' => $this->whenLoaded('posts'), 'name' => $this->name];
+                }
+
+                /** @return array{id: int} */
+                private function base(): array
+                {
+                    return ['id' => $this->id];
+                }
+            }
+            PHP);
+
+        $extraction = $this->resourceExtractor->extract($class);
+        $this->assertSame('phpdoc', $extraction['shape']['kind'] ?? null);
+        $this->assertSame([], $this->keyDriftDetector->checkResource($extraction));
+    }
+
+    public function test_disagreement_compares_only_a_documented_phpdoc_shape(): void
+    {
+        // The stub doc is no shape; the body composes, but a composed shape
+        // is not "the PHPDoc @return shape" the attribute is compared with.
+        $class = $this->loadClass(<<<'PHP'
+            #[\Pentacore\Typefinder\Attributes\TypefinderResource(shape: ['id' => 'number'])]
+            class {CLASS} extends \Illuminate\Http\Resources\Json\JsonResource
+            {
+                /** @return array<string, mixed> */
+                public function toArray(\Illuminate\Http\Request $request): array
+                {
+                    return ['id' => 1, ...$this->base()];
+                }
+
+                /** @return array{name: string} */
+                private function base(): array
+                {
+                    return ['name' => 'n'];
+                }
+            }
+            PHP);
+
+        $this->assertSame([], $this->checkResource($class));
     }
 
     public function test_only_the_drift_fixtures_report_drift_in_the_workbench(): void

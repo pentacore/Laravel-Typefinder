@@ -12,9 +12,11 @@ use App\Http\Resources\LegacyResource;
 use App\Http\Resources\OrphanResource;
 use App\Http\Resources\PostResource;
 use App\Http\Resources\ProductResource;
+use App\Http\Resources\TagResource;
 use App\Http\Resources\UnmappableShapeResource;
 use App\Http\Resources\UserResource;
 use App\Models\Product;
+use App\Models\Tag;
 use App\Models\User;
 use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Support\Facades\File;
@@ -23,6 +25,7 @@ use Pentacore\Typefinder\Extractors\ResourceExtractor;
 use ReflectionClass;
 use Tests\Fixtures\Resources\DatabaseNotificationResource;
 use Tests\Fixtures\Resources\PhpDoc\AttributeAndDocResource;
+use Tests\Fixtures\Resources\PhpDoc\Composition\UserResource as LiteralUserResource;
 use Tests\Fixtures\Resources\PhpDoc\ModelAttributeAndDocResource;
 use Tests\TestCase;
 
@@ -143,6 +146,22 @@ final class ResourceExtractorTest extends TestCase
 
         $this->assertSame('model', $result['shape']['kind']);
         $this->assertSame(Product::class, $result['shape']['model']);
+    }
+
+    public function test_purely_literal_undocumented_to_array_keeps_convention(): void
+    {
+        $result = $this->resourceExtractor->extract(LiteralUserResource::class);
+
+        $this->assertSame('model', $result['shape']['kind']);
+        $this->assertSame(User::class, $result['shape']['model']);
+    }
+
+    public function test_parent_to_array_from_json_resource_keeps_convention(): void
+    {
+        $result = $this->resourceExtractor->extract(TagResource::class);
+
+        $this->assertSame('model', $result['shape']['kind']);
+        $this->assertSame(Tag::class, $result['shape']['model']);
     }
 
     public function test_abstract_resource_never_uses_phpdoc(): void

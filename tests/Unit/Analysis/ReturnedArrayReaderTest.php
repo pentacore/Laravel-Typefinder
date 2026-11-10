@@ -185,6 +185,47 @@ final class ReturnedArrayReaderTest extends TestCase
         $this->assertSame(['expr:merge?'], $this->shape($opaque));
     }
 
+    public function test_parts_from_merge_calls_carry_their_provenance(): void
+    {
+        $array = $this->single(<<<'PHP'
+        return [
+            'a' => 1,
+            ...$this->base(),
+            $this->merge(['b' => 2, ...$this->extra()]),
+            $this->merge($this->more()),
+            $this->mergeWhen($c, ['c' => 3, ...$this->admin()]),
+            $this->mergeUnless($c, $this->guest(), ['d' => 4]),
+            'e' => 5,
+        ];
+        PHP);
+
+        $this->assertSame(
+            ['item:a', 'expr:spread', 'item:b', 'expr:spread', 'expr:merge', 'item:c?', 'expr:spread?', 'expr:merge?', 'item:d', 'item:e'],
+            $this->shape($array),
+        );
+        $this->assertSame(
+            [null, null, 'always', 'always', 'always', 'branch', 'branch', 'branch', 'branch', null, null],
+            array_map(static fn (ReturnedPart $part): ?string => $part->merged, [...$array->parts, new ReturnedPart(ReturnedPart::ITEM)]),
+        );
+        $this->assertSame(['a', 'b', 'c?', 'd', 'e'], $this->keyList($array));
+    }
+
+    public function test_merge_inside_a_branch_and_a_branch_inside_merge_are_branch_parts(): void
+    {
+        $array = $this->single("return [\$this->mergeWhen(\$a, [\$this->merge(['x' => 1])]), \$this->merge([\$this->mergeWhen(\$b, ['y' => 1], ['y' => 0])]), \$this->merge([\$this->merge(['z' => 1])])];");
+
+        $this->assertSame(['item:x?', 'item:y', 'item:y', 'item:z'], $this->shape($array));
+        $this->assertSame(['branch', 'branch', 'branch', 'always'], array_map(static fn (ReturnedPart $part): ?string => $part->merged, $array->parts));
+    }
+
+    public function test_merge_when_with_an_opaque_branch_marks_both_branches(): void
+    {
+        $array = $this->single("return array_merge([\$this->mergeWhen(\$c, ['a' => 1], \$fallback)], ['b' => 1]);");
+
+        $this->assertSame(['item:a', 'expr:merge?', 'item:b'], $this->shape($array));
+        $this->assertSame(['branch', 'branch', null], array_map(static fn (ReturnedPart $part): ?string => $part->merged, $array->parts));
+    }
+
     public function test_attributes_stays_a_dynamic_part(): void
     {
         $array = $this->single("return [\$this->attributes(['a', 'b']), 'c' => 1];");
@@ -240,6 +281,46 @@ final class ReturnedArrayReaderTest extends TestCase
 
         $opaque = $this->single('return [$this->mergeWhen($c, $this->a(), $this->b())];');
         $this->assertSame(['expr:merge?', 'expr:merge?'], $this->shape($opaque));
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function mergeCallsOfAnEmptyArray(): array
+    {
+        return [
+            'merge([])' => ['$this->merge([])'],
+            'merge(array())' => ['$this->merge(array())'],
+            'merge(value: [])' => ['$this->merge(value: [])'],
+            'mergeWhen() with an empty value' => ['$this->mergeWhen($c, [])'],
+            'mergeWhen() with an empty default' => ["\$this->mergeWhen(\$c, ['x' => 1], [])"],
+            'mergeWhen() with a named empty default' => ['$this->mergeWhen($c, $this->extra(), default: array())'],
+            'mergeUnless() with an empty value' => ["\$this->mergeUnless(\$c, [], ['x' => 1])"],
+            'mergeUnless() with an empty default' => ["\$this->MERGEUNLESS(\$c, ['x' => 1], [])"],
+        ];
+    }
+
+    #[DataProvider('mergeCallsOfAnEmptyArray')]
+    public function test_a_merge_call_of_a_literal_empty_array_is_one_dynamic_part(string $call): void
+    {
+        $array = $this->single("return ['a' => 1, {$call}, 'b' => 2];");
+
+        $this->assertSame(['item:a', 'dynamic', 'item:b'], $this->shape($array));
+        $this->assertInstanceOf(MethodCall::class, $array->parts[1]->value);
+        $this->assertTrue($array->isOpen());
+        $this->assertSame(['a', 'b'], $this->keyList($array));
+
+        $nested = $this->single("return [\$this->merge(['a' => 1, {$call}])];");
+        $this->assertSame(['item:a', 'dynamic'], $this->shape($nested));
+        $this->assertTrue($nested->isOpen());
+    }
+
+    public function test_a_return_using_plus_is_flagged(): void
+    {
+        $this->assertTrue($this->single("return [...\$this->a(), 'x' => 1] + ['y' => 2];")->plus);
+        $this->assertTrue($this->single("return array_merge(['x' => 1] + \$this->a(), ['y' => 2]);")->plus);
+        $this->assertFalse($this->single("return array_merge([...\$this->a()], ['y' => 2]);")->plus);
+        $this->assertFalse($this->single('return [...$this->a($b + $c)];')->plus);
     }
 
     public function test_merge_on_another_object_is_not_a_resource_merge(): void

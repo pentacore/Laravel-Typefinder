@@ -48,7 +48,10 @@ use PhpParser\NodeVisitorAbstract;
  * `$this->merge([...])` items are inlined as they are; `$this->mergeWhen($c,
  * [...])` and `mergeUnless()` items are inlined as conditional (with a
  * literal default, only the keys missing from the other branch are
- * conditional). `$this->attributes([...])` is a dynamic part.
+ * conditional). `$this->attributes([...])` is a dynamic part, and so is a
+ * whole merge call with a literal empty array as its value or default (the
+ * keys after it are renumbered at runtime). Parts that come out of any of
+ * these merge calls carry their provenance in {@see ReturnedPart::$merged}.
  */
 final readonly class ReturnedArrayReader
 {
@@ -161,7 +164,18 @@ final readonly class ReturnedArrayReader
      */
     public function read(Expr $expr): ReturnedArray
     {
-        return new ReturnedArray($this->decompose($expr, 'whole'));
+        return new ReturnedArray($this->decompose($expr, 'whole'), $this->usesPlus($expr));
+    }
+
+    /** Whether the arrays {@see self::decompose()} takes apart are joined with `+`. */
+    private function usesPlus(Expr $expr): bool
+    {
+        if ($expr instanceof Plus) {
+            return true;
+        }
+
+        return $this->isArrayMerge($expr)
+            && array_any($expr->getArgs(), fn (Arg $arg): bool => ! $arg->unpack && $this->usesPlus($arg->value));
     }
 
     /**
@@ -171,7 +185,7 @@ final readonly class ReturnedArrayReader
     private function decompose(Expr $expr, string $combine): array
     {
         if ($expr instanceof Array_) {
-            return $this->arrayItems($expr, false);
+            return $this->arrayItems($expr, false, null);
         }
 
         if ($expr instanceof Plus) {
@@ -193,32 +207,37 @@ final readonly class ReturnedArrayReader
 
     /**
      * @param  bool  $conditional  force every item conditional (`mergeWhen`)
+     * @param  ?string  $merged  provenance of the enclosing merge call ({@see ReturnedPart::$merged})
      * @return list<ReturnedPart>
      */
-    private function arrayItems(Array_ $array, bool $conditional): array
+    private function arrayItems(Array_ $array, bool $conditional, ?string $merged): array
     {
         $parts = [];
 
         foreach ($array->items as $item) {
-            $parts = [...$parts, ...$this->arrayItem($item, $conditional)];
+            $parts = [...$parts, ...$this->arrayItem($item, $conditional, $merged)];
         }
 
         return $parts;
     }
 
     /** @return list<ReturnedPart> */
-    private function arrayItem(ArrayItem $item, bool $conditional): array
+    private function arrayItem(ArrayItem $item, bool $conditional, ?string $merged): array
     {
         $value = $item->value;
 
         if ($item->unpack) {
             return $value instanceof Array_
-                ? $this->arrayItems($value, $conditional)
-                : [$this->opaque($value, 'spread', $conditional)];
+                ? $this->arrayItems($value, $conditional, $merged)
+                : [$this->opaque($value, 'spread', $conditional, $merged)];
+        }
+
+        if (! $item->key instanceof Expr && $this->mergesAnEmptyArray($value)) {
+            return [new ReturnedPart(ReturnedPart::DYNAMIC, value: $value, merged: $merged)];
         }
 
         if (! $item->key instanceof Expr && $this->isThisCall($value, 'merge')) {
-            return $this->mergedParts($value, $conditional);
+            return $this->mergedParts($value, $conditional, $merged);
         }
 
         if (! $item->key instanceof Expr && ($this->isThisCall($value, 'mergeWhen') || $this->isThisCall($value, 'mergeUnless'))) {
@@ -231,20 +250,27 @@ final readonly class ReturnedArrayReader
                 key: $item->key->value,
                 value: $value,
                 conditional: $conditional || $this->isConditional($value),
+                merged: $merged,
             )];
         }
 
-        return [new ReturnedPart(ReturnedPart::DYNAMIC, value: $value)];
+        return [new ReturnedPart(ReturnedPart::DYNAMIC, value: $value, merged: $merged)];
     }
 
-    /** @return list<ReturnedPart> `$this->merge($value)` */
-    private function mergedParts(MethodCall $call, bool $conditional): array
+    /**
+     * `$this->merge($value)`; inside a `mergeWhen()` branch its parts stay
+     * branch parts.
+     *
+     * @return list<ReturnedPart>
+     */
+    private function mergedParts(MethodCall $call, bool $conditional, ?string $merged): array
     {
         $value = $this->argument($call, 0, 'value');
+        $merged = $merged === ReturnedPart::MERGED_BRANCH ? $merged : ReturnedPart::MERGED_ALWAYS;
 
         return $value instanceof Array_
-            ? $this->arrayItems($value, $conditional)
-            : [$this->opaque($value ?? $call, 'merge', $conditional)];
+            ? $this->arrayItems($value, $conditional, $merged)
+            : [$this->opaque($value ?? $call, 'merge', $conditional, $merged)];
     }
 
     /**
@@ -254,7 +280,7 @@ final readonly class ReturnedArrayReader
      * opaque `expr` parts are conditional (mutually exclusive alternatives),
      * and an item is conditional only when the other branch is a literal
      * array that lacks its key — an opaque branch might hold it, so it is
-     * not claimed.
+     * not claimed. Every part is a {@see ReturnedPart::MERGED_BRANCH} part.
      *
      * @param  bool  $conditional  already inside a conditional merge
      * @return list<ReturnedPart>
@@ -266,8 +292,8 @@ final readonly class ReturnedArrayReader
 
         if (! $default instanceof Expr) {
             return $value instanceof Array_
-                ? $this->arrayItems($value, true)
-                : [$this->opaque($value ?? $call, 'merge', true)];
+                ? $this->arrayItems($value, true, ReturnedPart::MERGED_BRANCH)
+                : [$this->opaque($value ?? $call, 'merge', true, ReturnedPart::MERGED_BRANCH)];
         }
 
         $branches = [$this->branchParts($value ?? $call), $this->branchParts($default)];
@@ -290,20 +316,46 @@ final readonly class ReturnedArrayReader
         return $parts;
     }
 
+    /**
+     * `merge()`, `mergeWhen()` or `mergeUnless()` with a literal empty array
+     * as its value or default: Laravel merges an empty array as a list and
+     * renumbers every key after it, so the keys that follow are not known.
+     */
+    private function mergesAnEmptyArray(Expr $value): bool
+    {
+        if ($this->isThisCall($value, 'merge')) {
+            return $this->isEmptyArray($this->argument($value, 0, 'value'));
+        }
+
+        if ($this->isThisCall($value, 'mergeWhen') || $this->isThisCall($value, 'mergeUnless')) {
+            return $this->isEmptyArray($this->argument($value, 1, 'value'))
+                || $this->isEmptyArray($this->argument($value, self::MERGE_WHEN_DEFAULT_POSITION, 'default'));
+        }
+
+        return false;
+    }
+
+    private function isEmptyArray(?Expr $expr): bool
+    {
+        return $expr instanceof Array_ && $expr->items === [];
+    }
+
     /** @return list<ReturnedPart> */
     private function branchParts(Expr $branch): array
     {
-        return $branch instanceof Array_ ? $this->arrayItems($branch, false) : [$this->opaque($branch, 'merge')];
+        return $branch instanceof Array_
+            ? $this->arrayItems($branch, false, ReturnedPart::MERGED_BRANCH)
+            : [$this->opaque($branch, 'merge', false, ReturnedPart::MERGED_BRANCH)];
     }
 
     private function asConditional(ReturnedPart $part): ReturnedPart
     {
-        return new ReturnedPart($part->kind, $part->key, $part->value, true, $part->expr, $part->combine);
+        return new ReturnedPart($part->kind, $part->key, $part->value, true, $part->expr, $part->combine, $part->merged);
     }
 
-    private function opaque(Expr $expr, string $combine, bool $conditional = false): ReturnedPart
+    private function opaque(Expr $expr, string $combine, bool $conditional = false, ?string $merged = null): ReturnedPart
     {
-        return new ReturnedPart(ReturnedPart::EXPR, conditional: $conditional, expr: $expr, combine: $combine);
+        return new ReturnedPart(ReturnedPart::EXPR, conditional: $conditional, expr: $expr, combine: $combine, merged: $merged);
     }
 
     private function isConditional(Expr $value): bool

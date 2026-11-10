@@ -13,17 +13,34 @@ use Pentacore\Typefinder\Analysis\ReturnedPart;
  * shapes are known: delegated helpers (`expr` parts, typed by the caller's
  * resolver) and literal-key items (typed `unknown`).
  *
- * Within one return, parts merge in source order and a later key overrides
- * an earlier one; an optional later key cannot hide the earlier value, so the
- * two types are unioned and the key keeps the earlier presence. `+` keeps the
- * earlier key instead, but the reader flattens nesting (`array_merge($a + $b,
- * $c)`), so a return that uses `+` and holds a key twice is not composable.
+ * Precision over recall: whenever the merged result is uncertain the
+ * composition fails (null) and the caller falls through as before.
+ *
+ * Within one return, parts merge in source order and a later required key
+ * overrides an earlier one (spread, `array_merge()`, literal order). Not
+ * composable instead when:
+ *  - a later part contributes an earlier key as optional (a conditional item,
+ *    a `k?:` field, any key of a conditional or `mergeWhen()` branch part):
+ *    a `MissingValue` removes the key, it does not bring the earlier value
+ *    back;
+ *  - a key comes from more than one part of a return that uses `+` or a
+ *    `merge()`/`mergeWhen()`/`mergeUnless()` call: those keep the earliest
+ *    key, and the reader flattens nesting, so the winner cannot be told;
+ *  - an open helper shape (it may hold any key) sits beside other keys
+ *    anywhere but first, or in a return with `+` or a merge call;
+ *  - a return uses both `+` and a merge call: two merges on both sides of
+ *    `+` share key 0, so one is dropped;
+ *  - a merged helper whose shape has no required key is followed by a part
+ *    that adds keys: an empty merge is spliced as a list and every key
+ *    after it is renumbered.
+ *
+ * Every key of a `mergeWhen()`/`mergeUnless()` branch part is optional.
  *
  * Across returns, a key required in every return is required, otherwise
  * optional; its types are unioned. The result is open when any helper shape
  * is open.
  *
- * Not composable (null): no returns, a `dynamic` part, an `expr` part the
+ * Also not composable: no returns, a `dynamic` part, an `expr` part the
  * resolver cannot type, or no `expr` part at all (a literal-only body is not
  * delegation).
  */
@@ -61,50 +78,91 @@ final class ShapeComposer
      */
     private function composeReturn(ReturnedArray $returned, callable $resolveExpr): ?array
     {
-        $fields = [];
-        $open = false;
-        $delegated = false;
-        $plus = false;
-        $collision = false;
+        $plus = $returned->usesPlus();
+        $merges = array_any($returned->parts, fn (ReturnedPart $part): bool => $part->merged !== null);
 
-        foreach ($returned->parts as $part) {
-            $plus = $plus || $part->combine === 'plus';
+        if ($plus && $merges) {
+            return null;
+        }
+
+        $fields = [];
+        $delegated = false;
+        $collision = false;
+        $earliestWins = $plus || $merges;
+        $mayBeEmptyMerge = false;
+        $openAt = null;
+        $contributing = 0;
+
+        foreach ($returned->parts as $index => $part) {
             $contributions = $this->contributions($part, $resolveExpr);
 
             if ($contributions === null) {
                 return null;
             }
 
+            $contributes = $contributions['open'] || $contributions['fields'] !== [];
+
+            if ($mayBeEmptyMerge && $contributes) {
+                return null;
+            }
+
             if ($part->kind === ReturnedPart::EXPR) {
                 $delegated = true;
-                $open = $open || $contributions['open'];
+                $mayBeEmptyMerge = $mayBeEmptyMerge || ($part->merged !== null && ! $contributions['required']);
+            }
+
+            if ($contributions['open']) {
+                if ($openAt !== null) {
+                    return null;
+                }
+
+                $openAt = $index;
+            }
+
+            if ($contributes) {
+                $contributing++;
             }
 
             foreach ($contributions['fields'] as $name => $field) {
-                $collision = $collision || array_key_exists($name, $fields);
-                $fields[$name] = $this->override($fields[$name] ?? null, $field);
+                if (array_key_exists($name, $fields)) {
+                    if ($field['optional']) {
+                        return null;
+                    }
+
+                    $collision = true;
+                }
+
+                $fields[$name] = $field;
             }
         }
 
-        if ($plus && $collision) {
+        if ($earliestWins && $collision) {
             return null;
         }
 
-        return ['fields' => $fields, 'open' => $open, 'delegated' => $delegated];
+        if ($openAt !== null && $contributing > 1 && ($openAt !== 0 || $earliestWins)) {
+            return null;
+        }
+
+        return ['fields' => $fields, 'open' => $openAt !== null, 'delegated' => $delegated];
     }
 
     /**
      * The fields one part adds, keyed by name.
      *
+     * `required`: the resolved shape itself has a required key, so the
+     * array it stands for is never empty (always true for an item).
+     *
      * @param  callable(ReturnedPart): ?array  $resolveExpr
-     * @return ?array{fields: array<string, array{type: array, optional: bool, literal: bool}>, open: bool}
+     * @return ?array{fields: array<string, array{type: array, optional: bool, literal: bool}>, open: bool, required: bool}
      */
     private function contributions(ReturnedPart $part, callable $resolveExpr): ?array
     {
         if ($part->kind === ReturnedPart::ITEM && $part->key !== null) {
             return [
-                'fields' => [$part->key => ['type' => self::UNKNOWN, 'optional' => $part->conditional, 'literal' => true]],
+                'fields' => [$part->key => ['type' => self::UNKNOWN, 'optional' => $this->isOptional($part), 'literal' => true]],
                 'open' => false,
+                'required' => true,
             ];
         }
 
@@ -119,37 +177,28 @@ final class ShapeComposer
         }
 
         $fields = [];
+        $required = false;
 
         foreach ($node['fields'] as $field) {
+            $required = $required || ! $field['optional'];
             $fields[(string) $field['name']] = [
                 'type' => $field['type'],
-                'optional' => $field['optional'] || $part->conditional,
+                'optional' => $field['optional'] || $this->isOptional($part),
                 'literal' => false,
             ];
         }
 
-        return ['fields' => $fields, 'open' => (bool) $node['open']];
+        return ['fields' => $fields, 'open' => (bool) $node['open'], 'required' => $required];
     }
 
     /**
-     * A later key over an earlier one: a required key replaces it; an
-     * optional key may be absent, so the earlier value may survive.
-     *
-     * @param  ?array{type: array, optional: bool, literal: bool}  $earlier
-     * @param  array{type: array, optional: bool, literal: bool}  $later
-     * @return array{type: array, optional: bool, literal: bool}
+     * A part whose keys may be absent: a conditional part, or a branch of a
+     * `mergeWhen()`/`mergeUnless()` (the reader does not mark an item
+     * conditional when the other branch is opaque).
      */
-    private function override(?array $earlier, array $later): array
+    private function isOptional(ReturnedPart $part): bool
     {
-        if ($earlier === null || ! $later['optional']) {
-            return $later;
-        }
-
-        return [
-            'type' => $this->union([$earlier['type'], $later['type']]),
-            'optional' => $earlier['optional'],
-            'literal' => $earlier['literal'] || $later['literal'],
-        ];
+        return $part->conditional || $part->merged === ReturnedPart::MERGED_BRANCH;
     }
 
     /**

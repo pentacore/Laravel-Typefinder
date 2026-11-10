@@ -24,6 +24,13 @@ use PhpParser\Node\Expr;
  * `JsonResource::collection()` of such a value), and on every `expr` part
  * produced by a `mergeWhen()`/`mergeUnless()` (a non-literal value or default
  * branch).
+ *
+ * `$merged` records that the part came out of a resource merge call, nested
+ * ones included: {@see self::MERGED_ALWAYS} for `merge()`,
+ * {@see self::MERGED_BRANCH} for a `mergeWhen()`/`mergeUnless()` branch (a
+ * branch inside a `merge()` and vice versa is a branch). Laravel splices a
+ * merge with `+`, so the earliest key wins there. Null otherwise. It does not
+ * change {@see ReturnedArray::keys()} or {@see ReturnedArray::isOpen()}.
  */
 final readonly class ReturnedPart
 {
@@ -33,6 +40,12 @@ final readonly class ReturnedPart
 
     public const string EXPR = 'expr';
 
+    /** `$merged`: the part came out of a `merge()` call. */
+    public const string MERGED_ALWAYS = 'always';
+
+    /** `$merged`: the part came out of a `mergeWhen()`/`mergeUnless()` branch. */
+    public const string MERGED_BRANCH = 'branch';
+
     public function __construct(
         public string $kind,
         public ?string $key = null,
@@ -40,5 +53,6 @@ final readonly class ReturnedPart
         public bool $conditional = false,
         public ?Expr $expr = null,
         public string $combine = 'whole',
+        public ?string $merged = null,
     ) {}
 }
