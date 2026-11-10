@@ -286,7 +286,8 @@ final readonly class PhpDocShapeResolver
      * Scope for a doc declared in $class: its file's names and its class-level
      * aliases, including imported ones (resolved in their own file).
      *
-     * @param  list<string>  $visiting  classes whose scope is being built (import cycle guard)
+     * @param  list<string>  $visiting  `Class::Alias` imports being resolved (cycle guard); a pair, not a
+     *                                  class, so two classes may import independent aliases from each other
      */
     private function scopeFor(string $class, string $resource, array $visiting): ?PhpDocScope
     {
@@ -304,7 +305,7 @@ final readonly class PhpDocShapeResolver
         if ($doc instanceof PhpDocNode) {
             foreach (self::IMPORT_TAGS as $tag) {
                 foreach ($doc->getTypeAliasImportTagValues($tag) as $import) {
-                    $imported = $this->importAlias($import, $nameResolver, $resource, [...$visiting, $class]);
+                    $imported = $this->importAlias($import, $nameResolver, $resource, $visiting);
 
                     if ($imported !== null) {
                         $aliases[$import->importedAs ?? $import->importedAlias] = $imported;
@@ -346,11 +347,13 @@ final readonly class PhpDocShapeResolver
             return null;
         }
 
-        if (in_array($from, $visiting, true)) {
+        $key = $from.'::'.$import->importedAlias;
+
+        if (in_array($key, $visiting, true)) {
             return null;
         }
 
-        $source = $this->scopeFor($from, $resource, $visiting);
+        $source = $this->scopeFor($from, $resource, [...$visiting, $key]);
         $alias = $source?->aliases[$import->importedAlias] ?? null;
 
         return $alias === null ? null : ['type' => $alias['type'], 'scope' => $alias['scope'] ?? $source];

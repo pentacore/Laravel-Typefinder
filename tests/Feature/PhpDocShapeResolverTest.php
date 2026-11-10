@@ -17,12 +17,14 @@ use Tests\Fixtures\Resources\PhpDoc\AliasedShapeResource;
 use Tests\Fixtures\Resources\PhpDoc\BrokenDocResource;
 use Tests\Fixtures\Resources\PhpDoc\BrokenPhpstanReturnWithStubResource;
 use Tests\Fixtures\Resources\PhpDoc\Concerns\BaseShapeResource;
+use Tests\Fixtures\Resources\PhpDoc\ImportCycleResource;
 use Tests\Fixtures\Resources\PhpDoc\ImportedAliasResource;
 use Tests\Fixtures\Resources\PhpDoc\InheritDocShapeResource;
 use Tests\Fixtures\Resources\PhpDoc\InheritedShapeResource;
 use Tests\Fixtures\Resources\PhpDoc\LaravelUnionShapeResource;
 use Tests\Fixtures\Resources\PhpDoc\ListTopLevelResource;
 use Tests\Fixtures\Resources\PhpDoc\MissingImportResource;
+use Tests\Fixtures\Resources\PhpDoc\MutualImportResource;
 use Tests\Fixtures\Resources\PhpDoc\NestedTraitToArrayResource;
 use Tests\Fixtures\Resources\PhpDoc\NoOverrideResource;
 use Tests\Fixtures\Resources\PhpDoc\PlainArrayResource;
@@ -220,6 +222,27 @@ final class PhpDocShapeResolverTest extends TestCase
             $this->resolve(ImportedAliasResource::class),
         );
         $this->assertSame([], $this->warnings);
+    }
+
+    public function test_classes_may_import_aliases_from_each_other(): void
+    {
+        $this->assertSame(
+            $this->object([
+                $this->field('remote', $this->object([
+                    $this->field('local', $this->object([$this->field('n', $this->ts('number'))])),
+                ])),
+            ]),
+            $this->resolve(MutualImportResource::class),
+        );
+        $this->assertSame([], $this->warnings);
+    }
+
+    public function test_import_cycle_is_unknown_with_one_warning(): void
+    {
+        $this->assertSame($this->object([$this->field('loop', $this->ts('unknown'))]), $this->resolve(ImportCycleResource::class));
+        $this->assertSame([
+            ImportCycleResource::class.'::toArray() @return: "loop" has unsupported type Loop — emitted as unknown',
+        ], $this->warnings);
     }
 
     public function test_missing_import_class_or_alias_is_unknown_with_warning(): void
