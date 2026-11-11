@@ -1,3 +1,9 @@
+## [8.2.1](https://github.com/pentacore/Laravel-Typefinder/compare/v8.2.0...v8.2.1) (2026-11-11)
+
+### Bug Fixes
+
+* read [@query](https://github.com/query) tags from the methods and classes rules() takes rules from ([#108](https://github.com/pentacore/Laravel-Typefinder/issues/108)) ([3069274](https://github.com/pentacore/Laravel-Typefinder/commit/3069274eb80d748299f3065b064e2d2af067873e))
+
 ## [8.2.0](https://github.com/pentacore/Laravel-Typefinder/compare/v8.1.0...v8.2.0) (2026-11-10)
 
 ### Features
