@@ -221,6 +221,8 @@ export type StorePostRequest = {
 };
 ```
 
+`Rule::enum(PostStatus::class)` is the enum's type. Narrowed with `->only([...])` or `->except([...])` it is the same subset the rule accepts: `Extract<PostStatus, 'draft' | 'published'>` or `Exclude<PostStatus, 'archived'>`.
+
 Dotted rule names nest to any depth, and a `*` segment means "array of":
 
 ```php

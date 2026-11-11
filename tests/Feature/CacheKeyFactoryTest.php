@@ -30,10 +30,32 @@ final class CacheKeyFactoryTest extends TestCase
     {
         $cacheKeyFactory = new CacheKeyFactory(base_path());
         $before = $cacheKeyFactory->configHash(['output_path' => '/a', 'models' => ['enabled' => true]]);
-        $after = $cacheKeyFactory->configHash(['output_path' => '/b', 'models' => ['enabled' => true]]);
+        $after = $cacheKeyFactory->configHash(['output_path' => '/a', 'models' => ['enabled' => false]]);
 
         $this->assertNotSame($before, $after);
         $this->assertStringStartsWith('sha256:', $before);
+    }
+
+    public function test_config_hash_ignores_where_the_output_goes(): void
+    {
+        $cacheKeyFactory = new CacheKeyFactory(base_path());
+        $config = ['output_path' => '/a', 'gitignore_generated' => true, 'models' => ['enabled' => true, 'paths' => ['/app/Models']]];
+
+        // Extractions do not depend on the output directory, so a run that
+        // writes elsewhere (--check) can use and refresh the same cache.
+        $this->assertSame(
+            $cacheKeyFactory->configHash($config),
+            $cacheKeyFactory->configHash([...$config, 'output_path' => '/tmp/check', 'gitignore_generated' => false]),
+        );
+        $this->assertNotSame(
+            $cacheKeyFactory->configHash($config),
+            $cacheKeyFactory->configHash([...$config, 'models' => ['enabled' => true, 'paths' => ['/src/Models']]]),
+        );
+        // Only the top-level keys are left out.
+        $this->assertNotSame(
+            $cacheKeyFactory->configHash($config),
+            $cacheKeyFactory->configHash([...$config, 'models' => ['enabled' => true, 'paths' => ['/app/Models'], 'output_path' => '/x']]),
+        );
     }
 
     public function test_config_hash_is_key_order_independent(): void

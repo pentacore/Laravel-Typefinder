@@ -537,7 +537,7 @@ TS;
                 $enumName = $this->resolveEnumName($type['enum'], $allEnums);
                 $imports[] = sprintf("import type { %s } from '../enums';", $enumName);
 
-                return $enumName;
+                return $this->narrowEnum($enumName, $type);
             }
 
             if (isset($type['enumCollection'])) {
@@ -565,6 +565,33 @@ TS;
         }
 
         return 'unknown';
+    }
+
+    /**
+     * An enum type narrowed to the values a rule keeps (`only`) or refuses
+     * (`except`): `Extract<Status, 'a' | 'b'>` / `Exclude<Status, 'c'>`.
+     *
+     * @param  array{only?: list<int|string>, except?: list<int|string>}  $type
+     */
+    protected function narrowEnum(string $enumName, array $type): string
+    {
+        foreach (['only' => 'Extract', 'except' => 'Exclude'] as $subset => $utility) {
+            $values = $type[$subset] ?? [];
+            if ($values === []) {
+                continue;
+            }
+
+            $literals = array_map(
+                static fn (int|string $value): string => is_int($value)
+                    ? (string) $value
+                    : "'".str_replace(['\\', "'"], ['\\\\', "\\'"], $value)."'",
+                $values,
+            );
+
+            return sprintf('%s<%s, %s>', $utility, $enumName, implode(' | ', $literals));
+        }
+
+        return $enumName;
     }
 
     /**
