@@ -25,6 +25,9 @@ class GenerateCommand extends Command
     /** @var list<string> */
     private array $warnings = [];
 
+    /** @var list<array{path: string, message: string}> */
+    private array $failed = [];
+
     public function handle(): int
     {
         $startedAt = microtime(true);
@@ -56,6 +59,7 @@ class GenerateCommand extends Command
         $this->files = [];
         $this->counts = [];
         $this->warnings = [];
+        $this->failed = [];
 
         try {
             $this->debugLine('starting', $useJson, $useDebug);
@@ -67,6 +71,7 @@ class GenerateCommand extends Command
                 : $generator->generatePaths($onlyPaths);
 
             $this->warnings = $result->warnings;
+            $this->failed = $result->failed;
             $this->printWarnings($useJson);
             $this->files = array_map(fn (string $p): array => ['path' => $p, 'written' => true], $result->changed);
 
@@ -96,6 +101,10 @@ class GenerateCommand extends Command
                     return self::FAILURE;
                 }
 
+                if ($this->failed !== []) {
+                    return $this->failExtraction($useJson, $useDebug, $durationMs, $realOutputPath);
+                }
+
                 if ($this->strictFailure($useStrict)) {
                     return $this->failStrict($useJson, $useDebug, $durationMs, $realOutputPath);
                 }
@@ -115,6 +124,10 @@ class GenerateCommand extends Command
             }
 
             $durationMs = (int) round((microtime(true) - $startedAt) * 1000);
+
+            if ($this->failed !== []) {
+                return $this->failExtraction($useJson, $useDebug, $durationMs, $outputPath);
+            }
 
             if ($this->strictFailure($useStrict)) {
                 return $this->failStrict($useJson, $useDebug, $durationMs, $outputPath);
@@ -227,6 +240,27 @@ class GenerateCommand extends Command
             $this->emitJson(false, $durationMs, $outputPath, [], [sprintf('--strict: %d warning(s) produced', count($this->warnings))]);
         } else {
             $this->error(sprintf('[typefinder] --strict: %d warning(s) — failing.', count($this->warnings)));
+        }
+
+        return self::FAILURE;
+    }
+
+    /**
+     * Report the files an incremental run (--only) could not extract and
+     * return the failure exit code. The rest of the output was still written.
+     */
+    private function failExtraction(bool $useJson, bool $useDebug, int $durationMs, string $outputPath): int
+    {
+        $this->debugLine(sprintf('done success=false failed_files=%d duration_ms=%d', count($this->failed), $durationMs), $useJson, $useDebug);
+
+        $errors = array_map(fn (array $failure): string => $failure['path'].': '.$failure['message'], $this->failed);
+
+        if ($useJson) {
+            $this->emitJson(false, $durationMs, $outputPath, [], $errors);
+        } else {
+            foreach ($errors as $error) {
+                $this->error('[typefinder] '.$error);
+            }
         }
 
         return self::FAILURE;

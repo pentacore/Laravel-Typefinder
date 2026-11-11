@@ -77,7 +77,7 @@ Scans configured directories, resolves types, and writes `.d.ts` files to `outpu
 | `--debug` | Print line-oriented diagnostic output prefixed with `[typefinder]`. Includes per-class parsing lines so you can pinpoint a failing class. |
 | `--json` | Output a single JSON object to stdout (machine-readable, used by the Vite plugin). |
 | `--strict` | Exit non-zero when the run produced any warning (unknown column types, casts with no TypeScript mapping, PHPDoc fields emitted as `unknown`, skipped classes, …). Combine with `--check` for a CI gate on committed output, or add it to the regular generate step in CI. |
-| `--only=<path>` | Re-extract the given absolute paths, plus any source file that changed since the last run, instead of every file, then rewrite what that changes in the output. Repeatable (`--only=/a/Foo.php --only=/a/Bar.php`). Leaves the same output as a full run; without the cache of an earlier run it is a full run. Used by the Vite plugin's watch loop for incremental regeneration; rarely useful by hand. |
+| `--only=<path>` | Re-extract the given absolute paths, plus any source file that changed since the last run, instead of every file, then rewrite what that changes in the output. Repeatable (`--only=/a/Foo.php --only=/a/Bar.php`). Leaves the same output as a full run; without the cache of an earlier run it is a full run. A file that cannot be extracted keeps the type it had, is reported as an error and makes the command exit non-zero. Used by the Vite plugin's watch loop for incremental regeneration; rarely useful by hand. |
 
 ### Watching for changes
 
