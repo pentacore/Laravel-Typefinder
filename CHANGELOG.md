@@ -1,3 +1,10 @@
+## [8.2.2](https://github.com/pentacore/Laravel-Typefinder/compare/v8.2.1...v8.2.2) (2026-11-11)
+
+### Bug Fixes
+
+* fail --only runs when a file cannot be extracted ([#115](https://github.com/pentacore/Laravel-Typefinder/issues/115)) ([1eac6f2](https://github.com/pentacore/Laravel-Typefinder/commit/1eac6f20667c44f4fbae14557ee3abea2a30665b))
+* run full and incremental generation through one pipeline ([#110](https://github.com/pentacore/Laravel-Typefinder/issues/110), [#111](https://github.com/pentacore/Laravel-Typefinder/issues/111), [#112](https://github.com/pentacore/Laravel-Typefinder/issues/112), [#113](https://github.com/pentacore/Laravel-Typefinder/issues/113), [#114](https://github.com/pentacore/Laravel-Typefinder/issues/114)) ([c202101](https://github.com/pentacore/Laravel-Typefinder/commit/c202101e7d53be20858ab09328fd22daa0074985))
+
 ## [8.2.1](https://github.com/pentacore/Laravel-Typefinder/compare/v8.2.0...v8.2.1) (2026-11-11)
 
 ### Bug Fixes
