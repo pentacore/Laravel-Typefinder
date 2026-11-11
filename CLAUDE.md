@@ -78,7 +78,7 @@ Every generation run produces a tree under `output_path` (default `resources/js/
 | --- | --- | --- | --- |
 | Models | `models/{Name}.d.ts` (includes `{Name}Create` + `{Name}Update`) | on | `app/Models/*` |
 | Enums | `enums/{Name}.d.ts` (or `.ts` with `as const` values when `enums.emit_values` is on) | on | `app/Enums/*` (backed enums) |
-| Form Requests | `requests/{Name}.d.ts` (plus `{Name}Query` for rule keys tagged `@query`, read by `Analysis\QueryRuleKeys`) | on | `app/Http/Requests/*` |
+| Form Requests | `requests/{Name}.d.ts` (plus `{Name}Query` for rule keys tagged `@query`, read by `Analysis\QueryRuleKeys` from `rules()` and the methods / other classes it takes rules from) | on | `app/Http/Requests/*` |
 | Pivots | `models/{Name}Pivot.d.ts` (alongside models — derived, not a separate category) | on | derived from `belongsToMany`/`morphToMany` |
 | Resources | `resources/{Name}.d.ts` | on | `app/Http/Resources/*` (`JsonResource` subclasses) |
 | Pages | `pages.d.ts` (single file) | **off** | controller actions tagged `#[TypefinderPage]` |

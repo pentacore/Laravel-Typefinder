@@ -277,6 +277,7 @@ export type SetValueRequestQuery = {
 ```
 
 - The tag is read from the source of the `rules()` method the request uses (its own, an inherited one or one from a trait), on array items with a string-literal key. A tag on any other key (a constant, an expression) is ignored with a warning.
+- Tags are also read from the methods that `rules()` takes rules from: `parent::rules()`, a helper called as `$this->m()`, `self::m()` or `static::m()`, and the `rules()` of another class written as `new X()->rules()`, `X::createFrom($this)->rules()` (any static factory of `X`), `app(X::class)->rules()` or `resolve(X::class)->rules()`. A call that does not name the class (`$other->rules()`) is not followed.
 - A tagged key takes its whole top-level field along: tagging `filter` or `filter.status` puts all of `filter` in the query type.
 - A request without tagged keys gets no `{Name}Query` type. One with only tagged keys gets `Record<string, never>` as its request type.
 - `{Name}Query` lives in the request's file and is re-exported by the `requests` barrel, like the `{Model}Create` / `{Model}Update` companions of a model.
