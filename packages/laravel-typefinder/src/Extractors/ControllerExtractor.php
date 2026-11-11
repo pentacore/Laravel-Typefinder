@@ -6,12 +6,10 @@ namespace Pentacore\Typefinder\Extractors;
 
 use Pentacore\Typefinder\Attributes\TypefinderIgnore;
 use Pentacore\Typefinder\Attributes\TypefinderPage;
-use Pentacore\Typefinder\Support\ClassNameResolver;
+use Pentacore\Typefinder\Support\ClassDiscovery;
 use ReflectionAttribute;
 use ReflectionClass;
 use ReflectionMethod;
-use RuntimeException;
-use Symfony\Component\Finder\Finder;
 use Throwable;
 
 class ControllerExtractor
@@ -54,33 +52,25 @@ class ControllerExtractor
     }
 
     /**
+     * Whether a controller's `#[TypefinderPage]` actions are read: it is not
+     * `#[TypefinderIgnore]`d.
+     *
+     * @param  class-string  $controllerClass
+     */
+    public function isEmittable(string $controllerClass): bool
+    {
+        return new ReflectionClass($controllerClass)->getAttributes(TypefinderIgnore::class, ReflectionAttribute::IS_INSTANCEOF) === [];
+    }
+
+    /**
      * @return list<array{component: string, props: array<string, string>, optional: list<string>, source: string}>
      */
     public function extractFromDirectory(string $path, ?callable $onExtract = null, ?callable $onWarn = null): array
     {
-        if (! is_dir($path)) {
-            return [];
-        }
-
         $results = [];
-        $finder = Finder::create()->files()->name('*.php')->in($path)->sortByName();
 
-        foreach ($finder as $file) {
-            $className = ClassNameResolver::fromFile($file->getRealPath());
-            if ($className === null) {
-                continue;
-            }
-
-            if (! class_exists($className)) {
-                $failure = ClassNameResolver::autoloadFailure($className, $file->getRealPath());
-                if ($failure instanceof RuntimeException && $onWarn !== null) {
-                    $onWarn($className, $failure);
-                }
-
-                continue;
-            }
-
-            if (new ReflectionClass($className)->getAttributes(TypefinderIgnore::class, ReflectionAttribute::IS_INSTANCEOF) !== []) {
+        foreach (ClassDiscovery::in($path, $onWarn) as $className) {
+            if (! $this->isEmittable($className)) {
                 continue;
             }
 

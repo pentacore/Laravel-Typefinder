@@ -6,10 +6,8 @@ namespace Pentacore\Typefinder\Extractors;
 
 use BackedEnum;
 use Pentacore\Typefinder\Attributes\TypefinderIgnore;
-use Pentacore\Typefinder\Support\ClassNameResolver;
+use Pentacore\Typefinder\Support\ClassDiscovery;
 use ReflectionEnum;
-use RuntimeException;
-use Symfony\Component\Finder\Finder;
 
 class EnumExtractor
 {
@@ -45,28 +43,9 @@ class EnumExtractor
      */
     public function extractFromDirectory(string $path, ?callable $onExtract = null, ?callable $onWarn = null): array
     {
-        if (! is_dir($path)) {
-            return [];
-        }
-
         $results = [];
-        $finder = Finder::create()->files()->name('*.php')->in($path)->sortByName();
 
-        foreach ($finder as $file) {
-            $className = ClassNameResolver::fromFile($file->getRealPath());
-            if ($className === null) {
-                continue;
-            }
-
-            if (! enum_exists($className)) {
-                $failure = ClassNameResolver::autoloadFailure($className, $file->getRealPath());
-                if ($failure instanceof RuntimeException && $onWarn !== null) {
-                    $onWarn($className, $failure);
-                }
-
-                continue;
-            }
-
+        foreach (ClassDiscovery::in($path, $onWarn) as $className) {
             if (! $this->isEmittable($className)) {
                 continue;
             }
@@ -82,13 +61,17 @@ class EnumExtractor
     }
 
     /**
-     * Whether an enum gets a type of its own: backed (a pure enum has no
-     * values to emit) and not `#[TypefinderIgnore]`d.
+     * Whether a class gets an enum type of its own: an enum, backed (a pure
+     * enum has no values to emit) and not `#[TypefinderIgnore]`d.
      *
-     * @param  class-string<\UnitEnum>  $enumClass
+     * @param  class-string  $enumClass
      */
     public function isEmittable(string $enumClass): bool
     {
+        if (! enum_exists($enumClass)) {
+            return false;
+        }
+
         $reflectionEnum = new ReflectionEnum($enumClass);
 
         return $reflectionEnum->isBacked()

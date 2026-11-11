@@ -25,13 +25,11 @@ use Pentacore\Typefinder\Attributes\TypefinderOverrides;
 use Pentacore\Typefinder\Attributes\TypefinderWriteShape;
 use Pentacore\Typefinder\Resolvers\CastTypeResolver;
 use Pentacore\Typefinder\Resolvers\ColumnTypeResolver;
-use Pentacore\Typefinder\Support\ClassNameResolver;
+use Pentacore\Typefinder\Support\ClassDiscovery;
 use ReflectionAttribute;
 use ReflectionClass;
 use ReflectionMethod;
 use ReflectionNamedType;
-use RuntimeException;
-use Symfony\Component\Finder\Finder;
 
 class ModelExtractor
 {
@@ -84,32 +82,9 @@ class ModelExtractor
      */
     public function extractFromDirectory(string $path, ?callable $onExtract = null, ?callable $onWarn = null): array
     {
-        if (! is_dir($path)) {
-            return [];
-        }
-
         $results = [];
-        $finder = Finder::create()->files()->name('*.php')->in($path)->sortByName();
 
-        foreach ($finder as $file) {
-            $className = ClassNameResolver::fromFile($file->getRealPath());
-            if ($className === null) {
-                continue;
-            }
-
-            if (! class_exists($className)) {
-                $failure = ClassNameResolver::autoloadFailure($className, $file->getRealPath());
-                if ($failure instanceof RuntimeException && $onWarn !== null) {
-                    $onWarn($className, $failure);
-                }
-
-                continue;
-            }
-
-            if (! is_subclass_of($className, Model::class)) {
-                continue;
-            }
-
+        foreach (ClassDiscovery::in($path, $onWarn) as $className) {
             if (! $this->isEmittable($className)) {
                 continue;
             }
@@ -482,12 +457,16 @@ class ModelExtractor
     }
 
     /**
-     * Whether a model class gets a type of its own: not `#[TypefinderIgnore]`d,
+     * Whether a class gets a model type of its own: a model, not `#[TypefinderIgnore]`d,
      * and not abstract (a base model has no table to read; its relations and
      * accessors are emitted on the models that extend it).
      */
     public function isEmittable(string $className): bool
     {
+        if (! is_subclass_of($className, Model::class)) {
+            return false;
+        }
+
         $reflectionClass = new ReflectionClass($className);
 
         return ! $reflectionClass->isAbstract()

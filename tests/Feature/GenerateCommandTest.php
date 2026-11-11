@@ -96,6 +96,38 @@ final class GenerateCommandTest extends TestCase
         $this->assertStringNotContainsString('[typefinder]', $output);
     }
 
+    public function test_only_run_fails_when_a_file_cannot_be_extracted(): void
+    {
+        $this->artisan('typefinder:generate')->assertSuccessful();
+        $broken = $this->writeBrokenModel();
+
+        try {
+            $this->artisan('typefinder:generate', ['--only' => [$broken]])
+                ->expectsOutputToContain($broken.': cannot be instantiated')
+                ->doesntExpectOutputToContain('generated successfully')
+                ->assertFailed();
+        } finally {
+            @unlink($broken);
+        }
+    }
+
+    public function test_json_only_run_reports_a_file_that_cannot_be_extracted(): void
+    {
+        $this->artisan('typefinder:generate')->assertSuccessful();
+        $broken = $this->writeBrokenModel();
+
+        try {
+            $exit = Artisan::call('typefinder:generate', ['--json' => true, '--only' => [$broken]]);
+            $payload = json_decode(trim(Artisan::output()), true);
+
+            $this->assertSame(1, $exit);
+            $this->assertFalse($payload['success']);
+            $this->assertSame([$broken.': cannot be instantiated'], $payload['errors']);
+        } finally {
+            @unlink($broken);
+        }
+    }
+
     public function test_strict_does_not_mask_pipeline_exception(): void
     {
         // Point output_path at a regular file so the pipeline throws on mkdir.
@@ -281,5 +313,16 @@ final class GenerateCommandTest extends TestCase
         foreach ($second['files'] as $entry) {
             $this->assertFalse($entry['written'], 'Expected no-op write for '.$entry['path']);
         }
+    }
+
+    /**
+     * A model in the workbench models path that throws when extracted.
+     */
+    private function writeBrokenModel(): string
+    {
+        $path = workbench_path('app/Models/BrokenOnlyRunModel.php');
+        File::put($path, "<?php\nnamespace App\\Models;\nclass BrokenOnlyRunModel extends \\Illuminate\\Database\\Eloquent\\Model { public function __construct() { throw new \\RuntimeException('cannot be instantiated'); } }\n");
+
+        return (string) realpath($path);
     }
 }

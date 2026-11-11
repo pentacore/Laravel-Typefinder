@@ -29,16 +29,17 @@ final class ExtractionCacheTest extends TestCase
         parent::tearDown();
     }
 
-    public function test_put_and_get_round_trips_extraction_data(): void
+    public function test_put_round_trips_extraction_data(): void
     {
         $extractionCache = new ExtractionCache($this->cachePath, 'sha256:lock', 'sha256:cfg');
 
         $extractionCache->put($this->fixturePath, 'models', ['name' => 'Foo', 'columns' => []]);
 
-        $this->assertSame(['name' => 'Foo', 'columns' => []], $extractionCache->get($this->fixturePath));
+        $this->assertSame(['name' => 'Foo', 'columns' => []], $extractionCache->entriesByCategory('models')[$this->fixturePath]);
+        $this->assertTrue($extractionCache->isFresh($this->fixturePath, 'models'));
     }
 
-    public function test_get_returns_null_when_mtime_changed(): void
+    public function test_entry_is_not_fresh_when_mtime_changed(): void
     {
         $extractionCache = new ExtractionCache($this->cachePath, 'sha256:lock', 'sha256:cfg');
         $extractionCache->put($this->fixturePath, 'models', ['v' => 1]);
@@ -47,10 +48,12 @@ final class ExtractionCacheTest extends TestCase
         touch($this->fixturePath, Carbon::now()->getTimestamp() + 5);
         clearstatcache(true, $this->fixturePath);
 
-        $this->assertNull($extractionCache->get($this->fixturePath));
+        $this->assertFalse($extractionCache->isFresh($this->fixturePath, 'models'));
+        // The last extraction stays available until the file is extracted again.
+        $this->assertSame(['v' => 1], $extractionCache->entriesByCategory('models')[$this->fixturePath]);
     }
 
-    public function test_get_returns_null_when_size_changed(): void
+    public function test_entry_is_not_fresh_when_size_changed(): void
     {
         $extractionCache = new ExtractionCache($this->cachePath, 'sha256:lock', 'sha256:cfg');
         $extractionCache->put($this->fixturePath, 'models', ['v' => 1]);
@@ -59,7 +62,9 @@ final class ExtractionCacheTest extends TestCase
         touch($this->fixturePath, (int) filemtime($this->fixturePath) - 10); // keep mtime old
         clearstatcache(true, $this->fixturePath);
 
-        $this->assertNull($extractionCache->get($this->fixturePath));
+        $this->assertFalse($extractionCache->isFresh($this->fixturePath, 'models'));
+        // The last extraction stays available until the file is extracted again.
+        $this->assertSame(['v' => 1], $extractionCache->entriesByCategory('models')[$this->fixturePath]);
     }
 
     public function test_forget_removes_entry(): void
@@ -67,9 +72,10 @@ final class ExtractionCacheTest extends TestCase
         $extractionCache = new ExtractionCache($this->cachePath, 'sha256:lock', 'sha256:cfg');
         $extractionCache->put($this->fixturePath, 'models', ['v' => 1]);
 
-        $extractionCache->forget($this->fixturePath);
+        $extractionCache->forget($this->fixturePath, 'models');
 
-        $this->assertNull($extractionCache->get($this->fixturePath));
+        $this->assertSame([], $extractionCache->entriesByCategory('models'));
+        $this->assertFalse($extractionCache->isFresh($this->fixturePath, 'models'));
     }
 
     public function test_entries_by_category_returns_extractions_for_matching_entries(): void
@@ -90,6 +96,33 @@ final class ExtractionCacheTest extends TestCase
         }
     }
 
+    public function test_a_file_that_yields_nothing_is_fresh_but_not_an_entry(): void
+    {
+        $extractionCache = new ExtractionCache($this->cachePath, 'sha256:lock', 'sha256:cfg');
+        $extractionCache->put($this->fixturePath, 'models', null);
+        $extractionCache->persist();
+
+        $reloaded = ExtractionCache::load($this->cachePath, 'sha256:lock', 'sha256:cfg');
+
+        $this->assertTrue($reloaded->isFresh($this->fixturePath, 'models'));
+        $this->assertSame([], $reloaded->entriesByCategory('models'));
+    }
+
+    public function test_one_file_is_tracked_per_category(): void
+    {
+        $extractionCache = new ExtractionCache($this->cachePath, 'sha256:lock', 'sha256:cfg');
+        $extractionCache->put($this->fixturePath, 'enums', null);
+        $extractionCache->put($this->fixturePath, 'requests', ['name' => 'Foo']);
+
+        $this->assertSame([], $extractionCache->entriesByCategory('enums'));
+        $this->assertSame([$this->fixturePath => ['name' => 'Foo']], $extractionCache->entriesByCategory('requests'));
+
+        $extractionCache->forget($this->fixturePath, 'requests');
+
+        $this->assertTrue($extractionCache->isFresh($this->fixturePath, 'enums'));
+        $this->assertFalse($extractionCache->isFresh($this->fixturePath, 'requests'));
+    }
+
     public function test_persist_and_load_round_trips_to_disk(): void
     {
         $extractionCache = new ExtractionCache($this->cachePath, 'sha256:lock', 'sha256:cfg');
@@ -98,7 +131,9 @@ final class ExtractionCacheTest extends TestCase
 
         $reloaded = ExtractionCache::load($this->cachePath, 'sha256:lock', 'sha256:cfg');
 
-        $this->assertSame(['v' => 1], $reloaded->get($this->fixturePath));
+        $this->assertSame(['v' => 1], $reloaded->entriesByCategory('models')[$this->fixturePath]);
+        $this->assertTrue($reloaded->isFresh($this->fixturePath, 'models'));
+        $this->assertTrue($reloaded->restored());
     }
 
     public function test_load_returns_empty_cache_when_hashes_mismatch(): void
@@ -109,14 +144,16 @@ final class ExtractionCacheTest extends TestCase
 
         $reloaded = ExtractionCache::load($this->cachePath, 'sha256:lock', 'sha256:DIFFERENT');
 
-        $this->assertNull($reloaded->get($this->fixturePath));
+        $this->assertSame([], $reloaded->entriesByCategory('models'));
+        $this->assertFalse($reloaded->restored());
     }
 
     public function test_load_returns_empty_cache_when_file_missing(): void
     {
         $extractionCache = ExtractionCache::load('/nonexistent/path.json', 'sha256:lock', 'sha256:cfg');
 
-        $this->assertNull($extractionCache->get($this->fixturePath));
+        $this->assertSame([], $extractionCache->entriesByCategory('models'));
+        $this->assertFalse($extractionCache->restored());
     }
 
     public function test_load_returns_empty_cache_when_file_is_corrupt(): void
@@ -125,7 +162,8 @@ final class ExtractionCacheTest extends TestCase
 
         $extractionCache = ExtractionCache::load($this->cachePath, 'sha256:lock', 'sha256:cfg');
 
-        $this->assertNull($extractionCache->get($this->fixturePath));
+        $this->assertSame([], $extractionCache->entriesByCategory('models'));
+        $this->assertFalse($extractionCache->restored());
     }
 
     public function test_load_returns_empty_cache_when_schema_version_mismatch(): void
@@ -141,7 +179,23 @@ final class ExtractionCacheTest extends TestCase
 
         $reloaded = ExtractionCache::load($this->cachePath, 'sha256:lock', 'sha256:cfg');
 
-        $this->assertNull($reloaded->get($this->fixturePath));
+        $this->assertSame([], $reloaded->entriesByCategory('models'));
+        $this->assertFalse($reloaded->restored());
+    }
+
+    public function test_load_returns_empty_cache_when_entries_are_malformed(): void
+    {
+        file_put_contents($this->cachePath, (string) json_encode([
+            'schema_version' => ExtractionCache::SCHEMA_VERSION,
+            'composer_lock_hash' => 'sha256:lock',
+            'config_hash' => 'sha256:cfg',
+            'entries' => 'not a map',
+        ]));
+
+        $extractionCache = ExtractionCache::load($this->cachePath, 'sha256:lock', 'sha256:cfg');
+
+        $this->assertSame([], $extractionCache->entriesByCategory('models'));
+        $this->assertFalse($extractionCache->restored());
     }
 
     public function test_load_evicts_entries_for_deleted_files(): void
@@ -160,11 +214,9 @@ final class ExtractionCacheTest extends TestCase
         $reloaded = ExtractionCache::load($this->cachePath, 'sha256:lock', 'sha256:cfg');
 
         // The surviving fixture is still present.
-        $this->assertSame(['v' => 1], $reloaded->get($this->fixturePath));
+        $this->assertSame([$this->fixturePath => ['v' => 1]], $reloaded->entriesByCategory('models'));
         // The deleted file's entry was evicted.
-        $this->assertNull($reloaded->get($ephemeral));
-        // entriesByCategory also reflects the eviction.
-        $this->assertCount(1, $reloaded->entriesByCategory('models'));
+        $this->assertFalse($reloaded->isFresh($ephemeral, 'models'));
     }
 
     public function test_persist_evicts_entries_for_deleted_files(): void
@@ -182,8 +234,7 @@ final class ExtractionCacheTest extends TestCase
 
         // Reload and verify the deleted entry was not persisted.
         $reloaded = ExtractionCache::load($this->cachePath, 'sha256:lock', 'sha256:cfg');
-        $this->assertNull($reloaded->get($ephemeral));
-        $this->assertCount(1, $reloaded->entriesByCategory('models'));
+        $this->assertSame([$this->fixturePath => ['v' => 1]], $reloaded->entriesByCategory('models'));
     }
 
     public function test_persist_does_not_corrupt_existing_cache_when_write_fails(): void

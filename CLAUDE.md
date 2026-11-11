@@ -19,7 +19,9 @@ Both are versioned in lockstep by semantic-release.
 │   │   ├── Attributes/             class-level attributes (TypefinderOverrides, TypefinderWriteShape, TypefinderPage)
 │   │   ├── Extractors/             Model / Enum / Request AST→metadata
 │   │   ├── Renderers/              TypeScriptRenderer emits the .d.ts strings
-│   │   └── Resolvers/              column / cast / morph resolvers
+│   │   ├── Resolvers/              column / cast / morph / pivot resolvers
+│   │   ├── Services/               Generator (run + emit), FileExtractor, OutputTree
+│   │   └── Support/                Categories, ClassDiscovery, parsing helpers
 │   ├── laravel-typefinder/config/  default typefinder.php
 │   └── vite-plugin-laravel-typefinder/  npm package (the Vite plugin)
 ├── tests/                          PHPUnit (Unit + Feature suites)
@@ -89,7 +91,18 @@ Every generation run produces a tree under `output_path` (default `resources/js/
 
 Default-off categories are gated because they depend on optional Laravel features (Inertia, broadcasting). The rest default on per the gating rule above.
 
-Drift checks: `Analysis\KeyDriftDetector` (run from `Generator`, full and incremental) warns when a resource's declared shape, a model-typed resource's model type (one aggregated warning; incremental runs use the cached model extraction and skip silently without one) or a `#[TypefinderPage]` disagrees with the literal keys `toArray()` / `Inertia::render()` produce; never changes emitted types. Shared Inertia props come from `Analysis\InertiaSharedProps` (parses `app/Http/Middleware`).
+Drift checks: `Analysis\KeyDriftDetector` (run from `Generator`, full and incremental) warns when a resource's declared shape, a model-typed resource's model type (one aggregated warning; incremental runs take the model from the extraction cache) or a `#[TypefinderPage]` disagrees with the literal keys `toArray()` / `Inertia::render()` produce; never changes emitted types. Shared Inertia props come from `Analysis\InertiaSharedProps` (parses `app/Http/Middleware`).
+
+## Generation pipeline
+
+`Services\Generator` runs every generation in two steps, and full and incremental (`--only`, watch) runs share both:
+
+1. **Extract** into `Cache\ExtractionCache` (one entry per category and source file; `null` for a file that yields no type). `Services\FileExtractor::extract($file, $category)` is the only place a file becomes an extraction. A full run extracts every file. An incremental run extracts the files it was given plus any without a fresh cache entry, and is a full run when no cache could be restored.
+2. **Emit** the whole tree from the cache (`Generator::emit()` through `Services\OutputTree`, which writes only what differs): morph targets, pivots, name checks, barrels and pruning all happen here.
+
+Shared pieces: `Support\Categories` is the one definition of the categories (extraction order, which are opt-in, their directories); `Support\ClassDiscovery` lists the files of a directory and loads the class each declares; every extractor's `isEmittable($class)` is the one filter for its category (`extractFromDirectory()` and `FileExtractor` both call it). `Resolvers\PivotResolver` and `Analysis\PageMerger` derive pivots and merged pages for the emit step.
+
+The two modes differ only in what happens when a file cannot be extracted: a full run aborts, an incremental run reports it in `RegenResult::$failed` and keeps the cached entry. Do not add a write path or a filter that only one mode goes through; that is how #110 and #111 happened. `tests/Feature/IncrementalParityTest.php` holds the invariant (an incremental run leaves the output of a full run).
 
 ## Attributes
 

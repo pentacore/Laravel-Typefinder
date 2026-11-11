@@ -210,8 +210,8 @@ final class GeneratorTest extends TestCase
         $generator = app(Generator::class);
         $generator->generateFull();
 
-        // A path inside the models dir that doesn't exist exercises the
-        // handleDeletion code path (category resolved, !is_file triggers).
+        // A path inside the models dir that doesn't exist: there is nothing to
+        // extract, and nothing in the cache to drop.
         $ghostPath = workbench_path('app/Models/Vanished.php');
 
         $regenResult = $generator->generatePaths([$ghostPath]);
@@ -233,7 +233,8 @@ final class GeneratorTest extends TestCase
 
         // After persisting, the vanished path should not be in the cache
         $cache = json_decode((string) file_get_contents($cachePath), true);
-        $this->assertArrayNotHasKey($ghostPath, $cache['entries'] ?? []);
+        $this->assertNotEmpty($cache['entries']['models']);
+        $this->assertArrayNotHasKey($ghostPath, $cache['entries']['models']);
     }
 
     // ── Barrel rewriting after incremental changes ─────────────────────
@@ -259,9 +260,9 @@ final class GeneratorTest extends TestCase
         $this->assertContains('models/User.d.ts', $regenResult->changed);
     }
 
-    // ── detectEnabledCategories ────────────────────────────────────────
+    // ── Top-level barrel after an incremental run ──────────────────────
 
-    public function test_generate_paths_top_level_barrel_reflects_disk_categories(): void
+    public function test_generate_paths_top_level_barrel_lists_the_emitted_categories(): void
     {
         $generator = app(Generator::class);
         $generator->generateFull();
@@ -361,21 +362,66 @@ final class GeneratorTest extends TestCase
 
     // ── Failed extraction in incremental mode ──────────────────────────
 
-    public function test_generate_paths_captures_failed_extractions(): void
+    public function test_generate_paths_ignores_a_class_that_is_not_a_model_like_a_full_run(): void
     {
         $generator = app(Generator::class);
         $generator->generateFull();
 
-        // Create a PHP file that will fail to extract (invalid class)
-        $brokenPath = workbench_path('app/Models/BrokenIncrementalModel.php');
-        File::put($brokenPath, "<?php\nnamespace App\\Models;\nclass BrokenIncrementalModel { /* not a model */ }\n");
+        $plainPath = workbench_path('app/Models/PlainIncrementalClass.php');
+        File::put($plainPath, "<?php\nnamespace App\\Models;\nclass PlainIncrementalClass { /* not a model */ }\n");
 
         try {
-            $result = $generator->generatePaths([$brokenPath]);
+            $regenResult = $generator->generatePaths([$plainPath]);
 
-            // Should either warn or fail — not crash
-            $hasWarningOrFailed = $result->warnings !== [] || $result->failed !== [];
-            $this->assertTrue($hasWarningOrFailed, 'Broken file should produce a warning or failure');
+            $this->assertSame([], $regenResult->failed);
+            $this->assertSame([], $regenResult->changed);
+            $this->assertFileDoesNotExist($this->output.'/models/PlainIncrementalClass.d.ts');
+        } finally {
+            @unlink($plainPath);
+        }
+    }
+
+    public function test_generate_full_aborts_on_a_model_that_cannot_be_extracted_and_writes_nothing(): void
+    {
+        $generator = app(Generator::class);
+        $generator->generateFull();
+        File::put($this->output.'/models/User.d.ts', '// stale');
+
+        $brokenPath = workbench_path('app/Models/BrokenIncrementalModel.php');
+        File::put($brokenPath, "<?php\nnamespace App\\Models;\nclass BrokenIncrementalModel extends \\Illuminate\\Database\\Eloquent\\Model { public function __construct() { throw new \\RuntimeException('cannot be instantiated'); } }\n");
+
+        try {
+            $generator->generateFull();
+            $this->fail('a full run must not continue past a model it cannot extract');
+        } catch (\RuntimeException $runtimeException) {
+            $this->assertSame('cannot be instantiated', $runtimeException->getMessage());
+            // Extraction comes before any write, so the output is as it was.
+            $this->assertSame('// stale', File::get($this->output.'/models/User.d.ts'));
+        } finally {
+            @unlink($brokenPath);
+        }
+    }
+
+    public function test_generate_paths_reports_a_model_that_cannot_be_extracted_and_keeps_the_rest(): void
+    {
+        $generator = app(Generator::class);
+        $generator->generateFull();
+
+        $user = File::get($this->output.'/models/User.d.ts');
+        $barrel = File::get($this->output.'/models/index.d.ts');
+
+        $brokenPath = workbench_path('app/Models/BrokenIncrementalModel.php');
+        File::put($brokenPath, "<?php\nnamespace App\\Models;\nclass BrokenIncrementalModel extends \\Illuminate\\Database\\Eloquent\\Model { public function __construct() { throw new \\RuntimeException('cannot be instantiated'); } }\n");
+
+        try {
+            $regenResult = $generator->generatePaths([$brokenPath]);
+
+            $this->assertCount(1, $regenResult->failed);
+            $this->assertSame((string) realpath($brokenPath), $regenResult->failed[0]['path']);
+            $this->assertSame('cannot be instantiated', $regenResult->failed[0]['message']);
+            $this->assertFileDoesNotExist($this->output.'/models/BrokenIncrementalModel.d.ts');
+            $this->assertSame($user, File::get($this->output.'/models/User.d.ts'));
+            $this->assertSame($barrel, File::get($this->output.'/models/index.d.ts'));
         } finally {
             @unlink($brokenPath);
         }

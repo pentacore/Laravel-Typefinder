@@ -332,7 +332,7 @@ final readonly class KeyDriftDetector
 
     /**
      * One action's entries for one component as a single entry, merged key
-     * by key like `Generator::mergePages()`, which also fails on type
+     * by key like {@see PageMerger::merge()}, which also fails on type
      * conflicts and so is not reused here.
      *
      * @param  non-empty-list<array{component: string, props: array<array-key, string>, optional: list<string>, source: string}>  $entries

@@ -13,12 +13,10 @@ use Pentacore\Typefinder\Analysis\QueryRuleKeys;
 use Pentacore\Typefinder\Attributes\TypefinderIgnore;
 use Pentacore\Typefinder\Attributes\TypefinderOverrides;
 use Pentacore\Typefinder\Renderers\TypeScriptRenderer;
-use Pentacore\Typefinder\Support\ClassNameResolver;
+use Pentacore\Typefinder\Support\ClassDiscovery;
 use Pentacore\Typefinder\Support\NullSafeProxy;
 use ReflectionAttribute;
 use ReflectionClass;
-use RuntimeException;
-use Symfony\Component\Finder\Finder;
 
 class RequestExtractor
 {
@@ -165,14 +163,35 @@ class RequestExtractor
     }
 
     /**
-     * Whether a form request gets a type of its own: not `#[TypefinderIgnore]`d.
+     * Whether a class gets a request type of its own: a form request, not
+     * `#[TypefinderIgnore]`d.
      *
      * @param  class-string  $requestClass
      */
     public function isEmittable(string $requestClass): bool
     {
-        return new ReflectionClass($requestClass)
-            ->getAttributes(TypefinderIgnore::class, ReflectionAttribute::IS_INSTANCEOF) === [];
+        return is_subclass_of($requestClass, FormRequest::class)
+            && new ReflectionClass($requestClass)->getAttributes(TypefinderIgnore::class, ReflectionAttribute::IS_INSTANCEOF) === [];
+    }
+
+    /**
+     * {@see self::extract()}, or null when the request cannot be extracted:
+     * `$onWarn` is told why, so one request never stops the others.
+     *
+     * @param  class-string<FormRequest>  $requestClass
+     * @param  null|callable(string, \Throwable): void  $onWarn
+     */
+    public function tryExtract(string $requestClass, ?callable $onWarn = null): ?array
+    {
+        try {
+            return $this->extract($requestClass);
+        } catch (\Throwable $throwable) {
+            if ($onWarn !== null) {
+                $onWarn($requestClass, $throwable);
+            }
+
+            return null;
+        }
     }
 
     /**
@@ -182,32 +201,9 @@ class RequestExtractor
      */
     public function extractFromDirectory(string $path, ?callable $onExtract = null, ?callable $onWarn = null): array
     {
-        if (! is_dir($path)) {
-            return [];
-        }
-
         $results = [];
-        $finder = Finder::create()->files()->name('*.php')->in($path)->sortByName();
 
-        foreach ($finder as $file) {
-            $className = ClassNameResolver::fromFile($file->getRealPath());
-            if ($className === null) {
-                continue;
-            }
-
-            if (! class_exists($className)) {
-                $failure = ClassNameResolver::autoloadFailure($className, $file->getRealPath());
-                if ($failure instanceof RuntimeException && $onWarn !== null) {
-                    $onWarn($className, $failure);
-                }
-
-                continue;
-            }
-
-            if (! is_subclass_of($className, FormRequest::class)) {
-                continue;
-            }
-
+        foreach (ClassDiscovery::in($path, $onWarn) as $className) {
             if (! $this->isEmittable($className)) {
                 continue;
             }
@@ -216,14 +212,9 @@ class RequestExtractor
                 $onExtract($className);
             }
 
-            try {
-                $results[] = $this->extract($className);
-            } catch (\Throwable $e) {
-                if ($onWarn !== null) {
-                    $onWarn($className, $e);
-                }
-
-                // Skip this request; generator continues with the others.
+            $entry = $this->tryExtract($className, $onWarn);
+            if ($entry !== null) {
+                $results[] = $entry;
             }
         }
 

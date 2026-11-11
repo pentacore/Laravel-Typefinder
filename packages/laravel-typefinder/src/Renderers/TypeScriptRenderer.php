@@ -9,6 +9,7 @@ use Illuminate\Http\Resources\Json\JsonResource;
 use Pentacore\Typefinder\Renderers\Concerns\RendersBroadcasting;
 use Pentacore\Typefinder\Renderers\Concerns\RendersModels;
 use Pentacore\Typefinder\Renderers\Concerns\RendersResources;
+use Pentacore\Typefinder\Resolvers\PivotResolver;
 
 class TypeScriptRenderer
 {
@@ -719,6 +720,6 @@ TS;
 
     protected function generatePivotName(string $tableName): string
     {
-        return str_replace(' ', '', ucwords(str_replace('_', ' ', $tableName))).'Pivot';
+        return PivotResolver::typeName($tableName);
     }
 }
