@@ -101,10 +101,10 @@ class GenerateCommand extends Command
                     return self::FAILURE;
                 }
 
-                if ($this->failed !== []) {
-                    return $this->failExtraction($useJson, $useDebug, $durationMs, $realOutputPath);
-                }
-
+                // No failed files to report here: the temp output path changes
+                // the config hash, so a --check run never restores the cache
+                // and is always a full run, which aborts instead.
+                // See https://github.com/pentacore/Laravel-Typefinder/issues/118
                 if ($this->strictFailure($useStrict)) {
                     return $this->failStrict($useJson, $useDebug, $durationMs, $realOutputPath);
                 }

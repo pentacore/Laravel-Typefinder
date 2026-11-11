@@ -183,6 +183,21 @@ final class ExtractionCacheTest extends TestCase
         $this->assertFalse($reloaded->restored());
     }
 
+    public function test_load_returns_empty_cache_when_entries_are_malformed(): void
+    {
+        file_put_contents($this->cachePath, (string) json_encode([
+            'schema_version' => ExtractionCache::SCHEMA_VERSION,
+            'composer_lock_hash' => 'sha256:lock',
+            'config_hash' => 'sha256:cfg',
+            'entries' => 'not a map',
+        ]));
+
+        $extractionCache = ExtractionCache::load($this->cachePath, 'sha256:lock', 'sha256:cfg');
+
+        $this->assertSame([], $extractionCache->entriesByCategory('models'));
+        $this->assertFalse($extractionCache->restored());
+    }
+
     public function test_load_evicts_entries_for_deleted_files(): void
     {
         $extractionCache = new ExtractionCache($this->cachePath, 'sha256:lock', 'sha256:cfg');

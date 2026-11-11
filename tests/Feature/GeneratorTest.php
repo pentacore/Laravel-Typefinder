@@ -381,6 +381,27 @@ final class GeneratorTest extends TestCase
         }
     }
 
+    public function test_generate_full_aborts_on_a_model_that_cannot_be_extracted_and_writes_nothing(): void
+    {
+        $generator = app(Generator::class);
+        $generator->generateFull();
+        File::put($this->output.'/models/User.d.ts', '// stale');
+
+        $brokenPath = workbench_path('app/Models/BrokenIncrementalModel.php');
+        File::put($brokenPath, "<?php\nnamespace App\\Models;\nclass BrokenIncrementalModel extends \\Illuminate\\Database\\Eloquent\\Model { public function __construct() { throw new \\RuntimeException('cannot be instantiated'); } }\n");
+
+        try {
+            $generator->generateFull();
+            $this->fail('a full run must not continue past a model it cannot extract');
+        } catch (\RuntimeException $runtimeException) {
+            $this->assertSame('cannot be instantiated', $runtimeException->getMessage());
+            // Extraction comes before any write, so the output is as it was.
+            $this->assertSame('// stale', File::get($this->output.'/models/User.d.ts'));
+        } finally {
+            @unlink($brokenPath);
+        }
+    }
+
     public function test_generate_paths_reports_a_model_that_cannot_be_extracted_and_keeps_the_rest(): void
     {
         $generator = app(Generator::class);
