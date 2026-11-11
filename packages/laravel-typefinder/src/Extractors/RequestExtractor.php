@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Pentacore\Typefinder\Extractors;
 
+use BackedEnum;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rules\AnyOf;
 use Illuminate\Validation\Rules\ArrayRule;
@@ -449,6 +450,35 @@ class RequestExtractor
     }
 
     /**
+     * The enum a `Rule::enum()` accepts, with the backing values it is
+     * narrowed to by `->only(…)` or `->except(…)`.
+     *
+     * @return array{enum: class-string, only?: non-empty-list<int|string>, except?: non-empty-list<int|string>}
+     */
+    protected function resolveEnumRule(Enum $enum): array
+    {
+        $reflectionClass = new ReflectionClass($enum);
+        $type = ['enum' => $reflectionClass->getProperty('type')->getValue($enum)];
+
+        // Like the rule itself: with `only` set, `except` is never looked at.
+        $only = (array) $reflectionClass->getProperty('only')->getValue($enum);
+        $subset = $only === [] ? 'except' : 'only';
+        $cases = $only === [] ? (array) $reflectionClass->getProperty('except')->getValue($enum) : $only;
+
+        $values = [];
+        foreach ($cases as $case) {
+            if (! $case instanceof BackedEnum) {
+                // A pure enum case has no value to narrow the type with.
+                return $type;
+            }
+
+            $values[] = $case->value;
+        }
+
+        return $values === [] ? $type : [...$type, $subset => $values];
+    }
+
+    /**
      * Resolve the TypeScript type from a set of rules.
      *
      * @param  list<mixed>  $rules
@@ -458,11 +488,7 @@ class RequestExtractor
         foreach ($rules as $rule) {
             // Handle Rule::enum(SomeEnum::class)
             if ($rule instanceof Enum) {
-                $reflectionClass = new ReflectionClass($rule);
-                $typeProperty = $reflectionClass->getProperty('type');
-                $enumClass = $typeProperty->getValue($rule);
-
-                return ['enum' => $enumClass];
+                return $this->resolveEnumRule($rule);
             }
 
             // Handle Rule::in(['foo', 'bar'])
