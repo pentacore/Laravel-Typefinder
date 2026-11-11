@@ -15,6 +15,9 @@ namespace Pentacore\Typefinder\Cache;
  */
 final readonly class CacheKeyFactory
 {
+    /** Top-level config keys that do not change what a source file extracts to. */
+    private const array OUTPUT_ONLY = ['output_path', 'gitignore_generated'];
+
     public function __construct(
         private string $basePath,
     ) {}
@@ -30,11 +33,15 @@ final readonly class CacheKeyFactory
     }
 
     /**
+     * Hash of the `typefinder` config, less the keys that only say where the
+     * output goes. Extractions do not depend on those, so a run that writes
+     * to another directory (`--check`) keeps the cache usable.
+     *
      * @param  array<string, mixed>  $config
      */
     public function configHash(array $config): string
     {
-        $normalised = $this->normalise($config);
+        $normalised = $this->normalise(array_diff_key($config, array_flip(self::OUTPUT_ONLY)));
 
         return 'sha256:'.hash('sha256', json_encode($normalised, JSON_THROW_ON_ERROR));
     }

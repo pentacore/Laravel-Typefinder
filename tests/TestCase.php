@@ -26,5 +26,10 @@ abstract class TestCase extends OrchestraTestCase
         // Keep the container-bound registry clean between tests so one test's
         // `Typefinder::registerCast(...)` never leaks into another's assertions.
         $this->app->make(TypefinderRegistry::class)->clearCasts();
+
+        // Every test starts without an extraction cache. The cache key does
+        // not include the output path, so a cache left by another test with
+        // the same category config would otherwise be restored.
+        @unlink(storage_path('framework/cache/typefinder/extractions.json'));
     }
 }

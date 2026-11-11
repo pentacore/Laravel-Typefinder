@@ -32,6 +32,7 @@ final class GenerateCommandTest extends TestCase
             File::deleteDirectory($this->outputPath);
         }
 
+        @unlink(storage_path('framework/cache/typefinder/extractions.json'));
         parent::tearDown();
     }
 
@@ -123,6 +124,52 @@ final class GenerateCommandTest extends TestCase
             $this->assertSame(1, $exit);
             $this->assertFalse($payload['success']);
             $this->assertSame([$broken.': cannot be instantiated'], $payload['errors']);
+        } finally {
+            @unlink($broken);
+        }
+    }
+
+    public function test_check_run_leaves_the_extraction_cache_usable(): void
+    {
+        config(['typefinder.resources.paths' => [workbench_path('app/Http/Resources')]]);
+
+        // A full run extracts every resource and warns about the orphan.
+        $this->artisan('typefinder:generate')
+            ->expectsOutputToContain('skipped App\Http\Resources\OrphanResource')
+            ->assertSuccessful();
+        $this->artisan('typefinder:generate --check')->assertSuccessful();
+
+        // Still incremental: only the model is extracted again, so no resource warning.
+        $this->artisan('typefinder:generate', ['--only' => [workbench_path('app/Models/User.php')]])
+            ->doesntExpectOutputToContain('OrphanResource')
+            ->assertSuccessful();
+    }
+
+    public function test_check_with_only_compares_the_whole_tree(): void
+    {
+        $this->artisan('typefinder:generate')->assertSuccessful();
+
+        $this->artisan('typefinder:generate', ['--check' => true, '--only' => [workbench_path('app/Models/User.php')]])
+            ->expectsOutputToContain('TypeScript types are up to date.')
+            ->assertSuccessful();
+
+        File::put($this->outputPath.'/models/Post.d.ts', '// stale');
+
+        $this->artisan('typefinder:generate', ['--check' => true, '--only' => [workbench_path('app/Models/User.php')]])
+            ->expectsOutputToContain('models/Post.d.ts')
+            ->assertFailed();
+    }
+
+    public function test_check_with_only_fails_when_a_file_cannot_be_extracted(): void
+    {
+        $this->artisan('typefinder:generate')->assertSuccessful();
+        $broken = $this->writeBrokenModel();
+
+        try {
+            $this->artisan('typefinder:generate', ['--check' => true, '--only' => [$broken]])
+                ->expectsOutputToContain($broken.': cannot be instantiated')
+                ->doesntExpectOutputToContain('up to date')
+                ->assertFailed();
         } finally {
             @unlink($broken);
         }
