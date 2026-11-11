@@ -9,12 +9,11 @@ use Illuminate\Http\Resources\Json\JsonResource;
 use Pentacore\Typefinder\Attributes\TypefinderIgnore;
 use Pentacore\Typefinder\Attributes\TypefinderResource;
 use Pentacore\Typefinder\Resolvers\PhpDocShapeResolver;
-use Pentacore\Typefinder\Support\ClassNameResolver;
+use Pentacore\Typefinder\Support\ClassDiscovery;
 use Pentacore\Typefinder\Support\GeneratedClasses;
 use ReflectionAttribute;
 use ReflectionClass;
 use RuntimeException;
-use Symfony\Component\Finder\Finder;
 use Throwable;
 
 class ResourceExtractor
@@ -128,38 +127,54 @@ class ResourceExtractor
     }
 
     /**
+     * Whether a class gets a resource type of its own: a `JsonResource`, not
+     * `#[TypefinderIgnore]`d.
+     *
+     * @param  class-string  $resourceClass
+     */
+    public function isEmittable(string $resourceClass): bool
+    {
+        $reflectionClass = new ReflectionClass($resourceClass);
+
+        return $reflectionClass->isSubclassOf(JsonResource::class)
+            && $reflectionClass->getAttributes(TypefinderIgnore::class, ReflectionAttribute::IS_INSTANCEOF) === [];
+    }
+
+    /**
+     * {@see self::extract()} for an emittable resource, or null when it has
+     * no resolvable shape or cannot be extracted: `$onWarn` is told why.
+     *
+     * @param  class-string  $resourceClass
+     * @param  null|callable(string, Throwable): void  $onWarn
+     * @return ?array{name: string, fqcn: class-string, shape: array}
+     */
+    public function tryExtract(string $resourceClass, ?callable $onWarn = null): ?array
+    {
+        try {
+            $entry = $this->extract($resourceClass);
+            if ($entry === null) {
+                throw new RuntimeException($this->unresolvedMessage());
+            }
+
+            return $entry;
+        } catch (Throwable $throwable) {
+            if ($onWarn !== null) {
+                $onWarn($resourceClass, $throwable);
+            }
+
+            return null;
+        }
+    }
+
+    /**
      * @return list<array{name: string, fqcn: class-string, shape: array}>
      */
     public function extractFromDirectory(string $path, ?callable $onExtract = null, ?callable $onWarn = null): array
     {
-        if (! is_dir($path)) {
-            return [];
-        }
-
         $results = [];
-        $finder = Finder::create()->files()->name('*.php')->in($path)->sortByName();
 
-        foreach ($finder as $file) {
-            $className = ClassNameResolver::fromFile($file->getRealPath());
-            if ($className === null) {
-                continue;
-            }
-
-            if (! class_exists($className)) {
-                $failure = ClassNameResolver::autoloadFailure($className, $file->getRealPath());
-                if ($failure instanceof RuntimeException && $onWarn !== null) {
-                    $onWarn($className, $failure);
-                }
-
-                continue;
-            }
-
-            $reflection = new ReflectionClass($className);
-            if (! $reflection->isSubclassOf(JsonResource::class)) {
-                continue;
-            }
-
-            if ($reflection->getAttributes(TypefinderIgnore::class, ReflectionAttribute::IS_INSTANCEOF) !== []) {
+        foreach (ClassDiscovery::in($path, $onWarn) as $className) {
+            if (! $this->isEmittable($className)) {
                 continue;
             }
 
@@ -167,21 +182,9 @@ class ResourceExtractor
                 $onExtract($className);
             }
 
-            try {
-                $entry = $this->extract($className);
-                if ($entry === null) {
-                    if ($onWarn !== null) {
-                        $onWarn($className, new RuntimeException($this->unresolvedMessage()));
-                    }
-
-                    continue;
-                }
-
+            $entry = $this->tryExtract($className, $onWarn);
+            if ($entry !== null) {
                 $results[] = $entry;
-            } catch (Throwable $throwable) {
-                if ($onWarn !== null) {
-                    $onWarn($className, $throwable);
-                }
             }
         }
 

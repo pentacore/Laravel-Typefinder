@@ -10,7 +10,6 @@ use Pentacore\Typefinder\Attributes\TypefinderIgnore;
 use ReflectionAttribute;
 use ReflectionClass;
 use ReflectionEnum;
-use Symfony\Component\Finder\Finder;
 
 /**
  * Answers "does this class get a generated TypeScript type?" for models,
@@ -119,22 +118,13 @@ final class GeneratedClasses
      */
     private function discover(string $category, callable $reflect, callable $accept): array
     {
-        if (! config(sprintf('typefinder.%s.enabled', $category), true)) {
+        if (! Categories::enabled($category)) {
             return [];
         }
 
         $classes = [];
-        foreach ((array) config(sprintf('typefinder.%s.paths', $category), []) as $path) {
-            if (! is_dir((string) $path)) {
-                continue;
-            }
-
-            foreach (Finder::create()->files()->name('*.php')->in((string) $path)->sortByName() as $file) {
-                $className = ClassNameResolver::fromFile($file->getRealPath());
-                if ($className === null) {
-                    continue;
-                }
-
+        foreach (Categories::paths($category) as $path) {
+            foreach (ClassDiscovery::in($path) as $className) {
                 $reflection = $reflect($className);
                 if (! $reflection instanceof ReflectionClass || ! $accept($reflection)) {
                     continue;

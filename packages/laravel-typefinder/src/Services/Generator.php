@@ -4,15 +4,18 @@ declare(strict_types=1);
 
 namespace Pentacore\Typefinder\Services;
 
+use Pentacore\Typefinder\Analysis\PageMerger;
 use Pentacore\Typefinder\Attributes\TypefinderWriteShape;
 use Pentacore\Typefinder\Cache\CacheKeyFactory;
 use Pentacore\Typefinder\Cache\ExtractionCache;
 use Pentacore\Typefinder\Renderers\TypeScriptRenderer;
 use Pentacore\Typefinder\Resolvers\MorphToResolver;
+use Pentacore\Typefinder\Resolvers\PivotResolver;
+use Pentacore\Typefinder\Support\Categories;
+use Pentacore\Typefinder\Support\ClassDiscovery;
 use Pentacore\Typefinder\TypefinderRegistry;
 use ReflectionAttribute;
 use ReflectionClass;
-use Symfony\Component\Finder\Finder;
 
 /**
  * Runs generation. A run has two steps: bring the {@see ExtractionCache} up
@@ -24,15 +27,6 @@ use Symfony\Component\Finder\Finder;
  */
 final class Generator
 {
-    /**
-     * Config keys of the categories, in extraction order: resources refer to
-     * the models and enums extracted before them.
-     */
-    private const array CATEGORIES = ['enums', 'models', 'requests', 'resources', 'inertia', 'broadcasting'];
-
-    /** Categories that are off unless the config turns them on. */
-    private const array OPT_IN = ['inertia', 'broadcasting'];
-
     public function __construct(
         private readonly TypefinderRegistry $typefinderRegistry,
         private readonly TypeScriptRenderer $typeScriptRenderer,
@@ -96,11 +90,11 @@ final class Generator
             $extractionCache = new ExtractionCache($this->cachePath, $lockHash, $configHash);
         }
 
-        $roots = $this->categoryRoots();
+        $roots = Categories::roots();
         $pending = [];
 
         foreach ($paths as $path) {
-            $file = $this->canonicalPath($path);
+            $file = Categories::realPath($path);
             $categories = array_keys(array_filter($roots, fn (array $dirs): bool => $this->rootIndex($file, $dirs) !== null));
 
             if ($categories === []) {
@@ -173,7 +167,7 @@ final class Generator
      */
     private function emit(ExtractionCache $extractionCache, array $roots, callable $warn): array
     {
-        $sets = array_fill_keys(self::CATEGORIES, []);
+        $sets = array_fill_keys(Categories::ALL, []);
         foreach ($roots as $category => $dirs) {
             $sets[$category] = $this->inSourceOrder($extractionCache->entriesByCategory($category), $dirs);
             $this->assertValid($category, $sets[$category]);
@@ -181,10 +175,10 @@ final class Generator
 
         $enums = $sets['enums'];
         $models = new MorphToResolver()->resolve($sets['models']);
-        $pivots = $this->extractPivots($models);
+        $pivots = new PivotResolver()->resolve($models);
         $requests = $sets['requests'];
         $resources = $sets['resources'];
-        $pages = $this->mergePages($this->pagesOf($sets['inertia']));
+        $pages = PageMerger::merge($this->pagesOf($sets['inertia']));
         $broadcasts = $sets['broadcasting'];
 
         $outputTree = new OutputTree((string) config('typefinder.output_path'));
@@ -271,9 +265,9 @@ final class Generator
         match ($category) {
             'models' => $this->assertUniqueTypeNames('models', [
                 ...$extractions,
-                ...array_map(fn (array $pivot): array => ['name' => $pivot['name'], 'fqcn' => 'pivot table of '.$pivot['name']], $this->extractPivots($extractions)),
+                ...array_map(fn (array $pivot): array => ['name' => $pivot['name'], 'fqcn' => 'pivot table of '.$pivot['name']], new PivotResolver()->resolve($extractions)),
             ]),
-            'inertia' => $this->mergePages($this->pagesOf($extractions)),
+            'inertia' => PageMerger::merge($this->pagesOf($extractions)),
             'broadcasting' => $this->assertNoBroadcastCollisions($extractions),
             default => $this->assertUniqueTypeNames($category, $extractions),
         };
@@ -291,28 +285,6 @@ final class Generator
     }
 
     /**
-     * The enabled categories and the directories each one reads, as real paths.
-     *
-     * @return array<string, list<string>>
-     */
-    private function categoryRoots(): array
-    {
-        $roots = [];
-        foreach (self::CATEGORIES as $category) {
-            if (! config(sprintf('typefinder.%s.enabled', $category), ! in_array($category, self::OPT_IN, true))) {
-                continue;
-            }
-
-            $roots[$category] = array_map(
-                fn (mixed $dir): string => $this->canonicalPath((string) $dir),
-                array_values((array) config(sprintf('typefinder.%s.paths', $category), [])),
-            );
-        }
-
-        return $roots;
-    }
-
-    /**
      * The PHP files under the directories: directory by directory, by name
      * within each. Extraction and emission both follow this order, so a run
      * does not depend on the filesystem or on which files it was given.
@@ -324,12 +296,8 @@ final class Generator
     {
         $files = [];
         foreach ($dirs as $dir) {
-            if (! is_dir($dir)) {
-                continue;
-            }
-
-            foreach (Finder::create()->files()->name('*.php')->in($dir)->sortByName() as $file) {
-                $files[(string) $file->getRealPath()] = true;
+            foreach (ClassDiscovery::files($dir) as $file) {
+                $files[$file] = true;
             }
         }
 
@@ -369,22 +337,6 @@ final class Generator
         }
 
         return null;
-    }
-
-    /**
-     * The real path, so one file has one cache entry however it was named.
-     * A deleted file has none; its directory's is used instead.
-     */
-    private function canonicalPath(string $path): string
-    {
-        $real = realpath($path);
-        if ($real !== false) {
-            return $real;
-        }
-
-        $dir = realpath(dirname($path));
-
-        return $dir === false ? $path : $dir.'/'.basename($path);
     }
 
     /**
@@ -578,94 +530,6 @@ final class Generator
     }
 
     /**
-     * Merge #[TypefinderPage] entries that name the same component, so one
-     * page can be rendered by several actions (create/edit sharing a form,
-     * tabs of one page).
-     *
-     * A prop is required only when every contributing action declares it and
-     * none lists it as optional. Two actions giving one prop different types
-     * fail the run: a silent union would hide mistakes, and an intended union
-     * can be declared as such in both actions.
-     *
-     * @param  list<array{component: string, props: array<string, string>, optional: list<string>, source: string}>  $pages
-     * @return list<array{component: string, props: array<string, string>, optional: list<string>, source: string}>
-     */
-    private function mergePages(array $pages): array
-    {
-        $byComponent = [];
-        foreach ($pages as $page) {
-            $byComponent[$page['component']][] = $page;
-        }
-
-        $merged = [];
-        $conflicts = [];
-
-        foreach ($byComponent as $component => $entries) {
-            if (count($entries) === 1) {
-                $merged[] = $entries[0];
-
-                continue;
-            }
-
-            $props = [];
-            $declaredBy = [];
-            $optional = [];
-            $typesSeen = [];
-
-            foreach ($entries as $entry) {
-                foreach ($entry['props'] as $key => $type) {
-                    $normalised = ltrim(trim((string) $type), '\\');
-                    $props[$key] ??= $normalised;
-                    $declaredBy[$key] = ($declaredBy[$key] ?? 0) + 1;
-                    $typesSeen[$key][$normalised][] = $entry['source'];
-
-                    if (in_array($key, $entry['optional'], true)) {
-                        $optional[$key] = true;
-                    }
-                }
-            }
-
-            foreach ($typesSeen as $key => $byType) {
-                if (count($byType) < 2) {
-                    continue;
-                }
-
-                $declarations = [];
-                foreach ($byType as $type => $sources) {
-                    foreach ($sources as $source) {
-                        $declarations[] = $source.' => '.$type;
-                    }
-                }
-
-                $conflicts[] = sprintf('  %s.%s: %s', $component, $key, implode(', ', $declarations));
-            }
-
-            foreach ($declaredBy as $key => $count) {
-                if ($count < count($entries)) {
-                    $optional[$key] = true;
-                }
-            }
-
-            $merged[] = [
-                'component' => $component,
-                'props' => $props,
-                'optional' => array_keys($optional),
-                'source' => implode(', ', array_unique(array_column($entries, 'source'))),
-            ];
-        }
-
-        if ($conflicts !== []) {
-            throw new \RuntimeException(
-                "TypefinderPage props declared with different types for the same component:\n"
-                .implode("\n", $conflicts)."\n"
-                .'Give the prop the same type in every action (a union if it really varies).',
-            );
-        }
-
-        return $merged;
-    }
-
-    /**
      * @param  list<array{event_class: string, broadcast_name: string, channels: list<array{type: string, name: string}>}>  $events
      */
     private function assertNoBroadcastCollisions(array $events): void
@@ -689,58 +553,5 @@ final class Generator
         }
 
         throw new \RuntimeException("Duplicate broadcast event on channel:\n".implode("\n", $lines));
-    }
-
-    /**
-     * Extract pivot type definitions from model relationships.
-     *
-     * @return list<array>
-     */
-    private function extractPivots(array $allModels): array
-    {
-        $pivots = [];
-        $seen = [];
-
-        foreach ($allModels as $allModel) {
-            foreach ($allModel['relationships'] as $rel) {
-                if ($rel['type'] !== 'manyWithPivot') {
-                    continue;
-                }
-
-                if (! isset($rel['pivot'])) {
-                    continue;
-                }
-
-                $tableName = $rel['pivot']['table'];
-                if (isset($seen[$tableName])) {
-                    continue;
-                }
-
-                $seen[$tableName] = true;
-
-                $pivotName = str_replace(' ', '', ucwords(str_replace('_', ' ', $tableName))).'Pivot';
-
-                $columns = [
-                    ['name' => $rel['pivot']['foreignKey'], 'type' => 'number'],
-                    ['name' => $rel['pivot']['relatedKey'], 'type' => 'number'],
-                ];
-
-                if (isset($rel['pivot']['morphType'])) {
-                    $columns[] = ['name' => $rel['pivot']['morphType'], 'type' => 'string'];
-                }
-
-                foreach ($rel['pivot']['withPivot'] as $col) {
-                    $columns[] = ['name' => $col, 'type' => 'string', 'nullable' => true];
-                }
-
-                $pivots[] = [
-                    'name' => $pivotName,
-                    'columns' => $columns,
-                    'withTimestamps' => $rel['pivot']['withTimestamps'],
-                ];
-            }
-        }
-
-        return $pivots;
     }
 }

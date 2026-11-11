@@ -11,13 +11,12 @@ use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Pentacore\Typefinder\Attributes\TypefinderBroadcast;
 use Pentacore\Typefinder\Attributes\TypefinderIgnore;
-use Pentacore\Typefinder\Support\ClassNameResolver;
+use Pentacore\Typefinder\Support\ClassDiscovery;
 use ReflectionAttribute;
 use ReflectionClass;
 use ReflectionNamedType;
 use ReflectionProperty;
 use RuntimeException;
-use Symfony\Component\Finder\Finder;
 use Throwable;
 
 class BroadcastExtractor
@@ -76,38 +75,49 @@ class BroadcastExtractor
     }
 
     /**
+     * Whether a class gets a broadcast event type: it implements
+     * `ShouldBroadcast` and is not `#[TypefinderIgnore]`d.
+     *
+     * @param  class-string  $eventClass
+     */
+    public function isEmittable(string $eventClass): bool
+    {
+        $reflectionClass = new ReflectionClass($eventClass);
+
+        return $reflectionClass->implementsInterface(ShouldBroadcast::class)
+            && $reflectionClass->getAttributes(TypefinderIgnore::class, ReflectionAttribute::IS_INSTANCEOF) === [];
+    }
+
+    /**
+     * {@see self::extract()}, or null when the event cannot be extracted:
+     * `$onWarn` is told why, so one event never stops the others.
+     *
+     * @param  class-string  $eventClass
+     * @param  null|callable(string, Throwable): void  $onWarn
+     * @return ?array{event_class: class-string, broadcast_name: string, channels: list<array{type: string, name: string}>, payload: array<string, string>}
+     */
+    public function tryExtract(string $eventClass, ?callable $onWarn = null): ?array
+    {
+        try {
+            return $this->extract($eventClass);
+        } catch (Throwable $throwable) {
+            if ($onWarn !== null) {
+                $onWarn($eventClass, $throwable);
+            }
+
+            return null;
+        }
+    }
+
+    /**
      * @return list<array{event_class: class-string, broadcast_name: string, channels: list<array{type: string, name: string}>, payload: array<string, string>}>
      */
     public function extractFromDirectory(string $path, ?callable $onExtract = null, ?callable $onWarn = null): array
     {
-        if (! is_dir($path)) {
-            return [];
-        }
-
         $results = [];
-        $finder = Finder::create()->files()->name('*.php')->in($path)->sortByName();
 
-        foreach ($finder as $file) {
-            $className = ClassNameResolver::fromFile($file->getRealPath());
-            if ($className === null) {
-                continue;
-            }
-
-            if (! class_exists($className)) {
-                $failure = ClassNameResolver::autoloadFailure($className, $file->getRealPath());
-                if ($failure instanceof RuntimeException && $onWarn !== null) {
-                    $onWarn($className, $failure);
-                }
-
-                continue;
-            }
-
-            $reflection = new ReflectionClass($className);
-            if (! $reflection->implementsInterface(ShouldBroadcast::class)) {
-                continue;
-            }
-
-            if ($reflection->getAttributes(TypefinderIgnore::class, ReflectionAttribute::IS_INSTANCEOF) !== []) {
+        foreach (ClassDiscovery::in($path, $onWarn) as $className) {
+            if (! $this->isEmittable($className)) {
                 continue;
             }
 
@@ -115,15 +125,9 @@ class BroadcastExtractor
                 $onExtract($className);
             }
 
-            try {
-                $entry = $this->extract($className);
-                if ($entry !== null) {
-                    $results[] = $entry;
-                }
-            } catch (Throwable $throwable) {
-                if ($onWarn !== null) {
-                    $onWarn($className, $throwable);
-                }
+            $entry = $this->tryExtract($className, $onWarn);
+            if ($entry !== null) {
+                $results[] = $entry;
             }
         }
 

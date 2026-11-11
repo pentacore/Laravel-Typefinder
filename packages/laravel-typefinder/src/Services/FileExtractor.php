@@ -5,12 +5,8 @@ declare(strict_types=1);
 namespace Pentacore\Typefinder\Services;
 
 use Closure;
-use Illuminate\Database\Eloquent\Model;
-use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Http\Resources\Json\JsonResource;
 use Pentacore\Typefinder\Analysis\InertiaSharedProps;
 use Pentacore\Typefinder\Analysis\KeyDriftDetector;
-use Pentacore\Typefinder\Attributes\TypefinderIgnore;
 use Pentacore\Typefinder\Cache\ExtractionCache;
 use Pentacore\Typefinder\Extractors\BroadcastExtractor;
 use Pentacore\Typefinder\Extractors\ControllerExtractor;
@@ -21,12 +17,9 @@ use Pentacore\Typefinder\Extractors\ResourceExtractor;
 use Pentacore\Typefinder\Resolvers\CastTypeResolver;
 use Pentacore\Typefinder\Resolvers\ColumnTypeResolver;
 use Pentacore\Typefinder\Resolvers\PhpDocShapeResolver;
-use Pentacore\Typefinder\Support\ClassNameResolver;
+use Pentacore\Typefinder\Support\ClassDiscovery;
 use Pentacore\Typefinder\Support\GeneratedClasses;
 use Pentacore\Typefinder\TypefinderRegistry;
-use ReflectionAttribute;
-use ReflectionClass;
-use RuntimeException;
 use Throwable;
 
 /**
@@ -78,17 +71,8 @@ final class FileExtractor
      */
     public function extract(string $file, string $category): ?array
     {
-        $class = ClassNameResolver::fromFile($file);
+        $class = ClassDiscovery::loadable($file, $this->skipped(...));
         if ($class === null) {
-            return null;
-        }
-
-        if (! ($category === 'enums' ? enum_exists($class) : class_exists($class))) {
-            $failure = ClassNameResolver::autoloadFailure($class, $file);
-            if ($failure instanceof RuntimeException) {
-                $this->skipped($class, $failure);
-            }
-
             return null;
         }
 
@@ -104,7 +88,7 @@ final class FileExtractor
     }
 
     /**
-     * @param  class-string<\UnitEnum>  $class
+     * @param  class-string  $class
      */
     private function enum(string $class): ?array
     {
@@ -118,10 +102,6 @@ final class FileExtractor
      */
     private function model(string $class): ?array
     {
-        if (! is_subclass_of($class, Model::class)) {
-            return null;
-        }
-
         $this->modelExtractor ??= new ModelExtractor(
             new ColumnTypeResolver,
             new CastTypeResolver((array) config('typefinder.casts.type_map', []), $this->typefinderRegistry),
@@ -136,23 +116,12 @@ final class FileExtractor
      */
     private function request(string $class): ?array
     {
-        if (! is_subclass_of($class, FormRequest::class)) {
-            return null;
-        }
-
         $this->requestExtractor ??= new RequestExtractor;
         if (! $this->requestExtractor->isEmittable($class)) {
             return null;
         }
 
-        try {
-            $request = $this->requestExtractor->extract($class);
-        } catch (Throwable $throwable) {
-            $this->skipped($class, $throwable);
-
-            return null;
-        }
-
+        $request = $this->requestExtractor->tryExtract($class, $this->skipped(...));
         array_map($this->warn, $request['warnings'] ?? []);
 
         return $request;
@@ -163,11 +132,6 @@ final class FileExtractor
      */
     private function resource(string $class): ?array
     {
-        $reflectionClass = new ReflectionClass($class);
-        if (! $reflectionClass->isSubclassOf(JsonResource::class) || $this->isIgnored($reflectionClass)) {
-            return null;
-        }
-
         $this->resourceExtractor ??= new ResourceExtractor(
             inferFromModelName: (bool) config('typefinder.resources.infer_from_model_name', true),
             modelClasses: $this->generatedClasses('models'),
@@ -175,17 +139,12 @@ final class FileExtractor
             onWarn: $this->warn,
         );
 
-        try {
-            $resource = $this->resourceExtractor->extract($class);
-        } catch (Throwable $throwable) {
-            $this->skipped($class, $throwable);
-
+        if (! $this->resourceExtractor->isEmittable($class)) {
             return null;
         }
 
+        $resource = $this->resourceExtractor->tryExtract($class, $this->skipped(...));
         if ($resource === null) {
-            $this->skipped($class, new RuntimeException($this->resourceExtractor->unresolvedMessage()));
-
             return null;
         }
 
@@ -205,12 +164,9 @@ final class FileExtractor
      */
     private function pages(string $class): ?array
     {
-        if ($this->isIgnored(new ReflectionClass($class))) {
-            return null;
-        }
-
         $this->controllerExtractor ??= new ControllerExtractor;
-        $pages = $this->controllerExtractor->extract($class);
+
+        $pages = $this->controllerExtractor->isEmittable($class) ? $this->controllerExtractor->extract($class) : [];
         if ($pages === []) {
             return null;
         }
@@ -227,13 +183,9 @@ final class FileExtractor
     {
         $this->broadcastExtractor ??= new BroadcastExtractor;
 
-        try {
-            return $this->broadcastExtractor->extract($class);
-        } catch (Throwable $throwable) {
-            $this->skipped($class, $throwable);
-
-            return null;
-        }
+        return $this->broadcastExtractor->isEmittable($class)
+            ? $this->broadcastExtractor->tryExtract($class, $this->skipped(...))
+            : null;
     }
 
     private function keyDriftDetector(): KeyDriftDetector
@@ -272,11 +224,6 @@ final class FileExtractor
     private function generatedClasses(string $category): array
     {
         return array_values(array_column($this->extractionCache->entriesByCategory($category), 'fqcn'));
-    }
-
-    private function isIgnored(ReflectionClass $reflectionClass): bool
-    {
-        return $reflectionClass->getAttributes(TypefinderIgnore::class, ReflectionAttribute::IS_INSTANCEOF) !== [];
     }
 
     private function skipped(string $class, Throwable $throwable): void
