@@ -4,33 +4,35 @@ declare(strict_types=1);
 
 namespace Pentacore\Typefinder\Services;
 
-use Illuminate\Http\Resources\Json\JsonResource;
-use Illuminate\Support\Facades\File;
-use Pentacore\Typefinder\Analysis\InertiaSharedProps;
-use Pentacore\Typefinder\Analysis\KeyDriftDetector;
-use Pentacore\Typefinder\Attributes\TypefinderIgnore;
 use Pentacore\Typefinder\Attributes\TypefinderWriteShape;
 use Pentacore\Typefinder\Cache\CacheKeyFactory;
 use Pentacore\Typefinder\Cache\ExtractionCache;
-use Pentacore\Typefinder\Extractors\BroadcastExtractor;
-use Pentacore\Typefinder\Extractors\ControllerExtractor;
-use Pentacore\Typefinder\Extractors\EnumExtractor;
-use Pentacore\Typefinder\Extractors\ModelExtractor;
-use Pentacore\Typefinder\Extractors\RequestExtractor;
-use Pentacore\Typefinder\Extractors\ResourceExtractor;
 use Pentacore\Typefinder\Renderers\TypeScriptRenderer;
-use Pentacore\Typefinder\Resolvers\CastTypeResolver;
-use Pentacore\Typefinder\Resolvers\ColumnTypeResolver;
 use Pentacore\Typefinder\Resolvers\MorphToResolver;
-use Pentacore\Typefinder\Resolvers\PhpDocShapeResolver;
-use Pentacore\Typefinder\Support\ClassNameResolver;
-use Pentacore\Typefinder\Support\GeneratedClasses;
 use Pentacore\Typefinder\TypefinderRegistry;
 use ReflectionAttribute;
 use ReflectionClass;
+use Symfony\Component\Finder\Finder;
 
+/**
+ * Runs generation. A run has two steps: bring the {@see ExtractionCache} up
+ * to date with the source files, then emit the whole output tree from it.
+ *
+ * A full run extracts every file. An incremental run extracts the files it
+ * was given plus any that changed since they were last extracted. The emit
+ * step is the same for both, so they leave the same output.
+ */
 final class Generator
 {
+    /**
+     * Config keys of the categories, in extraction order: resources refer to
+     * the models and enums extracted before them.
+     */
+    private const array CATEGORIES = ['enums', 'models', 'requests', 'resources', 'inertia', 'broadcasting'];
+
+    /** Categories that are off unless the config turns them on. */
+    private const array OPT_IN = ['inertia', 'broadcasting'];
+
     public function __construct(
         private readonly TypefinderRegistry $typefinderRegistry,
         private readonly TypeScriptRenderer $typeScriptRenderer,
@@ -41,104 +43,19 @@ final class Generator
     ) {}
 
     /**
-     * Incremental regeneration: given a list of absolute PHP file paths that
-     * changed, re-extract and re-render only the affected .d.ts outputs.
-     * Empty $paths falls back to full regen.
+     * Incremental regeneration: extract the given PHP files again, then
+     * rewrite whatever in the output that changes. Files that changed without
+     * being listed are picked up too. Falls back to a full run when $paths is
+     * empty or no cache of a previous run is usable.
+     *
+     * A file that cannot be extracted is reported in the result's `failed`
+     * and keeps the type it had.
      *
      * @param  list<string>  $paths  Absolute paths. Empty = full regen.
      */
     public function generatePaths(array $paths): RegenResult
     {
-        if ($paths === []) {
-            return $this->generateFull();
-        }
-
-        $startedAt = microtime(true);
-        $outputPath = (string) config('typefinder.output_path');
-        $config = (array) config('typefinder');
-        $changed = [];
-        $warnings = [];
-        $failed = [];
-
-        $extractionCache = ExtractionCache::load(
-            $this->cachePath,
-            $this->cacheKeyFactory->composerLockHash(),
-            $this->cacheKeyFactory->configHash($config),
-        );
-
-        $categoryMap = $this->buildCategoryMap($config);
-        $affectedCategories = [];
-
-        foreach ($paths as $path) {
-            $category = $this->resolveCategory($path, $categoryMap);
-            if ($category === null) {
-                $warnings[] = $path.': outside any configured typefinder category — ignored';
-
-                continue;
-            }
-
-            if (! is_file($path)) {
-                $this->handleDeletion($path, $category, $extractionCache, $outputPath, $changed);
-                $affectedCategories[$category] = true;
-
-                continue;
-            }
-
-            try {
-                $extraction = $this->extractSingleFile($path, $category, $config, $warnings, $extractionCache);
-                if ($extraction !== null) {
-                    $this->assertNameNotTaken($path, $category, $extraction, $extractionCache);
-                    $extractionCache->put($path, $category, $extraction);
-                    $this->writeSingleExtraction($category, $extraction, $config, $outputPath, $changed);
-                } else {
-                    // The file no longer yields a type (attribute removed,
-                    // #[TypefinderIgnore] added, class renamed). A full run
-                    // would prune its output, so do the same here.
-                    $this->handleDeletion($path, $category, $extractionCache, $outputPath, $changed);
-                }
-
-                $affectedCategories[$category] = true;
-            } catch (\Throwable $e) {
-                $failed[] = ['path' => $path, 'message' => $e->getMessage()];
-            }
-        }
-
-        $warn = function (string $message) use (&$warnings): void {
-            $warnings[] = $message;
-            if ($this->onWarn !== null) {
-                ($this->onWarn)($message);
-            }
-        };
-
-        foreach (array_keys($affectedCategories) as $cat) {
-            $this->rewriteCategoryBarrel($cat, $config, $outputPath, $changed, $warn);
-        }
-
-        if (isset($affectedCategories['inertia'])) {
-            try {
-                $this->regeneratePages($config, $outputPath, $changed, $warnings);
-            } catch (\Throwable $e) {
-                $failed[] = ['path' => $outputPath.'/pages.d.ts', 'message' => $e->getMessage()];
-            }
-        }
-
-        if ($changed !== []) {
-            $enabledCats = $this->detectEnabledCategories($outputPath);
-            $barrel = $this->typeScriptRenderer->renderTopLevelBarrel($enabledCats);
-            File::ensureDirectoryExists($outputPath);
-            if ($this->writeIfChanged($outputPath.'/index.d.ts', $barrel)) {
-                $changed[] = 'index.d.ts';
-            }
-        }
-
-        $extractionCache->persist();
-
-        return new RegenResult(
-            changed: array_values(array_unique($changed)),
-            warnings: $warnings,
-            failed: $failed,
-            durationMs: (int) round((microtime(true) - $startedAt) * 1000),
-        );
+        return $this->run($paths);
     }
 
     /**
@@ -148,26 +65,18 @@ final class Generator
      */
     public function generateFull(): RegenResult
     {
+        return $this->run([]);
+    }
+
+    /**
+     * @param  list<string>  $paths  files to extract again; empty for all of them
+     */
+    private function run(array $paths): RegenResult
+    {
         $startedAt = microtime(true);
-        $outputPath = (string) config('typefinder.output_path');
-
         $config = (array) config('typefinder');
-        $extractionCache = ExtractionCache::load(
-            $this->cachePath,
-            $this->cacheKeyFactory->composerLockHash(),
-            $this->cacheKeyFactory->configHash($config),
-        );
-
         $warnings = [];
-        $changed = [];
-
-        $allEnums = [];
-        $allModels = [];
-        $allRequests = [];
-        $allPivots = [];
-        $categories = [];
-        // What each category barrel exports, for the cross-category check.
-        $barrelNames = [];
+        $failed = [];
 
         $warn = function (string $message) use (&$warnings): void {
             $warnings[] = $message;
@@ -176,232 +85,327 @@ final class Generator
             }
         };
 
-        $onSkip = function (string $cls, \Throwable $throwable) use ($warn): void {
-            $warn(sprintf('skipped %s: ', $cls).$throwable->getMessage());
-        };
+        $lockHash = $this->cacheKeyFactory->composerLockHash();
+        $configHash = $this->cacheKeyFactory->configHash($config);
 
-        if (config('typefinder.enums.enabled', true)) {
-            $enumExtractor = new EnumExtractor;
-            $paths = config('typefinder.enums.paths', []);
+        $extractionCache = $paths === [] ? null : ExtractionCache::load($this->cachePath, $lockHash, $configHash);
+        // Without the entries of a previous run nothing is known about the
+        // other types, so every file is extracted.
+        $incremental = $extractionCache instanceof ExtractionCache && $extractionCache->restored();
+        if (! $incremental) {
+            $extractionCache = new ExtractionCache($this->cachePath, $lockHash, $configHash);
+        }
 
-            foreach ($paths as $path) {
-                $allEnums = array_merge($allEnums, $enumExtractor->extractFromDirectory($path, null, $onSkip));
+        $roots = $this->categoryRoots();
+        $pending = [];
+
+        foreach ($paths as $path) {
+            $file = $this->canonicalPath($path);
+            $categories = array_keys(array_filter($roots, fn (array $dirs): bool => $this->rootIndex($file, $dirs) !== null));
+
+            if ($categories === []) {
+                $warnings[] = $path.': outside any configured typefinder category — ignored';
             }
 
-            $this->assertUniqueTypeNames('enums', $allEnums);
+            foreach ($categories as $category) {
+                $pending[$category][$file] = true;
+            }
+        }
 
-            foreach ($allEnums as $allEnum) {
-                $absolutePath = new ReflectionClass($allEnum['fqcn'])->getFileName();
-                if ($absolutePath !== false) {
-                    $extractionCache->put($absolutePath, 'enums', $allEnum);
+        // Every file the cache has no fresh entry for: all of them in a full
+        // run, otherwise those that changed without being listed (a git pull,
+        // an edit while nothing was watching).
+        foreach ($roots as $category => $dirs) {
+            foreach ($this->sourceFiles($dirs) as $file) {
+                if (! $extractionCache->isFresh($file, $category)) {
+                    $pending[$category][$file] = true;
                 }
             }
-
-            if ($allEnums !== []) {
-                $barrelNames['enums'] = $this->writeEnums($allEnums, $outputPath, $changed);
-                $categories[] = 'enums';
-            }
         }
 
-        if (config('typefinder.models.enabled', true)) {
-            $castOverrides = config('typefinder.casts.type_map', []);
-            $modelExtractor = new ModelExtractor(
-                new ColumnTypeResolver,
-                new CastTypeResolver($castOverrides, $this->typefinderRegistry),
-                $warn,
-            );
+        $fileExtractor = new FileExtractor($this->typefinderRegistry, $extractionCache, $warn);
 
-            $paths = config('typefinder.models.paths', []);
+        foreach (array_keys($roots) as $category) {
+            foreach (array_keys($pending[$category] ?? []) as $file) {
+                if (! is_file($file)) {
+                    $extractionCache->forget($file, $category);
 
-            foreach ($paths as $path) {
-                $allModels = array_merge($allModels, $modelExtractor->extractFromDirectory($path, null, $onSkip));
-            }
-
-            $morphToResolver = new MorphToResolver;
-            $allModels = $morphToResolver->resolve($allModels);
-
-            foreach ($allModels as $allModel) {
-                $absolutePath = new ReflectionClass($allModel['fqcn'])->getFileName();
-                if ($absolutePath !== false) {
-                    $extractionCache->put($absolutePath, 'models', $allModel);
-                }
-            }
-
-            $allPivots = $this->extractPivots($allModels);
-            $this->assertUniqueTypeNames('models', [
-                ...$allModels,
-                ...array_map(fn (array $pivot): array => ['name' => $pivot['name'], 'fqcn' => 'pivot table of '.$pivot['name']], $allPivots),
-            ]);
-
-            if ($allModels !== [] || $allPivots !== []) {
-                $barrelNames['models'] = $this->writeModels($allModels, $allPivots, $allEnums, $outputPath, $changed, $warn);
-                $categories[] = 'models';
-            }
-        }
-
-        if (config('typefinder.requests.enabled', true)) {
-            $requestExtractor = new RequestExtractor;
-            $paths = config('typefinder.requests.paths', []);
-
-            foreach ($paths as $path) {
-                $allRequests = array_merge($allRequests, $requestExtractor->extractFromDirectory($path, null, $onSkip));
-            }
-
-            $this->assertUniqueTypeNames('requests', $allRequests);
-
-            foreach ($allRequests as $allRequest) {
-                array_map($warn, $allRequest['warnings'] ?? []);
-
-                $absolutePath = new ReflectionClass($allRequest['fqcn'])->getFileName();
-                if ($absolutePath !== false) {
-                    $extractionCache->put($absolutePath, 'requests', $allRequest);
-                }
-            }
-
-            if ($allRequests !== []) {
-                $extractNested = config('typefinder.requests.extract_nested', false);
-                $barrelNames['requests'] = $this->writeRequests($allRequests, $allEnums, $outputPath, $extractNested, $changed, $warn);
-                $categories[] = 'requests';
-            }
-        }
-
-        $allResources = [];
-        $keyDriftDetector = new KeyDriftDetector(
-            new PhpDocShapeResolver(new GeneratedClasses(
-                array_column($allModels, 'fqcn'),
-                array_column($allEnums, 'fqcn'),
-            )),
-            sharedPageProps: config('typefinder.inertia.enabled', false) ? $this->keyDrift($this->sharedPageProps(...)) : [],
-        );
-        if (config('typefinder.resources.enabled', true)) {
-            $modelsByClass = array_column($allModels, null, 'fqcn');
-            $resourceExtractor = new ResourceExtractor(
-                inferFromModelName: (bool) config('typefinder.resources.infer_from_model_name', true),
-                modelClasses: array_column($allModels, 'fqcn'),
-                enumClasses: array_column($allEnums, 'fqcn'),
-                onWarn: $warn,
-            );
-            $paths = config('typefinder.resources.paths', []);
-
-            foreach ($paths as $path) {
-                $allResources = array_merge($allResources, $resourceExtractor->extractFromDirectory($path, null, $onSkip));
-            }
-
-            $this->assertUniqueTypeNames('resources', $allResources);
-
-            foreach ($allResources as $allResource) {
-                foreach ($this->keyDrift(static fn (): array => $keyDriftDetector->checkResource($allResource, $modelsByClass[$allResource['shape']['model'] ?? ''] ?? null)) as $message) {
-                    $warn($message);
+                    continue;
                 }
 
-                $absolutePath = new ReflectionClass($allResource['fqcn'])->getFileName();
-                if ($absolutePath !== false) {
-                    $extractionCache->put($absolutePath, 'resources', $allResource);
+                try {
+                    $extraction = $fileExtractor->extract($file, $category);
+
+                    if ($incremental && $extraction !== null) {
+                        // Reject the one file that breaks the set, so the rest can still be emitted.
+                        $this->assertValid($category, array_values([...$extractionCache->entriesByCategory($category), $file => $extraction]));
+                    }
+
+                    $extractionCache->put($file, $category, $extraction);
+                } catch (\Throwable $throwable) {
+                    if (! $incremental) {
+                        throw $throwable;
+                    }
+
+                    $failed[] = ['path' => $file, 'message' => $throwable->getMessage()];
                 }
             }
-
-            if ($allResources !== []) {
-                $barrelNames['resources'] = $this->writeResources($allResources, $allModels, $allEnums, $outputPath, $changed, $warn);
-                $categories[] = 'resources';
-            }
         }
 
-        if (config('typefinder.inertia.enabled', false)) {
-            $controllerExtractor = new ControllerExtractor;
-            $paths = config('typefinder.inertia.paths', []);
-
-            $allPages = [];
-            foreach ($paths as $path) {
-                $allPages = array_merge($allPages, $controllerExtractor->extractFromDirectory($path, null, $onSkip));
-            }
-
-            foreach ($this->keyDrift(static fn (): array => $keyDriftDetector->checkPages($allPages)) as $message) {
-                $warn($message);
-            }
-
-            $allPages = $this->mergePages($allPages);
-
-            if ($allPages !== []) {
-                $this->writePages($allPages, $allModels, $allEnums, $allResources, $outputPath, $changed);
-                $categories[] = 'pages';
-            }
-        }
-
-        if (config('typefinder.broadcasting.enabled', false)) {
-            $broadcastExtractor = new BroadcastExtractor;
-            $paths = config('typefinder.broadcasting.paths', []);
-
-            $allBroadcasts = [];
-            foreach ($paths as $path) {
-                $allBroadcasts = array_merge($allBroadcasts, $broadcastExtractor->extractFromDirectory($path, null, $onSkip));
-            }
-
-            $this->assertNoBroadcastCollisions($allBroadcasts);
-
-            if ($allBroadcasts !== []) {
-                $this->writeBroadcasting($allBroadcasts, $allModels, $allEnums, $allResources, $outputPath, $changed);
-                $categories[] = 'broadcasting';
-            }
-        }
-
-        $this->warnOnCrossCategoryNames($barrelNames, $warn);
-
-        $this->writeHelpers($outputPath, $changed);
-        $categories[] = 'helpers';
-
-        $barrel = $this->typeScriptRenderer->renderTopLevelBarrel($categories);
-        File::ensureDirectoryExists($outputPath);
-        $wrote = $this->writeIfChanged($outputPath.'/index.d.ts', $barrel);
-        if ($wrote) {
-            $changed[] = 'index.d.ts';
-        }
-
+        $changed = $this->emit($extractionCache, $roots, $warn);
         $extractionCache->persist();
-
-        $durationMs = (int) round((microtime(true) - $startedAt) * 1000);
 
         return new RegenResult(
             changed: $changed,
             warnings: $warnings,
-            failed: [],
-            durationMs: $durationMs,
+            failed: $failed,
+            durationMs: (int) round((microtime(true) - $startedAt) * 1000),
         );
+    }
+
+    /**
+     * Write the output tree for the types in the cache: every file of every
+     * enabled category, the barrels, and nothing else in their directories.
+     *
+     * @param  array<string, list<string>>  $roots
+     * @param  callable(string): void  $warn
+     * @return list<string> relative paths of the files that changed
+     */
+    private function emit(ExtractionCache $extractionCache, array $roots, callable $warn): array
+    {
+        $sets = array_fill_keys(self::CATEGORIES, []);
+        foreach ($roots as $category => $dirs) {
+            $sets[$category] = $this->inSourceOrder($extractionCache->entriesByCategory($category), $dirs);
+            $this->assertValid($category, $sets[$category]);
+        }
+
+        $enums = $sets['enums'];
+        $models = new MorphToResolver()->resolve($sets['models']);
+        $pivots = $this->extractPivots($models);
+        $requests = $sets['requests'];
+        $resources = $sets['resources'];
+        $pages = $this->mergePages($this->pagesOf($sets['inertia']));
+        $broadcasts = $sets['broadcasting'];
+
+        $outputTree = new OutputTree((string) config('typefinder.output_path'));
+        $files = [];
+
+        $emitWriteShapes = (bool) config('typefinder.models.emit_write_shapes', true);
+        $globalImmutable = (array) config('typefinder.models.immutable_on_update', ['id', 'created_at', 'updated_at', 'deleted_at']);
+        foreach ($models as $model) {
+            $immutable = array_values(array_unique([...$globalImmutable, ...$this->getContractImmutable($model['fqcn'])]));
+            $files['models'][$model['name']] = $this->typeScriptRenderer->renderModelFile($model, $enums, $models, $emitWriteShapes, $immutable);
+        }
+
+        foreach ($pivots as $pivot) {
+            $files['models'][$pivot['name']] = $this->typeScriptRenderer->renderPivot($pivot);
+        }
+
+        $extractNested = (bool) config('typefinder.requests.extract_nested', false);
+        foreach ($requests as $request) {
+            $files['requests'][$request['name']] = $this->typeScriptRenderer->renderRequest($request, $enums, $extractNested);
+        }
+
+        foreach ($resources as $resource) {
+            $files['resources'][$resource['name']] = $this->typeScriptRenderer->renderResource($resource, $models, $enums, $resources);
+        }
+
+        $categories = [];
+        // What each category barrel exports, for the cross-category check.
+        $barrelNames = [];
+
+        foreach (['enums', 'models', 'requests', 'resources'] as $category) {
+            if (! isset($roots[$category])) {
+                continue;
+            }
+
+            if ($sets[$category] === []) {
+                $outputTree->removeDirectory($category);
+
+                continue;
+            }
+
+            $barrelNames[$category] = $category === 'enums'
+                ? $this->writeEnums($enums, $outputTree)
+                : $this->writeCategory($category, $files[$category], $outputTree, $warn);
+            $categories[] = $category;
+        }
+
+        $singleFiles = [
+            'inertia' => ['pages', $pages, fn (): string => $this->typeScriptRenderer->renderPages($pages, $models, $enums, $resources)],
+            'broadcasting' => ['broadcasting', $broadcasts, fn (): string => $this->typeScriptRenderer->renderBroadcasting($broadcasts, $models, $enums, $resources)],
+        ];
+
+        foreach ($singleFiles as $category => [$name, $entries, $render]) {
+            if (! isset($roots[$category])) {
+                continue;
+            }
+
+            if ($entries === []) {
+                $outputTree->remove($name.'.d.ts');
+
+                continue;
+            }
+
+            $outputTree->write($name.'.d.ts', $render());
+            $categories[] = $name;
+        }
+
+        $this->warnOnCrossCategoryNames($barrelNames, $warn);
+
+        $outputTree->write('helpers.d.ts', $this->typeScriptRenderer->renderHelpers());
+        $categories[] = 'helpers';
+
+        $outputTree->write('index.d.ts', $this->typeScriptRenderer->renderTopLevelBarrel($categories));
+
+        return $outputTree->changed();
+    }
+
+    /**
+     * Fail when the extractions of a category cannot be emitted together.
+     *
+     * @param  list<array<string, mixed>>  $extractions
+     */
+    private function assertValid(string $category, array $extractions): void
+    {
+        match ($category) {
+            'models' => $this->assertUniqueTypeNames('models', [
+                ...$extractions,
+                ...array_map(fn (array $pivot): array => ['name' => $pivot['name'], 'fqcn' => 'pivot table of '.$pivot['name']], $this->extractPivots($extractions)),
+            ]),
+            'inertia' => $this->mergePages($this->pagesOf($extractions)),
+            'broadcasting' => $this->assertNoBroadcastCollisions($extractions),
+            default => $this->assertUniqueTypeNames($category, $extractions),
+        };
+    }
+
+    /**
+     * The `#[TypefinderPage]` entries of every controller, in one list.
+     *
+     * @param  list<array{pages: list<array>}>  $controllers
+     * @return list<array>
+     */
+    private function pagesOf(array $controllers): array
+    {
+        return array_merge([], ...array_column($controllers, 'pages'));
+    }
+
+    /**
+     * The enabled categories and the directories each one reads, as real paths.
+     *
+     * @return array<string, list<string>>
+     */
+    private function categoryRoots(): array
+    {
+        $roots = [];
+        foreach (self::CATEGORIES as $category) {
+            if (! config(sprintf('typefinder.%s.enabled', $category), ! in_array($category, self::OPT_IN, true))) {
+                continue;
+            }
+
+            $roots[$category] = array_map(
+                fn (mixed $dir): string => $this->canonicalPath((string) $dir),
+                array_values((array) config(sprintf('typefinder.%s.paths', $category), [])),
+            );
+        }
+
+        return $roots;
+    }
+
+    /**
+     * The PHP files under the directories: directory by directory, by name
+     * within each. Extraction and emission both follow this order, so a run
+     * does not depend on the filesystem or on which files it was given.
+     *
+     * @param  list<string>  $dirs
+     * @return list<string> real paths
+     */
+    private function sourceFiles(array $dirs): array
+    {
+        $files = [];
+        foreach ($dirs as $dir) {
+            if (! is_dir($dir)) {
+                continue;
+            }
+
+            foreach (Finder::create()->files()->name('*.php')->in($dir)->sortByName() as $file) {
+                $files[(string) $file->getRealPath()] = true;
+            }
+        }
+
+        return array_keys($files);
+    }
+
+    /**
+     * Cache entries in the order {@see self::sourceFiles()} lists their files.
+     *
+     * @param  array<string, array<string, mixed>>  $entries  extractions by file path
+     * @param  list<string>  $dirs
+     * @return list<array<string, mixed>>
+     */
+    private function inSourceOrder(array $entries, array $dirs): array
+    {
+        $rank = [];
+        foreach (array_keys($entries) as $file) {
+            $rank[$file] = $this->rootIndex($file, $dirs) ?? PHP_INT_MAX;
+        }
+
+        uksort($entries, fn (string $a, string $b): int => $rank[$a] <=> $rank[$b] ?: strcmp($a, $b));
+
+        return array_values($entries);
+    }
+
+    /**
+     * Index of the first directory the file is in, or null when it is in none.
+     *
+     * @param  list<string>  $dirs
+     */
+    private function rootIndex(string $file, array $dirs): ?int
+    {
+        foreach ($dirs as $index => $dir) {
+            if (str_starts_with($file, $dir.'/')) {
+                return $index;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * The real path, so one file has one cache entry however it was named.
+     * A deleted file has none; its directory's is used instead.
+     */
+    private function canonicalPath(string $path): string
+    {
+        $real = realpath($path);
+        if ($real !== false) {
+            return $real;
+        }
+
+        $dir = realpath(dirname($path));
+
+        return $dir === false ? $path : $dir.'/'.basename($path);
     }
 
     /**
      * @return list<string> the type names the category barrel exports
      */
-    private function writeEnums(array $enums, string $outputPath, array &$changed): array
+    private function writeEnums(array $enums, OutputTree $outputTree): array
     {
-        $dir = $outputPath.'/enums';
-        File::ensureDirectoryExists($dir);
-
         $emitValues = (bool) config('typefinder.enums.emit_values', false);
         $ext = $emitValues ? 'ts' : 'd.ts';
 
         $names = [];
         foreach ($enums as $enum) {
-            $content = $this->typeScriptRenderer->renderEnum($enum, $emitValues);
-            $relativePath = 'enums/'.$enum['name'].'.'.$ext;
-            $wrote = $this->writeIfChanged(sprintf('%s/%s.%s', $dir, $enum['name'], $ext), $content);
-            if ($wrote) {
-                $changed[] = $relativePath;
-            }
-
+            $outputTree->write(sprintf('enums/%s.%s', $enum['name'], $ext), $this->typeScriptRenderer->renderEnum($enum, $emitValues));
             $names[] = $enum['name'];
         }
 
-        $this->pruneStaleFiles($dir, array_map(fn ($n): string => $n.'.'.$ext, [...$names, 'index']));
+        $outputTree->prune('enums', array_map(fn (string $name): string => $name.'.'.$ext, [...$names, 'index']));
 
-        $barrelContent = $emitValues
+        $outputTree->write('enums/index.'.$ext, $emitValues
             ? $this->renderValueBarrel($names)
-            : $this->typeScriptRenderer->renderBarrelIndex($names);
-
-        $indexPath = 'enums/index.'.$ext;
-        $wrote = $this->writeIfChanged($dir.'/index.'.$ext, $barrelContent);
-        if ($wrote) {
-            $changed[] = $indexPath;
-        }
+            : $this->typeScriptRenderer->renderBarrelIndex($names));
 
         return $names;
     }
@@ -422,46 +426,6 @@ final class Generator
     }
 
     /**
-     * @return list<string> the type names the category barrel exports
-     */
-    private function writeModels(array $models, array $pivots, array $allEnums, string $outputPath, array &$changed, callable $warn): array
-    {
-        $dir = $outputPath.'/models';
-        File::ensureDirectoryExists($dir);
-
-        $emitWriteShapes = (bool) config('typefinder.models.emit_write_shapes', true);
-        $globalImmutable = (array) config('typefinder.models.immutable_on_update', ['id', 'created_at', 'updated_at', 'deleted_at']);
-
-        $exports = [];
-
-        foreach ($models as $model) {
-            $immutable = array_values(array_unique([...$globalImmutable, ...$this->getContractImmutable($model['fqcn'])]));
-            $content = $this->typeScriptRenderer->renderModelFile($model, $allEnums, $models, $emitWriteShapes, $immutable);
-            $this->writeModelFile($dir, $model['name'], $content, $changed);
-            $exports[$model['name']] = TypeScriptRenderer::exportedTypeNames($content, $model['name']);
-        }
-
-        foreach ($pivots as $pivot) {
-            $content = $this->typeScriptRenderer->renderPivot($pivot);
-            $this->writeModelFile($dir, $pivot['name'], $content, $changed);
-            $exports[$pivot['name']] = TypeScriptRenderer::exportedTypeNames($content, $pivot['name']);
-        }
-
-        $this->pruneStaleFiles($dir, array_map(fn ($n): string => $n.'.d.ts', [...array_keys($exports), 'index']));
-
-        return $this->writeBarrel('models', $exports, $outputPath, $changed, $warn);
-    }
-
-    private function writeModelFile(string $dir, string $name, string $content, array &$changed): void
-    {
-        $relativePath = 'models/'.$name.'.d.ts';
-        $wrote = $this->writeIfChanged(sprintf('%s/%s.d.ts', $dir, $name), $content);
-        if ($wrote) {
-            $changed[] = $relativePath;
-        }
-    }
-
-    /**
      * @param  class-string  $fqcn
      * @return list<string>
      */
@@ -477,70 +441,28 @@ final class Generator
     }
 
     /**
-     * @return list<string> the type names the category barrel exports
-     */
-    private function writeRequests(array $requests, array $allEnums, string $outputPath, bool $extractNested, array &$changed, callable $warn): array
-    {
-        $dir = $outputPath.'/requests';
-        File::ensureDirectoryExists($dir);
-
-        $exports = [];
-        foreach ($requests as $request) {
-            $content = $this->typeScriptRenderer->renderRequest($request, $allEnums, $extractNested);
-            $relativePath = 'requests/'.$request['name'].'.d.ts';
-            $wrote = $this->writeIfChanged(sprintf('%s/%s.d.ts', $dir, $request['name']), $content);
-            if ($wrote) {
-                $changed[] = $relativePath;
-            }
-
-            $exports[$request['name']] = TypeScriptRenderer::exportedTypeNames($content, $request['name']);
-        }
-
-        $this->pruneStaleFiles($dir, array_map(fn ($n): string => $n.'.d.ts', [...array_keys($exports), 'index']));
-
-        return $this->writeBarrel('requests', $exports, $outputPath, $changed, $warn);
-    }
-
-    /**
-     * @return list<string> the type names the category barrel exports
-     */
-    private function writeResources(array $resources, array $allModels, array $allEnums, string $outputPath, array &$changed, callable $warn): array
-    {
-        $dir = $outputPath.'/resources';
-        File::ensureDirectoryExists($dir);
-
-        $exports = [];
-        foreach ($resources as $resource) {
-            $content = $this->typeScriptRenderer->renderResource($resource, $allModels, $allEnums, $resources);
-            $relativePath = 'resources/'.$resource['name'].'.d.ts';
-            $wrote = $this->writeIfChanged($dir.'/'.$resource['name'].'.d.ts', $content);
-            if ($wrote) {
-                $changed[] = $relativePath;
-            }
-
-            $exports[$resource['name']] = TypeScriptRenderer::exportedTypeNames($content, $resource['name']);
-        }
-
-        $this->pruneStaleFiles($dir, array_map(fn (string $n): string => $n.'.d.ts', [...array_keys($exports), 'index']));
-
-        return $this->writeBarrel('resources', $exports, $outputPath, $changed, $warn);
-    }
-
-    /**
-     * Write a category's `index.d.ts`, re-exporting every type of every file.
+     * Write the files of a category directory and its barrel, and remove
+     * every other file in it.
      *
-     * @param  array<string, list<string>>  $exportsByFile  exported type names by file name (without extension)
-     * @return list<string> the type names the barrel exports
+     * @param  array<string, string>  $files  file contents by type name
+     * @param  callable(string): void  $warn
+     * @return list<string> the type names the category barrel exports
      */
-    private function writeBarrel(string $category, array $exportsByFile, string $outputPath, array &$changed, callable $warn): array
+    private function writeCategory(string $category, array $files, OutputTree $outputTree, callable $warn): array
     {
-        $exportsByFile = $this->barrelExports($category, $exportsByFile, $warn);
-
-        if ($this->writeIfChanged($outputPath.'/'.$category.'/index.d.ts', $this->typeScriptRenderer->renderBarrelIndex($exportsByFile))) {
-            $changed[] = $category.'/index.d.ts';
+        $exports = [];
+        foreach ($files as $name => $content) {
+            $outputTree->write(sprintf('%s/%s.d.ts', $category, $name), $content);
+            $exports[$name] = TypeScriptRenderer::exportedTypeNames($content, (string) $name);
         }
 
-        return array_merge(...array_values($exportsByFile));
+        $outputTree->prune($category, array_map(fn (string $name): string => $name.'.d.ts', [...array_map(strval(...), array_keys($exports)), 'index']));
+
+        // Every type of every file is re-exported.
+        $exports = $this->barrelExports($category, $exports, $warn);
+        $outputTree->write($category.'/index.d.ts', $this->typeScriptRenderer->renderBarrelIndex($exports));
+
+        return array_merge([], ...array_values($exports));
     }
 
     /**
@@ -591,31 +513,6 @@ final class Generator
         return $exportsByFile;
     }
 
-    private function writeHelpers(string $outputPath, array &$changed): void
-    {
-        File::ensureDirectoryExists($outputPath);
-
-        $content = $this->typeScriptRenderer->renderHelpers();
-        $wrote = $this->writeIfChanged($outputPath.'/helpers.d.ts', $content);
-        if ($wrote) {
-            $changed[] = 'helpers.d.ts';
-        }
-    }
-
-    private function writePages(array $pages, array $allModels, array $allEnums, array $allResources, string $outputPath, array &$changed): void
-    {
-        File::ensureDirectoryExists($outputPath);
-
-        $content = $this->typeScriptRenderer->renderPages($pages, $allModels, $allEnums, $allResources);
-        $wrote = $this->writeIfChanged($outputPath.'/pages.d.ts', $content);
-        if ($wrote) {
-            $changed[] = 'pages.d.ts';
-        }
-    }
-
-    /**
-     * @param  list<array{component: string, source: string}>  $pages
-     */
     /**
      * Fail when two classes in one category would be emitted under the same
      * type name. One file would silently overwrite the other and the barrel
@@ -648,27 +545,6 @@ final class Generator
             implode("\n", $lines),
             $category,
         ));
-    }
-
-    /**
-     * Incremental counterpart of assertUniqueTypeNames(): reject an extraction
-     * whose name another class in the same category already owns.
-     *
-     * @param  array{name?: string, fqcn?: string}  $extraction
-     */
-    private function assertNameNotTaken(string $path, string $category, array $extraction, ExtractionCache $extractionCache): void
-    {
-        if (! in_array($category, ['enums', 'models', 'requests', 'resources'], true) || ! isset($extraction['name'], $extraction['fqcn'])) {
-            return;
-        }
-
-        foreach ($extractionCache->entriesByCategory($category) as $otherPath => $other) {
-            if ($otherPath === $path || ($other['name'] ?? null) !== $extraction['name'] || ($other['fqcn'] ?? null) === $extraction['fqcn']) {
-                continue;
-            }
-
-            $this->assertUniqueTypeNames($category, [$other, $extraction]);
-        }
     }
 
     /**
@@ -790,82 +666,6 @@ final class Generator
     }
 
     /**
-     * Run a drift check. Drift only adds warnings, so a check that fails
-     * (an autoloader throwing, unexpected source) yields none instead of
-     * aborting generation.
-     *
-     * @param  \Closure(): list<string>  $check
-     * @return list<string>
-     */
-    private function keyDrift(\Closure $check): array
-    {
-        try {
-            return $check();
-        } catch (\Throwable) {
-            return [];
-        }
-    }
-
-    /**
-     * Props the app's Inertia middleware shares with every page, for the
-     * page drift checks.
-     *
-     * @return list<string>
-     */
-    private function sharedPageProps(): array
-    {
-        return InertiaSharedProps::fromDirectory(app_path('Http/Middleware'));
-    }
-
-    /**
-     * Rebuild pages.d.ts from every configured controller path. Used by
-     * incremental runs: one component can be declared across several
-     * controllers, so a single changed file is not enough to render it.
-     *
-     * @param  list<string>  $warnings
-     */
-    private function regeneratePages(array $config, string $outputPath, array &$changed, array &$warnings): void
-    {
-        // Only reached when 'inertia' was an affected category, which
-        // buildCategoryMap() only allows when Inertia is enabled.
-        $controllerExtractor = new ControllerExtractor;
-        $onSkip = function (string $cls, \Throwable $throwable) use (&$warnings): void {
-            $warnings[] = sprintf('skipped %s: ', $cls).$throwable->getMessage();
-        };
-
-        $pages = [];
-        foreach ((array) ($config['inertia']['paths'] ?? []) as $path) {
-            $pages = array_merge($pages, $controllerExtractor->extractFromDirectory((string) $path, null, $onSkip));
-        }
-
-        $pages = $this->mergePages($pages);
-
-        if ($pages === []) {
-            if (is_file($outputPath.'/pages.d.ts')) {
-                @unlink($outputPath.'/pages.d.ts');
-                $changed[] = 'pages.d.ts';
-            }
-
-            return;
-        }
-
-        // Model, enum and resource names fall back to class basenames, which
-        // is what a full run emits too.
-        $this->writePages($pages, [], [], [], $outputPath, $changed);
-    }
-
-    private function writeBroadcasting(array $events, array $allModels, array $allEnums, array $allResources, string $outputPath, array &$changed): void
-    {
-        File::ensureDirectoryExists($outputPath);
-
-        $content = $this->typeScriptRenderer->renderBroadcasting($events, $allModels, $allEnums, $allResources);
-        $wrote = $this->writeIfChanged($outputPath.'/broadcasting.d.ts', $content);
-        if ($wrote) {
-            $changed[] = 'broadcasting.d.ts';
-        }
-    }
-
-    /**
      * @param  list<array{event_class: string, broadcast_name: string, channels: list<array{type: string, name: string}>}>  $events
      */
     private function assertNoBroadcastCollisions(array $events): void
@@ -889,31 +689,6 @@ final class Generator
         }
 
         throw new \RuntimeException("Duplicate broadcast event on channel:\n".implode("\n", $lines));
-    }
-
-    private function writeIfChanged(string $path, string $content): bool
-    {
-        if (File::exists($path) && File::get($path) === $content) {
-            return false;
-        }
-
-        File::put($path, $content);
-
-        return true;
-    }
-
-    /**
-     * @param  list<string>  $expectedFiles
-     */
-    private function pruneStaleFiles(string $dir, array $expectedFiles): void
-    {
-        $expected = array_fill_keys($expectedFiles, true);
-
-        foreach (File::files($dir) as $file) {
-            if (! isset($expected[$file->getFilename()])) {
-                File::delete($file->getRealPath());
-            }
-        }
     }
 
     /**
@@ -967,393 +742,5 @@ final class Generator
         }
 
         return $pivots;
-    }
-
-    // ── Incremental helpers ─────────────────────────────────────────────
-
-    /**
-     * Map each enabled category to its list of absolute config paths.
-     *
-     * @return array<string, list<string>>
-     */
-    private function buildCategoryMap(array $config): array
-    {
-        $map = [];
-        foreach (['enums', 'models', 'requests', 'resources', 'inertia', 'broadcasting'] as $cat) {
-            if (! ($config[$cat]['enabled'] ?? false)) {
-                continue;
-            }
-
-            $configPaths = $config[$cat]['paths'] ?? [];
-            $resolved = [];
-            foreach ((array) $configPaths as $p) {
-                $real = realpath((string) $p);
-                $resolved[] = $real !== false ? $real : (string) $p;
-            }
-
-            $map[$cat] = $resolved;
-        }
-
-        return $map;
-    }
-
-    /**
-     * Longest-prefix match to find which category a file belongs to.
-     */
-    private function resolveCategory(string $absolutePath, array $categoryMap): ?string
-    {
-        $best = null;
-        $bestLen = 0;
-        $resolved = realpath($absolutePath) ?: $absolutePath;
-        foreach ($categoryMap as $category => $roots) {
-            foreach ($roots as $root) {
-                if (str_starts_with($resolved, $root.'/') && strlen((string) $root) > $bestLen) {
-                    $best = $category;
-                    $bestLen = strlen((string) $root);
-                }
-            }
-        }
-
-        return $best;
-    }
-
-    /**
-     * Extract metadata from a single PHP file using the appropriate extractor.
-     */
-    private function extractSingleFile(string $path, string $category, array $config, array &$warnings, ExtractionCache $extractionCache): ?array
-    {
-        $className = ClassNameResolver::fromFile($path);
-        if ($className === null || ! class_exists($className)) {
-            $warnings[] = $path.': could not resolve class name — skipped';
-
-            return null;
-        }
-
-        $warn = function (string $msg) use (&$warnings): void {
-            $warnings[] = $msg;
-            if ($this->onWarn !== null) {
-                ($this->onWarn)($msg);
-            }
-        };
-
-        $extraction = match ($category) {
-            'enums' => $this->extractSingleEnum($className),
-            'models' => $this->extractSingleModel($className, $config, $warn),
-            'requests' => $this->extractSingleRequest($className, $warn),
-            'resources' => $this->extractSingleResource($className, $config, $warn),
-            'inertia' => $this->extractSingleController($className),
-            'broadcasting' => (new BroadcastExtractor)->extract($className),
-            default => null,
-        };
-
-        if ($extraction !== null && in_array($category, ['resources', 'inertia'], true)) {
-            // Models/enums come from config discovery here, like the resource extractor's.
-            $messages = $this->keyDrift(function () use ($category, $extraction, $extractionCache): array {
-                $keyDriftDetector = new KeyDriftDetector(
-                    new PhpDocShapeResolver(new GeneratedClasses),
-                    sharedPageProps: $category === 'inertia' ? $this->sharedPageProps() : [],
-                );
-
-                return $category === 'resources'
-                    ? $keyDriftDetector->checkResource($extraction, $this->cachedModel($extraction, $extractionCache))
-                    : $keyDriftDetector->checkPages($extraction);
-            });
-            foreach ($messages as $message) {
-                $warn($message);
-            }
-        }
-
-        return $extraction;
-    }
-
-    /**
-     * The fresh cached extraction of the model a model-typed resource is
-     * typed as, or null (not model-typed, no fresh cache entry, not a model
-     * extraction). The model is never extracted here: that needs the DB schema.
-     */
-    private function cachedModel(array $resource, ExtractionCache $extractionCache): ?array
-    {
-        $model = $resource['shape']['model'] ?? null;
-        if (($resource['shape']['kind'] ?? null) !== 'model' || ! is_string($model) || ! class_exists($model)) {
-            return null;
-        }
-
-        $file = new ReflectionClass($model)->getFileName();
-        $cached = $file === false ? null : $extractionCache->get($file);
-
-        return $cached !== null && ($cached['fqcn'] ?? null) === $model && isset($cached['columns'], $cached['relationships']) ? $cached : null;
-    }
-
-    /**
-     * Like the model and request cases below, applies the filter a full run
-     * applies in extractFromDirectory(), so both emit the same set of types.
-     */
-    private function extractSingleEnum(string $className): ?array
-    {
-        $enumExtractor = new EnumExtractor;
-
-        return $enumExtractor->isEmittable($className) ? $enumExtractor->extract($className) : null;
-    }
-
-    private function extractSingleRequest(string $className, callable $warn): ?array
-    {
-        $requestExtractor = new RequestExtractor;
-        if (! $requestExtractor->isEmittable($className)) {
-            return null;
-        }
-
-        $request = $requestExtractor->extract($className);
-        array_map($warn, $request['warnings'] ?? []);
-
-        return $request;
-    }
-
-    private function extractSingleResource(string $className, array $config, callable $warn): ?array
-    {
-        $resourceExtractor = new ResourceExtractor(
-            inferFromModelName: (bool) ($config['resources']['infer_from_model_name'] ?? true),
-            onWarn: $warn,
-        );
-
-        $extraction = $resourceExtractor->extract($className);
-        if ($extraction === null && $this->isEmittableResource($className)) {
-            $warn(sprintf('skipped %s: ', $className).$resourceExtractor->unresolvedMessage());
-        }
-
-        return $extraction;
-    }
-
-    /**
-     * Whether a null extraction is worth a warning: a JsonResource that is
-     * not explicitly ignored. Mirrors the filter in extractFromDirectory().
-     */
-    private function isEmittableResource(string $className): bool
-    {
-        $reflectionClass = new ReflectionClass($className);
-
-        return $reflectionClass->isSubclassOf(JsonResource::class)
-            && $reflectionClass->getAttributes(TypefinderIgnore::class, ReflectionAttribute::IS_INSTANCEOF) === [];
-    }
-
-    private function extractSingleModel(string $className, array $config, callable $warn): ?array
-    {
-        $castOverrides = $config['casts']['type_map'] ?? [];
-        $modelExtractor = new ModelExtractor(
-            new ColumnTypeResolver,
-            new CastTypeResolver($castOverrides, $this->typefinderRegistry),
-            $warn,
-        );
-
-        // A full run emits nothing for an abstract or #[TypefinderIgnore]d
-        // model, so an incremental one must not either.
-        if (! $modelExtractor->isEmittable($className)) {
-            return null;
-        }
-
-        $extraction = $modelExtractor->extract($className);
-        $morphToResolver = new MorphToResolver;
-        $resolved = $morphToResolver->resolve([$extraction]);
-
-        return $resolved[0];
-    }
-
-    /**
-     * @return list<array>|null
-     */
-    private function extractSingleController(string $className): ?array
-    {
-        $pages = (new ControllerExtractor)->extract($className);
-
-        return $pages !== [] ? $pages : null;
-    }
-
-    /**
-     * Render and write a single .d.ts file for a non-aggregated category.
-     */
-    private function writeSingleExtraction(string $category, array $extraction, array $config, string $outputPath, array &$changed): void
-    {
-        if (in_array($category, ['inertia', 'broadcasting'], true)) {
-            return;
-        }
-
-        match ($category) {
-            'enums' => $this->writeSingleEnum($extraction, $config, $outputPath, $changed),
-            'models' => $this->writeSingleModel($extraction, $config, $outputPath, $changed),
-            'requests' => $this->writeSingleRequest($extraction, $config, $outputPath, $changed),
-            'resources' => $this->writeSingleResource($extraction, $outputPath, $changed),
-            default => null,
-        };
-    }
-
-    private function writeSingleEnum(array $enum, array $config, string $outputPath, array &$changed): void
-    {
-        $dir = $outputPath.'/enums';
-        File::ensureDirectoryExists($dir);
-        $emitValues = (bool) ($config['enums']['emit_values'] ?? false);
-        $ext = $emitValues ? 'ts' : 'd.ts';
-        $content = $this->typeScriptRenderer->renderEnum($enum, $emitValues);
-        $relativePath = 'enums/'.$enum['name'].'.'.$ext;
-        if ($this->writeIfChanged($dir.'/'.$enum['name'].'.'.$ext, $content)) {
-            $changed[] = $relativePath;
-        }
-    }
-
-    private function writeSingleModel(array $model, array $config, string $outputPath, array &$changed): void
-    {
-        $dir = $outputPath.'/models';
-        File::ensureDirectoryExists($dir);
-
-        $emitWriteShapes = (bool) ($config['models']['emit_write_shapes'] ?? true);
-        $globalImmutable = (array) ($config['models']['immutable_on_update'] ?? ['id', 'created_at', 'updated_at', 'deleted_at']);
-        $immutable = array_values(array_unique([...$globalImmutable, ...$this->getContractImmutable($model['fqcn'])]));
-
-        $content = $this->typeScriptRenderer->renderModelFile($model, [], [], $emitWriteShapes, $immutable);
-        $relativePath = 'models/'.$model['name'].'.d.ts';
-        if ($this->writeIfChanged($dir.'/'.$model['name'].'.d.ts', $content)) {
-            $changed[] = $relativePath;
-        }
-    }
-
-    private function writeSingleRequest(array $request, array $config, string $outputPath, array &$changed): void
-    {
-        $dir = $outputPath.'/requests';
-        File::ensureDirectoryExists($dir);
-        $extractNested = (bool) ($config['requests']['extract_nested'] ?? false);
-        $content = $this->typeScriptRenderer->renderRequest($request, [], $extractNested);
-        $relativePath = 'requests/'.$request['name'].'.d.ts';
-        if ($this->writeIfChanged($dir.'/'.$request['name'].'.d.ts', $content)) {
-            $changed[] = $relativePath;
-        }
-    }
-
-    private function writeSingleResource(array $resource, string $outputPath, array &$changed): void
-    {
-        $dir = $outputPath.'/resources';
-        File::ensureDirectoryExists($dir);
-        $content = $this->typeScriptRenderer->renderResource($resource, [], [], []);
-        $relativePath = 'resources/'.$resource['name'].'.d.ts';
-        if ($this->writeIfChanged($dir.'/'.$resource['name'].'.d.ts', $content)) {
-            $changed[] = $relativePath;
-        }
-    }
-
-    /**
-     * Remove the .d.ts output for a deleted source file.
-     */
-    private function handleDeletion(string $path, string $category, ExtractionCache $extractionCache, string $outputPath, array &$changed): void
-    {
-        // get() would return null here: the file changed or is gone, which is
-        // why we are removing its output in the first place.
-        $cachedExtraction = $extractionCache->lastKnown($path);
-        $extractionCache->forget($path);
-
-        if (in_array($category, ['inertia', 'broadcasting'], true)) {
-            return;
-        }
-
-        // A deleted file has no cache entry (load() drops entries whose file
-        // is gone). Fall back to the PSR-4 file name, which is the class's
-        // short name and so the output's name.
-        $name = $cachedExtraction['name'] ?? pathinfo($path, PATHINFO_FILENAME);
-        if (! is_string($name) || $name === '') {
-            return;
-        }
-
-        $ext = ($category === 'enums' && config('typefinder.enums.emit_values', false)) ? 'ts' : 'd.ts';
-        $relative = $category.'/'.$name.'.'.$ext;
-        $abs = $outputPath.'/'.$relative;
-        if (is_file($abs)) {
-            @unlink($abs);
-            $changed[] = $relative;
-        }
-
-        if ($category === 'models') {
-            $pivotRel = 'models/'.$name.'Pivot.d.ts';
-            $pivotAbs = $outputPath.'/'.$pivotRel;
-            if (is_file($pivotAbs)) {
-                @unlink($pivotAbs);
-                $changed[] = $pivotRel;
-            }
-        }
-    }
-
-    /**
-     * Re-render the barrel index for an affected category from what's on disk.
-     */
-    private function rewriteCategoryBarrel(string $category, array $config, string $outputPath, array &$changed, callable $warn): void
-    {
-        if (in_array($category, ['inertia', 'broadcasting'], true)) {
-            return;
-        }
-
-        $dir = $outputPath.'/'.$category;
-        if (! is_dir($dir)) {
-            return;
-        }
-
-        $valueEnums = $category === 'enums' && ($config['enums']['emit_values'] ?? false);
-        $ext = $valueEnums ? 'ts' : 'd.ts';
-
-        $exports = [];
-        foreach (File::files($dir) as $file) {
-            $filename = $file->getFilename();
-            if ($filename === 'index.'.$ext) {
-                continue;
-            }
-
-            if ($filename === 'index.d.ts') {
-                continue;
-            }
-
-            $name = match (true) {
-                str_ends_with($filename, '.d.ts') => substr($filename, 0, -5),
-                str_ends_with($filename, '.ts') => substr($filename, 0, -3),
-                default => null,
-            };
-
-            if ($name !== null) {
-                // A value barrel re-exports everything, so it needs no names.
-                $exports[$name] = $valueEnums ? [$name] : TypeScriptRenderer::exportedTypeNames($file->getContents(), $name);
-            }
-        }
-
-        ksort($exports, SORT_STRING);
-
-        if ($valueEnums) {
-            if ($this->writeIfChanged($dir.'/index.ts', $this->renderValueBarrel(array_keys($exports)))) {
-                $changed[] = 'enums/index.ts';
-            }
-
-            return;
-        }
-
-        $this->writeBarrel($category, $exports, $outputPath, $changed, $warn);
-    }
-
-    /**
-     * Return the list of category names that have output on disk (for the top-level barrel).
-     *
-     * @return list<string>
-     */
-    private function detectEnabledCategories(string $outputPath): array
-    {
-        $categories = [];
-        foreach (['enums', 'models', 'requests', 'resources'] as $cat) {
-            if (is_dir($outputPath.'/'.$cat)) {
-                $categories[] = $cat;
-            }
-        }
-
-        if (is_file($outputPath.'/pages.d.ts')) {
-            $categories[] = 'pages';
-        }
-
-        if (is_file($outputPath.'/broadcasting.d.ts')) {
-            $categories[] = 'broadcasting';
-        }
-
-        $categories[] = 'helpers';
-
-        return $categories;
     }
 }

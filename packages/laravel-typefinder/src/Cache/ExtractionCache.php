@@ -5,21 +5,29 @@ declare(strict_types=1);
 namespace Pentacore\Typefinder\Cache;
 
 /**
- * Extractor result cache keyed by absolute file path. Entries track the
- * file's mtime and size at extraction time; lookups compare those against
- * the current on-disk values to detect stale entries. Top-level
- * invalidation (composer.lock change, config change) is enforced by the
- * static {@see self::load()} factory, which returns an empty cache if the
+ * What each source file last extracted to, per category and absolute file
+ * path. The generator emits from these entries, so after a run they describe
+ * every type in the output.
+ *
+ * A file that yields no type (an ignored class, a helper) is recorded with a
+ * null extraction: it is known and need not be read again until it changes.
+ * Entries track the file's mtime and size at extraction time;
+ * {@see self::isFresh()} compares those against the file on disk.
+ *
+ * Top-level invalidation (composer.lock change, config change) is enforced by
+ * the static {@see self::load()} factory, which returns an empty cache if the
  * persisted hashes don't match the expected ones.
  *
- * @phpstan-type Entry array{category: string, mtime: int, size: int, extraction: array<string, mixed>}
+ * @phpstan-type Entry array{mtime: int, size: int, extraction: array<string, mixed>|null}
  */
 final class ExtractionCache
 {
-    public const int SCHEMA_VERSION = 1;
+    public const int SCHEMA_VERSION = 2;
 
-    /** @var array<string, Entry> */
+    /** @var array<string, array<string, Entry>> entries by category, then by path */
     private array $entries = [];
+
+    private bool $restored = false;
 
     public function __construct(
         private readonly string $path,
@@ -63,24 +71,31 @@ final class ExtractionCache
         }
 
         $entries = $decoded['entries'] ?? [];
-        if (is_array($entries)) {
-            /** @var array<string, Entry> $entries */
-            $cache->entries = $entries;
+        if (! is_array($entries)) {
+            return $cache;
         }
 
-        $cache->entries = array_filter(
-            $cache->entries,
-            fn (array $entry, string $path): bool => is_file($path),
-            ARRAY_FILTER_USE_BOTH,
-        );
+        /** @var array<string, array<string, Entry>> $entries */
+        $cache->entries = $entries;
+        $cache->dropMissingFiles();
+        $cache->restored = true;
 
         return $cache;
     }
 
     /**
-     * @param  array<string, mixed>  $extraction
+     * Whether the entries come from a previous run. When false the cache
+     * says nothing about the output on disk.
      */
-    public function put(string $absolutePath, string $category, array $extraction): void
+    public function restored(): bool
+    {
+        return $this->restored;
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $extraction  null when the file yields no type
+     */
+    public function put(string $absolutePath, string $category, ?array $extraction): void
     {
         clearstatcache(true, $absolutePath);
         $mtime = @filemtime($absolutePath);
@@ -90,8 +105,7 @@ final class ExtractionCache
             return;
         }
 
-        $this->entries[$absolutePath] = [
-            'category' => $category,
+        $this->entries[$category][$absolutePath] = [
             'mtime' => $mtime,
             'size' => $size,
             'extraction' => $extraction,
@@ -99,50 +113,35 @@ final class ExtractionCache
     }
 
     /**
-     * @return array<string, mixed>|null
+     * Whether the file is unchanged since it was last recorded for the category.
      */
-    public function get(string $absolutePath): ?array
+    public function isFresh(string $absolutePath, string $category): bool
     {
-        $entry = $this->entries[$absolutePath] ?? null;
+        $entry = $this->entries[$category][$absolutePath] ?? null;
         if ($entry === null) {
-            return null;
+            return false;
         }
 
         clearstatcache(true, $absolutePath);
-        $mtime = @filemtime($absolutePath);
-        $size = @filesize($absolutePath);
 
-        if ($mtime !== $entry['mtime'] || $size !== $entry['size']) {
-            return null;
-        }
+        return @filemtime($absolutePath) === $entry['mtime'] && @filesize($absolutePath) === $entry['size'];
+    }
 
-        return $entry['extraction'];
+    public function forget(string $absolutePath, string $category): void
+    {
+        unset($this->entries[$category][$absolutePath]);
     }
 
     /**
-     * The last extraction recorded for a path, even if the file has changed
-     * since. Used to find the output a modified or removed file used to own.
+     * The last extraction of every file that yields a type, fresh or not.
      *
-     * @return array<string, mixed>|null
-     */
-    public function lastKnown(string $absolutePath): ?array
-    {
-        return $this->entries[$absolutePath]['extraction'] ?? null;
-    }
-
-    public function forget(string $absolutePath): void
-    {
-        unset($this->entries[$absolutePath]);
-    }
-
-    /**
      * @return array<string, array<string, mixed>>
      */
     public function entriesByCategory(string $category): array
     {
         $out = [];
-        foreach ($this->entries as $path => $entry) {
-            if ($entry['category'] === $category) {
+        foreach ($this->entries[$category] ?? [] as $path => $entry) {
+            if ($entry['extraction'] !== null) {
                 $out[$path] = $entry['extraction'];
             }
         }
@@ -157,11 +156,7 @@ final class ExtractionCache
             @mkdir($dir, 0755, true);
         }
 
-        $this->entries = array_filter(
-            $this->entries,
-            fn (array $entry, string $path): bool => is_file($path),
-            ARRAY_FILTER_USE_BOTH,
-        );
+        $this->dropMissingFiles();
 
         $payload = [
             'schema_version' => self::SCHEMA_VERSION,
@@ -180,6 +175,17 @@ final class ExtractionCache
 
         if (! @rename($tmp, $this->path)) {
             @unlink($tmp);
+        }
+    }
+
+    private function dropMissingFiles(): void
+    {
+        foreach ($this->entries as $category => $entries) {
+            $this->entries[$category] = array_filter(
+                $entries,
+                is_file(...),
+                ARRAY_FILTER_USE_KEY,
+            );
         }
     }
 }

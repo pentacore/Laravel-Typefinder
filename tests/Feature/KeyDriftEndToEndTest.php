@@ -175,17 +175,17 @@ final class KeyDriftEndToEndTest extends TestCase
         $this->assertSame([], $this->driftWarnings($regenResult->warnings));
     }
 
-    public function test_only_run_with_a_cold_cache_skips_the_model_check_silently(): void
+    public function test_only_run_with_a_cold_cache_reports_drift_like_a_full_run(): void
     {
         $generator = app(Generator::class);
-        $generator->generateFull();
-        // Without a cached model extraction the model type is unknown (extracting it needs the DB schema).
+        $full = $this->driftWarnings($generator->generateFull()->warnings);
+        // Without the cache nothing is known about the other types, so the run extracts everything.
         @unlink(storage_path('framework/cache/typefinder/extractions.json'));
 
         $regenResult = $generator->generatePaths([workbench_path('app/Http/Resources/CategoryResource.php')]);
 
-        $this->assertSame([], $this->driftWarnings($regenResult->warnings));
-        $this->assertFileExists($this->output.'/resources/CategoryResource.d.ts');
+        $this->assertSame($full, $this->driftWarnings($regenResult->warnings));
+        $this->assertContains($this->modelDrift()[0], $this->driftWarnings($regenResult->warnings));
     }
 
     public function test_only_run_on_a_controller_reports_its_page_warnings_once(): void
