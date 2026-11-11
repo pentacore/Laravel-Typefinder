@@ -1,3 +1,10 @@
+## [8.2.3](https://github.com/pentacore/Laravel-Typefinder/compare/v8.2.2...v8.2.3) (2026-11-11)
+
+### Bug Fixes
+
+* keep the extraction cache usable after a --check run ([#118](https://github.com/pentacore/Laravel-Typefinder/issues/118)) ([30a9ef6](https://github.com/pentacore/Laravel-Typefinder/commit/30a9ef6433f09fb5c80727b6b272f883d1a5cec5))
+* narrow the type of Rule::enum() with only() or except() ([#117](https://github.com/pentacore/Laravel-Typefinder/issues/117)) ([79e6c0f](https://github.com/pentacore/Laravel-Typefinder/commit/79e6c0f3fc87b5644a81b16fb43d63ae9a3db417))
+
 ## [8.2.2](https://github.com/pentacore/Laravel-Typefinder/compare/v8.2.1...v8.2.2) (2026-11-11)
 
 ### Bug Fixes
