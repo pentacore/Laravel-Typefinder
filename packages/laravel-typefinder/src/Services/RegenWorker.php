@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Pentacore\Typefinder\Services;
 
 use Composer\Autoload\ClassLoader;
-use Illuminate\Database\DatabaseManager;
+use Illuminate\Database\Connection;
 use Pentacore\Typefinder\Protocol\ProtocolCodec;
 use Pentacore\Typefinder\Protocol\ProtocolException;
 use ReflectionClass;
@@ -53,12 +53,12 @@ final class RegenWorker
     private readonly array $command;
 
     /**
-     * @param  callable(string): void  $notice  told why requests are answered in a new process (once), and why a request failed
+     * @param  resource  $stderr  told why requests are answered in a new process (once), and why a request failed
      * @param  ?list<string>  $command  defaults to the script this process was started with
      */
     public function __construct(
         private readonly Generator $generator,
-        private $notice,
+        private $stderr = STDERR,
         ?array $command = null,
     ) {
         $this->command = $command ?? [php_binary(), $_SERVER['argv'][0] ?? 'artisan', 'typefinder:watch', '--in-process'];
@@ -73,15 +73,10 @@ final class RegenWorker
      */
     public function isolated(?string $id, array $paths): array
     {
-        if (! function_exists('pcntl_fork') || ! function_exists('pcntl_waitpid')) {
-            $this->noticeOnce('the pcntl extension is not available, so every regeneration starts a new PHP process');
+        $reason = $this->whyNotAFork();
 
-            return $this->spawn($id, $paths);
-        }
-
-        $changed = $this->changedSinceLoaded();
-        if ($changed !== null) {
-            $this->noticeOnce($changed.' changed since the watcher started, so every regeneration starts a new PHP process — restart the dev server to make it fast again');
+        if ($reason !== null) {
+            $this->noticeOnce($reason.', so every regeneration starts a new PHP process');
 
             return $this->spawn($id, $paths);
         }
@@ -110,10 +105,25 @@ final class RegenWorker
                 'failed' => $result->failed,
             ];
         } catch (Throwable $throwable) {
-            ($this->notice)($throwable->getMessage());
+            $this->notice($throwable->getMessage());
 
             return $this->error($id, $throwable->getMessage());
         }
+    }
+
+    /**
+     * Why a fork of this process would not answer right, or null when it would.
+     */
+    private function whyNotAFork(): ?string
+    {
+        if (! function_exists('pcntl_fork')) {
+            return 'the pcntl extension is not available';
+        }
+
+        $changed = $this->changedSinceLoaded();
+
+        // A fork inherits the class as this process loaded it.
+        return $changed === null ? null : $changed.' changed since the watcher started (restart the dev server to make it fast again)';
     }
 
     /**
@@ -122,31 +132,24 @@ final class RegenWorker
      */
     private function fork(?string $id, array $paths): ?array
     {
+        $this->disconnectDatabases();
+
         $sockets = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, STREAM_IPPROTO_IP);
-        if ($sockets === false) {
+        $pid = $sockets === false ? -1 : pcntl_fork();
+
+        if ($pid === -1) {
             return null;
         }
 
         [$fromWorker, $toWatcher] = $sockets;
 
-        $this->disconnectDatabases();
-
-        $pid = pcntl_fork();
-        if ($pid === -1) {
-            fclose($fromWorker);
-            fclose($toWatcher);
-
-            return null;
-        }
-
         if ($pid === 0) {
-            fclose($fromWorker);
+            // The worker. It ends here, so the watcher's loop never runs in it.
             fwrite($toWatcher, ProtocolCodec::encode($this->inProcess($id, $paths)));
-            fclose($toWatcher);
-
             exit(0);
         }
 
+        // The worker holds the other end; closing it here lets its exit end the read.
         fclose($toWatcher);
         $answer = (string) stream_get_contents($fromWorker);
         fclose($fromWorker);
@@ -167,7 +170,7 @@ final class RegenWorker
         $process->setInput(ProtocolCodec::encode(['type' => 'regen', 'id' => $id, 'paths' => $paths]));
         $process->run();
 
-        fwrite(STDERR, $process->getErrorOutput());
+        fwrite($this->stderr, $process->getErrorOutput());
 
         // The handshake comes first; the answer is the line after it.
         foreach (explode("\n", $process->getOutput()) as $line) {
@@ -204,9 +207,11 @@ final class RegenWorker
 
     private function describeExit(int $status): string
     {
-        return pcntl_wifsignaled($status)
-            ? 'signal '.pcntl_wtermsig($status)
-            : 'exit code '.pcntl_wexitstatus($status);
+        if (pcntl_wifsignaled($status)) {
+            return 'signal '.pcntl_wtermsig($status);
+        }
+
+        return 'exit code '.pcntl_wexitstatus($status);
     }
 
     /**
@@ -216,14 +221,10 @@ final class RegenWorker
      */
     private function disconnectDatabases(): void
     {
-        if (! app()->resolved('db')) {
-            return;
-        }
+        /** @var array<string, Connection> $connections */
+        $connections = app()->resolved('db') ? app('db')->getConnections() : [];
 
-        /** @var DatabaseManager $databaseManager */
-        $databaseManager = app('db');
-
-        foreach ($databaseManager->getConnections() as $connection) {
+        foreach ($connections as $connection) {
             // An in-memory database lives in this process and is copied to the fork.
             if ($connection->getConfig('database') !== ':memory:') {
                 $connection->disconnect();
@@ -284,6 +285,11 @@ final class RegenWorker
         }
 
         $this->noticed[$message] = true;
-        ($this->notice)($message);
+        $this->notice($message);
+    }
+
+    private function notice(string $message): void
+    {
+        fwrite($this->stderr, '[typefinder] '.$message."\n");
     }
 }
