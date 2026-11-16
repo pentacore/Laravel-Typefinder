@@ -481,23 +481,74 @@ class RequestExtractor
     /**
      * Resolve the TypeScript type from a set of rules.
      *
+     * Laravel applies every rule of a field, so `Rule::enum()`, `Rule::in()`
+     * and `in:` narrow the type wherever they sit in the list.
+     *
      * @param  list<mixed>  $rules
      */
     protected function resolveType(array $rules): mixed
     {
         foreach ($rules as $rule) {
-            // Handle Rule::enum(SomeEnum::class)
             if ($rule instanceof Enum) {
                 return $this->resolveEnumRule($rule);
             }
+        }
 
-            // Handle Rule::in(['foo', 'bar'])
+        $declared = $this->declaredType($rules);
+        $values = $this->inValues($rules);
+
+        if ($values === null) {
+            return $declared;
+        }
+
+        // On an array, `in` checks every item.
+        if ($this->isArrayRule($rules)) {
+            return ['arrayOf' => ['in' => $values]];
+        }
+
+        if ($declared === 'unknown' || $declared === 'string') {
+            return ['in' => $values];
+        }
+
+        if ($declared === 'number' && array_all($values, static fn (string $value): bool => is_numeric($value))) {
+            return ['in' => array_map(static fn (string $value): int|float => $value + 0, $values)];
+        }
+
+        // The values cannot be written in the declared type (`boolean` with `in:1`).
+        return $declared;
+    }
+
+    /**
+     * The values the first `Rule::in()` or `in:` rule accepts, or null when
+     * the rules have none.
+     *
+     * @param  list<mixed>  $rules
+     * @return ?list<string>
+     */
+    protected function inValues(array $rules): ?array
+    {
+        foreach ($rules as $rule) {
             if ($rule instanceof In) {
-                $values = $this->extractInValues($rule);
-
-                return ['in' => $values];
+                return $this->extractInValues($rule);
             }
 
+            if (is_string($rule) && str_starts_with($rule, 'in:')) {
+                return explode(',', substr($rule, 3));
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * The type of the first rule that declares one (`string`, `integer`,
+     * `array:keys`, `Rule::anyOf()`, …), or `unknown`.
+     *
+     * @param  list<mixed>  $rules
+     */
+    protected function declaredType(array $rules): mixed
+    {
+        foreach ($rules as $rule) {
             // Handle Rule::anyOf([...]) — Laravel 13+ only. Guard for older versions.
             if (class_exists(AnyOf::class) && $rule instanceof AnyOf) {
                 $types = $this->resolveAnyOfTypes($rule);
@@ -514,13 +565,6 @@ class RequestExtractor
 
             // Handle string rules
             if (is_string($rule)) {
-                // Handle 'in:foo,bar,baz' string format
-                if (str_starts_with($rule, 'in:')) {
-                    $values = explode(',', substr($rule, 3));
-
-                    return ['in' => $values];
-                }
-
                 // Handle 'array:name,email' — only the listed keys are allowed
                 if (str_starts_with($rule, 'array:')) {
                     return $this->keyedArrayType(explode(',', substr($rule, 6)));

@@ -223,6 +223,8 @@ export type StorePostRequest = {
 
 `Rule::enum(PostStatus::class)` is the enum's type. Narrowed with `->only([...])` or `->except([...])` it is the same subset the rule accepts: `Extract<PostStatus, 'draft' | 'published'>` or `Exclude<PostStatus, 'archived'>`.
 
+`Rule::in([...])` and `in:a,b` give a union of the listed values: `'a' | 'b'`, or `1 | 2` on a numeric field (`integer`, `numeric`, …). On an `array` field they type the items: `('a' | 'b')[]`. Like `Rule::enum()`, they narrow the field wherever they sit in the rule list, so `['string', Rule::in([...])]` and `[Rule::in([...]), 'string']` give the same type.
+
 Dotted rule names nest to any depth, and a `*` segment means "array of":
 
 ```php
