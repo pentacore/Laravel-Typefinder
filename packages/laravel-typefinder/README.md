@@ -87,6 +87,8 @@ php artisan typefinder:watch
 
 Starts a long-lived generator process that reads incremental regeneration requests from stdin (NDJSON) and emits status lines on stdout. Not intended for direct interactive use — the [Vite plugin](../vite-plugin-laravel-typefinder/) spawns and drives it during `vite dev` for 20–60ms per-change latency. Exits on `SIGINT` / `SIGTERM`.
 
+Each request is answered by a fork of the watcher, so an edited class is read from its file as it is now (a PHP process cannot reload a class it has loaded). Without the `pcntl` extension, or once a class the application loads while booting has been edited, each request starts a new PHP process instead: the same output, a Laravel boot slower.
+
 ### Using typefinder in CI
 
 `--strict` works with both workflows below. Existing benign warnings (unknown column types, unmapped casts, PHPDoc fields emitted as `unknown`, skipped classes) must be fixed, or the classes ignored with `#[TypefinderIgnore]`, before enabling it.

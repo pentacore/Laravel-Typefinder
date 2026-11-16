@@ -8,18 +8,24 @@ use Illuminate\Console\Command;
 use Pentacore\Typefinder\Protocol\ProtocolCodec;
 use Pentacore\Typefinder\Protocol\ProtocolException;
 use Pentacore\Typefinder\Services\Generator;
+use Pentacore\Typefinder\Services\RegenWorker;
 use Pentacore\Typefinder\Support\Categories;
 use Pentacore\Typefinder\Version;
 
 class WatchCommand extends Command
 {
-    protected $signature = 'typefinder:watch';
+    protected $signature = 'typefinder:watch {--in-process : Regenerate inside this process instead of a worker. It keeps the classes it has loaded, so this is only right for one request. Used by the watcher itself.}';
 
     protected $description = 'Start the Typefinder watch loop — a long-lived generator used by the Vite plugin.';
 
     public function handle(Generator $generator): int
     {
         $this->emitHandshake();
+
+        $regenWorker = new RegenWorker($generator, static function (string $message): void {
+            fwrite(STDERR, '[typefinder] '.$message."\n");
+        });
+        $inProcess = (bool) $this->option('in-process');
 
         if (extension_loaded('pcntl')) {
             pcntl_async_signals(true);
@@ -89,24 +95,9 @@ class WatchCommand extends Command
                 }
             }
 
-            try {
-                $result = $generator->generatePaths($paths);
-                $this->writeLine([
-                    'type' => 'regen.done',
-                    'id' => $id,
-                    'duration_ms' => $result->durationMs,
-                    'changed' => $result->changed,
-                    'warnings' => $result->warnings,
-                    'failed' => $result->failed,
-                ]);
-            } catch (\Throwable $throwable) {
-                fwrite(STDERR, '[typefinder] '.$throwable->getMessage()."\n");
-                $this->writeLine([
-                    'type' => 'regen.error',
-                    'id' => $id,
-                    'message' => $throwable->getMessage(),
-                ]);
-            }
+            // The watcher never extracts itself: PHP cannot reload a class
+            // it has loaded, so an edited file would not be read again.
+            $this->writeLine($inProcess ? $regenWorker->inProcess($id, $paths) : $regenWorker->isolated($id, $paths));
         }
 
         return self::SUCCESS;
