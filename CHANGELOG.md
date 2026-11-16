@@ -1,3 +1,11 @@
+## [8.2.4](https://github.com/pentacore/Laravel-Typefinder/compare/v8.2.3...v8.2.4) (2026-11-16)
+
+### Bug Fixes
+
+* answer each watch request in a fresh process so edited classes are read again ([#124](https://github.com/pentacore/Laravel-Typefinder/issues/124)) ([3d7f7b2](https://github.com/pentacore/Laravel-Typefinder/commit/3d7f7b263fb1fde0e7f72ff34dae113d077f9bde))
+* let Rule::in() and in: narrow a field wherever they sit in the rule list ([#122](https://github.com/pentacore/Laravel-Typefinder/issues/122)) ([5e9556c](https://github.com/pentacore/Laravel-Typefinder/commit/5e9556c37546a8707d63939b45a67f5e91dd1a60))
+* make a column with a default optional on the Create type ([#123](https://github.com/pentacore/Laravel-Typefinder/issues/123)) ([cbe88a2](https://github.com/pentacore/Laravel-Typefinder/commit/cbe88a2d3dd60b25e02c3475011057462891fcd5))
+
 ## [8.2.3](https://github.com/pentacore/Laravel-Typefinder/compare/v8.2.2...v8.2.3) (2026-11-11)
 
 ### Bug Fixes
