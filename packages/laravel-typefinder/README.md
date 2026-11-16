@@ -87,6 +87,8 @@ php artisan typefinder:watch
 
 Starts a long-lived generator process that reads incremental regeneration requests from stdin (NDJSON) and emits status lines on stdout. Not intended for direct interactive use — the [Vite plugin](../vite-plugin-laravel-typefinder/) spawns and drives it during `vite dev` for 20–60ms per-change latency. Exits on `SIGINT` / `SIGTERM`.
 
+Each request is answered by a fork of the watcher, so an edited class is read from its file as it is now (a PHP process cannot reload a class it has loaded). Without the `pcntl` extension, or once a class the application loads while booting has been edited, each request starts a new PHP process instead: the same output, a Laravel boot slower.
+
 ### Using typefinder in CI
 
 `--strict` works with both workflows below. Existing benign warnings (unknown column types, unmapped casts, PHPDoc fields emitted as `unknown`, skipped classes) must be fixed, or the classes ignored with `#[TypefinderIgnore]`, before enabling it.
@@ -155,7 +157,7 @@ resources/js/typefinder/
 
 Types represent the default JSON-serializable shape of an Eloquent model — the shape you get when you return a model directly from a controller or `toArray()`. Relationships are optional (present only when eagerly loaded). `$hidden`/`$visible` are respected.
 
-Each model file also contains `{Model}Create` and `{Model}Update` companion types derived from the same metadata (unless you disable `emit_write_shapes` in config). Create shapes omit server-filled fields (primary key, timestamps); Update shapes make every field optional and drop immutable columns.
+Each model file also contains `{Model}Create` and `{Model}Update` companion types derived from the same metadata (unless you disable `emit_write_shapes` in config). Create shapes omit server-filled fields (primary key, timestamps) and make a column optional when it is nullable or has a default (a database default, or a non-null entry in the model's `$attributes`); Update shapes make every field optional and drop immutable columns.
 
 ```typescript
 import type { PostStatus } from '../enums';
@@ -222,6 +224,8 @@ export type StorePostRequest = {
 ```
 
 `Rule::enum(PostStatus::class)` is the enum's type. Narrowed with `->only([...])` or `->except([...])` it is the same subset the rule accepts: `Extract<PostStatus, 'draft' | 'published'>` or `Exclude<PostStatus, 'archived'>`.
+
+`Rule::in([...])` and `in:a,b` give a union of the listed values: `'a' | 'b'`, or `1 | 2` on a numeric field (`integer`, `numeric`, …). On an `array` field they type the items: `('a' | 'b')[]`. Like `Rule::enum()`, they narrow the field wherever they sit in the rule list, so `['string', Rule::in([...])]` and `[Rule::in([...]), 'string']` give the same type.
 
 Dotted rule names nest to any depth, and a `*` segment means "array of":
 

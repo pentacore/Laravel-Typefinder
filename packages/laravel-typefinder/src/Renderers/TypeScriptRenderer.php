@@ -554,7 +554,8 @@ TS;
             }
 
             if (isset($type['in'])) {
-                $values = array_map(fn (string $v): string => sprintf("'%s'", $v), $type['in']);
+                // Numbers are the values of an `in` rule on a numeric field.
+                $values = array_map(fn (int|float|string $v): string => is_string($v) ? sprintf("'%s'", $v) : (string) $v, $type['in']);
 
                 return implode(' | ', $values);
             }

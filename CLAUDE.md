@@ -104,6 +104,8 @@ Shared pieces: `Support\Categories` is the one definition of the categories (ext
 
 The two modes differ only in what happens when a file cannot be extracted: a full run aborts, an incremental run reports it in `RegenResult::$failed` and keeps the cached entry. Do not add a write path or a filter that only one mode goes through; that is how #110 and #111 happened. `tests/Feature/IncrementalParityTest.php` holds the invariant (an incremental run leaves the output of a full run).
 
+`typefinder:watch` never extracts in its own process: PHP cannot reload a class, so a process that has loaded one keeps its enum cases, `rules()`, `$casts` and attributes (#124). `Services\RegenWorker` answers each request in a fork of the watcher, or in a new `typefinder:watch --in-process` process when it cannot fork (no pcntl) or a class loaded while booting has changed. Both run `Generator::generatePaths()`. `tests/Feature/WatchFreshClassesTest.php` covers it with real watcher processes.
+
 ## Attributes
 
 All under `Pentacore\Typefinder\Attributes\`. Detected via reflection; no trait inheritance involved.

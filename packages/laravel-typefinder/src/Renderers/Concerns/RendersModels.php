@@ -131,7 +131,8 @@ trait RendersModels
 
         foreach ($eligible as $column) {
             $typeStr = $this->resolveTypeString($column['type'], $column['nullable'], $allEnums, $imports, 'models', $model['fqcn'] ?? null, $allModels);
-            $optional = $column['nullable'] ? '?' : '';
+            // An insert may leave out what is nullable or has a default.
+            $optional = $column['nullable'] || ! empty($column['has_default']) ? '?' : '';
             $lines[] = sprintf('  %s%s: %s;', $column['name'], $optional, TypeScriptRenderer::appendNullable($typeStr, (bool) $column['nullable']));
         }
 

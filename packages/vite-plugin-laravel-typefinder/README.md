@@ -98,11 +98,13 @@ typefinder({ command: 'docker compose exec app php artisan typefinder:watch' })
 
 **Development (`vite dev`):** The plugin spawns `typefinder:watch` — a persistent Laravel process that boots once and accepts incremental regeneration requests over NDJSON. When a `.php` file matching the watched paths changes via HMR, the plugin sends the changed file paths to the watcher, which re-extracts only those files and rewrites only the affected `.d.ts` outputs. Multiple rapid edits within the debounce window are coalesced into a single request.
 
+A PHP process cannot reload a class it has loaded, so the watcher answers each request in a forked worker that reads the edited classes from the files as they are now. Forking needs PHP's `pcntl` extension. Without it (Windows, some Docker images), or once a class the application loads while booting (a service provider, for example) has been edited, each request starts a new PHP process instead: the same output, but a Laravel boot slower per change. The watcher says so once on stderr; in the second case, restarting the dev server makes it fast again.
+
 The watched paths are read from the watcher's startup handshake, which mirrors your `config/typefinder.php`. If you enable Inertia pages or broadcasting in the config, the plugin automatically watches those directories too — no manual `watch` array needed.
 
 **Production (`vite build`):** No watcher. The plugin runs `typefinder:generate --json` once in `buildStart` and fails the build on non-zero exit. Set `buildCommand: false` to skip generation entirely (e.g. for pre-built containers without a PHP runtime).
 
-**Shutdown:** The watcher is killed on `closeBundle` and on process exit. If the watcher dies mid-session (PHP fatal, OOM), the plugin logs the error and stops regenerating — restart the dev server to recover.
+**Shutdown:** The watcher is killed on `closeBundle` and on process exit. A PHP fatal error or out-of-memory while regenerating ends only the worker of that request: the plugin logs the error and the watcher keeps running. If the watcher itself dies mid-session, the plugin logs the error and stops regenerating — restart the dev server to recover.
 
 ### Migration from v4.0
 
