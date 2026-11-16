@@ -155,7 +155,7 @@ resources/js/typefinder/
 
 Types represent the default JSON-serializable shape of an Eloquent model — the shape you get when you return a model directly from a controller or `toArray()`. Relationships are optional (present only when eagerly loaded). `$hidden`/`$visible` are respected.
 
-Each model file also contains `{Model}Create` and `{Model}Update` companion types derived from the same metadata (unless you disable `emit_write_shapes` in config). Create shapes omit server-filled fields (primary key, timestamps); Update shapes make every field optional and drop immutable columns.
+Each model file also contains `{Model}Create` and `{Model}Update` companion types derived from the same metadata (unless you disable `emit_write_shapes` in config). Create shapes omit server-filled fields (primary key, timestamps) and make a column optional when it is nullable or has a default (a database default, or a non-null entry in the model's `$attributes`); Update shapes make every field optional and drop immutable columns.
 
 ```typescript
 import type { PostStatus } from '../enums';

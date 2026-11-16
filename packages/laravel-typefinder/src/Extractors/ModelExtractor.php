@@ -106,7 +106,7 @@ class ModelExtractor
      * if $visible is set, only those columns pass through.
      *
      * @param  class-string<Model>|null  $modelClass
-     * @return list<array{name: string, type: mixed, nullable: bool}>
+     * @return list<array{name: string, type: mixed, nullable: bool, is_primary: bool, is_server_filled: bool, has_default: bool}>
      */
     protected function extractColumns(Model $model, string $table, ?string $modelClass = null): array
     {
@@ -117,6 +117,8 @@ class ModelExtractor
         $visible = $model->getVisible();
 
         $contractServerFilled = $this->getContractServerFilled($model);
+        // What a new model starts with: the defaults in its `$attributes`.
+        $modelDefaults = $model->getAttributes();
         $columns = [];
 
         foreach ($schemaColumns as $schemaColumn) {
@@ -144,6 +146,8 @@ class ModelExtractor
                 'nullable' => $nullable,
                 'is_primary' => $isPrimary,
                 'is_server_filled' => $isServerFilled,
+                // The database or the model fills it in when an insert leaves it out.
+                'has_default' => ($schemaColumn['default'] ?? null) !== null || isset($modelDefaults[$name]),
             ];
 
             // Priority 1: TypefinderOverrides
