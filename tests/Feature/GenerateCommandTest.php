@@ -45,6 +45,15 @@ final class GenerateCommandTest extends TestCase
             ->assertSuccessful();
     }
 
+    public function test_skip_warning_names_an_exception_without_a_message(): void
+    {
+        config(['typefinder.requests.paths' => [__DIR__.'/../Fixtures/AbortingRequests']]);
+
+        $this->artisan('typefinder:generate')
+            ->expectsOutputToContain('[typefinder] warning: skipped Tests\Fixtures\AbortingRequests\Issue128AbortRequest: Symfony\Component\HttpKernel\Exception\NotFoundHttpException (no message)')
+            ->assertSuccessful();
+    }
+
     public function test_json_mode_does_not_print_plain_warnings(): void
     {
         config(['typefinder.resources.paths' => [workbench_path('app/Http/Resources')]]);

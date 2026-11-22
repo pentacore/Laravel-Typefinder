@@ -19,6 +19,7 @@ use Pentacore\Typefinder\Resolvers\ColumnTypeResolver;
 use Pentacore\Typefinder\Resolvers\PhpDocShapeResolver;
 use Pentacore\Typefinder\Support\ClassDiscovery;
 use Pentacore\Typefinder\Support\GeneratedClasses;
+use Pentacore\Typefinder\Support\ThrowableMessage;
 use Pentacore\Typefinder\TypefinderRegistry;
 use Throwable;
 
@@ -228,6 +229,6 @@ final class FileExtractor
 
     private function skipped(string $class, Throwable $throwable): void
     {
-        ($this->warn)(sprintf('skipped %s: ', $class).$throwable->getMessage());
+        ($this->warn)(sprintf('skipped %s: ', $class).ThrowableMessage::describe($throwable));
     }
 }
