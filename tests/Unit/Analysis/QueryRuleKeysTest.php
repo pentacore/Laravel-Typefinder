@@ -117,6 +117,59 @@ final class QueryRuleKeysTest extends TestCase
         $this->assertSame(['keys' => [], 'unreadable' => 1], QueryRuleKeys::of($class));
     }
 
+    public function test_a_tagged_spread_with_a_key_that_is_not_a_string_literal_is_unreadable(): void
+    {
+        $class = $this->declareRequest(<<<'PHP'
+            private const string KEY = 'page';
+
+            public function rules(): array
+            {
+                return [/** @query */ ...$this->listing()];
+            }
+
+            private function listing(): array
+            {
+                return ['sort' => ['string'], self::KEY => ['integer']];
+            }
+            PHP);
+
+        $this->assertSame(['keys' => [], 'unreadable' => 1], QueryRuleKeys::of($class));
+    }
+
+    public function test_a_tagged_spread_that_spreads_itself_is_unreadable(): void
+    {
+        $class = $this->declareRequest(<<<'PHP'
+            public function rules(): array
+            {
+                return [/** @query */ ...$this->listing()];
+            }
+
+            private function listing(): array
+            {
+                return ['page' => ['integer'], ...$this->listing()];
+            }
+            PHP);
+
+        $this->assertSame(['keys' => [], 'unreadable' => 1], QueryRuleKeys::of($class));
+    }
+
+    public function test_a_tagged_spread_of_a_method_without_a_return_is_unreadable(): void
+    {
+        $class = $this->declareRequest(<<<'PHP'
+            public function rules(): array
+            {
+                return [/** @query */ ...$this->listing()];
+            }
+
+            private function listing(): array
+            {
+                throw new \LogicException('no rules');
+            }
+            PHP);
+
+        $this->assertSame(['keys' => [], 'unreadable' => 1], QueryRuleKeys::of($class));
+    }
+
     public function test_class_without_a_rules_method_has_no_tagged_keys(): void
     {
         $this->assertSame(
