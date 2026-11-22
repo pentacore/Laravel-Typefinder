@@ -13,6 +13,7 @@ use Pentacore\Typefinder\Resolvers\MorphToResolver;
 use Pentacore\Typefinder\Resolvers\PivotResolver;
 use Pentacore\Typefinder\Support\Categories;
 use Pentacore\Typefinder\Support\ClassDiscovery;
+use Pentacore\Typefinder\Support\ThrowableMessage;
 use Pentacore\Typefinder\TypefinderRegistry;
 use ReflectionAttribute;
 use ReflectionClass;
@@ -141,7 +142,7 @@ final class Generator
                         throw $throwable;
                     }
 
-                    $failed[] = ['path' => $file, 'message' => $throwable->getMessage()];
+                    $failed[] = ['path' => $file, 'message' => ThrowableMessage::describe($throwable)];
                 }
             }
         }

@@ -7,6 +7,7 @@ namespace Pentacore\Typefinder\Commands;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
 use Pentacore\Typefinder\Services\Generator;
+use Pentacore\Typefinder\Support\ThrowableMessage;
 
 class GenerateCommand extends Command
 {
@@ -147,9 +148,9 @@ class GenerateCommand extends Command
             $durationMs = (int) round((microtime(true) - $startedAt) * 1000);
 
             if ($useJson) {
-                $this->emitJson(false, $durationMs, $outputPath ?? '', [], [$throwable->getMessage()]);
+                $this->emitJson(false, $durationMs, $outputPath ?? '', [], [ThrowableMessage::describe($throwable)]);
             } else {
-                $this->error($throwable->getMessage());
+                $this->error(ThrowableMessage::describe($throwable));
             }
 
             return self::FAILURE;

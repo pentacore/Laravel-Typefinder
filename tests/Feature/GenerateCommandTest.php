@@ -45,6 +45,15 @@ final class GenerateCommandTest extends TestCase
             ->assertSuccessful();
     }
 
+    public function test_skip_warning_names_an_exception_without_a_message(): void
+    {
+        config(['typefinder.requests.paths' => [__DIR__.'/../Fixtures/AbortingRequests']]);
+
+        $this->artisan('typefinder:generate')
+            ->expectsOutputToContain('[typefinder] warning: skipped Tests\Fixtures\AbortingRequests\Issue128AbortRequest: Symfony\Component\HttpKernel\Exception\NotFoundHttpException (no message)')
+            ->assertSuccessful();
+    }
+
     public function test_json_mode_does_not_print_plain_warnings(): void
     {
         config(['typefinder.resources.paths' => [workbench_path('app/Http/Resources')]]);
@@ -184,6 +193,25 @@ final class GenerateCommandTest extends TestCase
 
         try {
             $this->artisan('typefinder:generate --strict')->expectsOutputToContain('Not a directory')->assertFailed();
+        } finally {
+            @unlink($file);
+        }
+    }
+
+    public function test_json_mode_reports_a_pipeline_exception(): void
+    {
+        $file = $this->outputPath.'.file';
+        file_put_contents($file, '');
+        config(['typefinder.output_path' => $file]);
+
+        try {
+            $exit = Artisan::call('typefinder:generate', ['--json' => true]);
+            $payload = json_decode(trim(Artisan::output()), true);
+
+            $this->assertSame(1, $exit);
+            $this->assertFalse($payload['success']);
+            $this->assertCount(1, $payload['errors']);
+            $this->assertStringContainsString('Not a directory', $payload['errors'][0]);
         } finally {
             @unlink($file);
         }

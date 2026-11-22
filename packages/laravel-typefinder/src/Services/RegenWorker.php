@@ -8,6 +8,7 @@ use Composer\Autoload\ClassLoader;
 use Illuminate\Database\Connection;
 use Pentacore\Typefinder\Protocol\ProtocolCodec;
 use Pentacore\Typefinder\Protocol\ProtocolException;
+use Pentacore\Typefinder\Support\ThrowableMessage;
 use ReflectionClass;
 use Symfony\Component\Process\Process;
 use Throwable;
@@ -105,9 +106,10 @@ final class RegenWorker
                 'failed' => $result->failed,
             ];
         } catch (Throwable $throwable) {
-            $this->notice($throwable->getMessage());
+            $message = ThrowableMessage::describe($throwable);
+            $this->notice($message);
 
-            return $this->error($id, $throwable->getMessage());
+            return $this->error($id, $message);
         }
     }
 
