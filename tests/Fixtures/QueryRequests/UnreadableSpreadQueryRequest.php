@@ -23,9 +23,6 @@ final class UnreadableSpreadQueryRequest extends FormRequest
 
     private function builtRules(): array
     {
-        $rules = [];
-        $rules['page'] = ['integer'];
-
-        return $rules;
+        return collect(['page' => ['integer']])->all();
     }
 }

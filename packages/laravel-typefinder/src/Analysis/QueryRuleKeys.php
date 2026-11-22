@@ -167,7 +167,7 @@ final class QueryRuleKeys
             ), $class, $owner, $seen);
         }
 
-        if (! ($expr instanceof MethodCall || $expr instanceof StaticCall) || ! $expr->name instanceof Identifier) {
+        if (! $expr instanceof MethodCall && ! $expr instanceof StaticCall || ! $expr->name instanceof Identifier) {
             return null;
         }
 

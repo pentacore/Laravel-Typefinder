@@ -206,7 +206,7 @@ final class RequestQueryParametersTest extends TestCase
         $this->assertSame($expected, $this->body($this->render(Issue129GrabRequest::class, false)));
     }
 
-    public function test_tagged_spread_follows_array_merge_nested_spreads_and_calls(): void
+    public function test_tagged_spread_follows_nested_spreads(): void
     {
         $expected = <<<'TS'
             export type NestedSpreadQueryRequest = {

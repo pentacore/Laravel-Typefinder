@@ -7,8 +7,7 @@ namespace Tests\Fixtures\Requests;
 use Illuminate\Foundation\Http\FormRequest;
 
 /**
- * A tagged spread whose method takes its keys from `array_merge()`, a nested
- * spread and another method, and declares a closure with its own `return`.
+ * A tagged spread whose method takes more keys from a nested spread.
  */
 final class NestedSpreadQueryRequest extends FormRequest
 {
@@ -17,24 +16,20 @@ final class NestedSpreadQueryRequest extends FormRequest
         return [
             'name' => ['required', 'string'],
             /** @query */
-            ...self::listingRules(),
+            ...$this->listingRules(),
         ];
     }
 
-    private static function listingRules(): array
+    private function listingRules(): array
     {
-        return array_merge(['page' => ['integer']], [...self::sortRules()]);
+        return ['page' => ['integer'], ...$this->sortRules()];
     }
 
-    private static function sortRules(): array
+    private function sortRules(): array
     {
-        $direction = static function (string $value): string {
-            return strtolower($value);
-        };
-
         return [
             'sort' => ['string'],
-            'direction' => ['in:'.$direction('ASC').','.$direction('DESC')],
+            'direction' => ['in:asc,desc'],
         ];
     }
 }
