@@ -9,6 +9,8 @@ use PHPUnit\Framework\TestCase;
 use ReflectionClass;
 use stdClass;
 use Tests\Fixtures\Requests\Issue101QueryRequest;
+use Tests\Fixtures\Requests\Issue129GrabRequest;
+use Tests\Fixtures\Requests\Issue129ReleaseQueryRequest;
 
 final class QueryRuleKeysTest extends TestCase
 {
@@ -17,6 +19,22 @@ final class QueryRuleKeysTest extends TestCase
         $this->assertSame(
             ['keys' => ['scope'], 'unreadable' => 0],
             QueryRuleKeys::of(new ReflectionClass(Issue101QueryRequest::class)),
+        );
+    }
+
+    public function test_a_tagged_spread_contributes_its_keys(): void
+    {
+        $this->assertSame(
+            ['keys' => ['service', 'item_id', 'season'], 'unreadable' => 0],
+            QueryRuleKeys::of(new ReflectionClass(Issue129ReleaseQueryRequest::class)),
+        );
+    }
+
+    public function test_an_untagged_spread_contributes_nothing(): void
+    {
+        $this->assertSame(
+            ['keys' => [], 'unreadable' => 0],
+            QueryRuleKeys::of(new ReflectionClass(Issue129GrabRequest::class)),
         );
     }
 
