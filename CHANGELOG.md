@@ -1,3 +1,9 @@
+## [8.2.5](https://github.com/pentacore/Laravel-Typefinder/compare/v8.2.4...v8.2.5) (2026-11-22)
+
+### Bug Fixes
+
+* name the exception when a skip or failure message is empty ([6059fb5](https://github.com/pentacore/Laravel-Typefinder/commit/6059fb530b0395c1b03c0674866cc4ea5a96b99d))
+
 ## [8.2.4](https://github.com/pentacore/Laravel-Typefinder/compare/v8.2.3...v8.2.4) (2026-11-16)
 
 ### Bug Fixes
