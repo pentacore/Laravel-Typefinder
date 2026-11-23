@@ -9,17 +9,25 @@ use Pentacore\Typefinder\Support\ParsedSource;
 use PhpParser\Node;
 use PhpParser\Node\Arg;
 use PhpParser\Node\ArrayItem;
+use PhpParser\Node\Expr;
+use PhpParser\Node\Expr\Array_;
 use PhpParser\Node\Expr\ClassConstFetch;
 use PhpParser\Node\Expr\FuncCall;
 use PhpParser\Node\Expr\MethodCall;
 use PhpParser\Node\Expr\New_;
 use PhpParser\Node\Expr\StaticCall;
 use PhpParser\Node\Expr\Variable;
+use PhpParser\Node\FunctionLike;
 use PhpParser\Node\Identifier;
 use PhpParser\Node\Name;
 use PhpParser\Node\Scalar\String_;
+use PhpParser\Node\Stmt\ClassLike;
 use PhpParser\Node\Stmt\ClassMethod;
+use PhpParser\Node\Stmt\Return_;
 use PhpParser\NodeFinder;
+use PhpParser\NodeTraverser;
+use PhpParser\NodeVisitor;
+use PhpParser\NodeVisitorAbstract;
 use ReflectionClass;
 use ReflectionMethod;
 
@@ -28,6 +36,11 @@ use ReflectionMethod;
  * `@query` PHPDoc tag on the array item, as dedoc/scramble reads it.
  *
  *     'scope' => ['sometimes', 'string'], // preceded by a `@query` docblock
+ *
+ * A tag on a spread item (`...$this->targetRules()`) tags every key the
+ * spread brings in, for this request only: the keys of the array literals
+ * the spread method returns (following nested spreads, `array_merge()` and
+ * `return $this->other()`).
  *
  * Reads the AST of the `rules()` method the request ends up with (its own, an
  * inherited one or one from a trait) and of the methods that one takes rules
@@ -45,6 +58,7 @@ final class QueryRuleKeys
      * @param  ReflectionClass<object>  $request
      * @return array{keys: list<string>, unreadable: int} the tagged keys, and
      *                                                    how many tags sit on a key that is not a string literal
+     *                                                    or a spread whose keys can be read
      */
     public static function of(ReflectionClass $request): array
     {
@@ -91,10 +105,16 @@ final class QueryRuleKeys
                 continue;
             }
 
-            if ($item->key instanceof String_) {
-                $found['keys'][] = $item->key->value;
-            } else {
+            $keys = match (true) {
+                $item->key instanceof String_ => [$item->key->value],
+                $item->unpack => self::keysOf($item->value, $class, $owner, []),
+                default => null,
+            };
+
+            if ($keys === null) {
                 $found['unreadable']++;
+            } else {
+                array_push($found['keys'], ...$keys);
             }
         }
 
@@ -107,6 +127,129 @@ final class QueryRuleKeys
                 self::collect($target, $call->name->toString(), $found, $seen);
             }
         }
+    }
+
+    /**
+     * The rule keys an expression evaluates to, read from the source; null
+     * when one of them cannot be read.
+     *
+     * @param  ReflectionClass<object>  $class  see calledClass()
+     * @param  ReflectionClass<object>  $owner  see calledClass()
+     * @param  array<string, true>  $seen  methods already being read, so recursion ends
+     * @return ?list<string>
+     */
+    private static function keysOf(Expr $expr, ReflectionClass $class, ReflectionClass $owner, array $seen): ?array
+    {
+        if ($expr instanceof Array_) {
+            $keys = [];
+
+            foreach ($expr->items as $item) {
+                $itemKeys = match (true) {
+                    $item->key instanceof String_ => [$item->key->value],
+                    $item->unpack => self::keysOf($item->value, $class, $owner, $seen),
+                    default => null,
+                };
+
+                if ($itemKeys === null) {
+                    return null;
+                }
+
+                array_push($keys, ...$itemKeys);
+            }
+
+            return $keys;
+        }
+
+        if ($expr instanceof FuncCall && $expr->name instanceof Name && $expr->name->toLowerString() === 'array_merge') {
+            return self::keysOfAll(array_map(
+                static fn (Node $argument): ?Expr => $argument instanceof Arg && ! $argument->unpack ? $argument->value : null,
+                $expr->args,
+            ), $class, $owner, $seen);
+        }
+
+        if (! $expr instanceof MethodCall && ! $expr instanceof StaticCall || ! $expr->name instanceof Identifier) {
+            return null;
+        }
+
+        $target = self::calledClass($expr, $class, $owner);
+        $methodName = $expr->name->toString();
+
+        if (! $target instanceof ReflectionClass || ! $target->hasMethod($methodName)) {
+            return null;
+        }
+
+        $method = $target->getMethod($methodName);
+        $id = $method->getDeclaringClass()->getName().'::'.strtolower($methodName);
+        $stmts = self::methodNode($method)->stmts ?? null;
+
+        if (isset($seen[$id]) || $stmts === null) {
+            return null;
+        }
+
+        $seen[$id] = true;
+
+        return self::keysOfAll(self::returnedExpressions($stmts), $target, $method->getDeclaringClass(), $seen);
+    }
+
+    /**
+     * The keys of every expression, or null when one cannot be read (or
+     * there are none).
+     *
+     * @param  list<?Expr>  $exprs
+     * @param  ReflectionClass<object>  $class
+     * @param  ReflectionClass<object>  $owner
+     * @param  array<string, true>  $seen
+     * @return ?list<string>
+     */
+    private static function keysOfAll(array $exprs, ReflectionClass $class, ReflectionClass $owner, array $seen): ?array
+    {
+        if ($exprs === []) {
+            return null;
+        }
+
+        $keys = [];
+
+        foreach ($exprs as $expr) {
+            $exprKeys = $expr instanceof Expr ? self::keysOf($expr, $class, $owner, $seen) : null;
+
+            if ($exprKeys === null) {
+                return null;
+            }
+
+            array_push($keys, ...$exprKeys);
+        }
+
+        return $keys;
+    }
+
+    /**
+     * What the `return` statements of a method body return; a closure or
+     * class declared in the body returns for itself, so it is skipped.
+     *
+     * @param  array<Node>  $stmts
+     * @return list<?Expr>
+     */
+    private static function returnedExpressions(array $stmts): array
+    {
+        $visitor = new class extends NodeVisitorAbstract
+        {
+            /** @var list<?Expr> */
+            public array $returned = [];
+
+            public function enterNode(Node $node): ?int
+            {
+                if ($node instanceof Return_) {
+                    $this->returned[] = $node->expr;
+                }
+
+                return $node instanceof FunctionLike || $node instanceof ClassLike ? NodeVisitor::DONT_TRAVERSE_CHILDREN : null;
+            }
+        };
+
+        $traverser = new NodeTraverser($visitor);
+        $traverser->traverse($stmts);
+
+        return $visitor->returned;
     }
 
     /**

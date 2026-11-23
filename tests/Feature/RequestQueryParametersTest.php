@@ -10,9 +10,13 @@ use Illuminate\Support\Facades\File;
 use Pentacore\Typefinder\Extractors\RequestExtractor;
 use Pentacore\Typefinder\Renderers\TypeScriptRenderer;
 use Tests\Fixtures\QueryRequests\DynamicQueryKeyRequest;
+use Tests\Fixtures\QueryRequests\UnreadableSpreadQueryRequest;
 use Tests\Fixtures\Requests\InheritedQueryRulesRequest;
 use Tests\Fixtures\Requests\Issue101QueryRequest;
+use Tests\Fixtures\Requests\Issue129GrabRequest;
+use Tests\Fixtures\Requests\Issue129ReleaseQueryRequest;
 use Tests\Fixtures\Requests\Issue88ReproRequest;
+use Tests\Fixtures\Requests\NestedSpreadQueryRequest;
 use Tests\Fixtures\Requests\QueryOnlyRequest;
 use Tests\Fixtures\Requests\QueryRulesRequest;
 use Tests\Fixtures\Requests\TraitQueryRulesRequest;
@@ -166,7 +170,68 @@ final class RequestQueryParametersTest extends TestCase
         $this->assertSame(['title', 'constant', 'computed_key'], array_column($result['fields'], 'name'));
         $this->assertSame(['page'], array_column($result['query'], 'name'));
         $this->assertSame(
-            ['DynamicQueryKeyRequest: 2 @query tags were ignored: only a rule key written as a string literal can be tagged'],
+            ['DynamicQueryKeyRequest: 2 @query tags were ignored: only a rule key written as a string literal, or a spread whose keys can be read, can be tagged'],
+            $result['warnings'],
+        );
+    }
+
+    public function test_tag_on_a_spread_tags_every_key_it_brings_in(): void
+    {
+        $expected = <<<'TS'
+            export type Issue129ReleaseQueryRequest = Record<string, never>;
+
+            export type Issue129ReleaseQueryRequestQuery = {
+              service: string;
+              item_id: number;
+              season?: number | null;
+            };
+
+            TS;
+
+        $this->assertSame($expected, $this->body($this->render(Issue129ReleaseQueryRequest::class, false)));
+        $this->assertArrayNotHasKey('warnings', $this->requestExtractor->extract(Issue129ReleaseQueryRequest::class));
+    }
+
+    public function test_untagged_spread_of_the_same_helper_stays_in_the_body(): void
+    {
+        $expected = <<<'TS'
+            export type Issue129GrabRequest = {
+              service: string;
+              item_id: number;
+              guid: string;
+            };
+
+            TS;
+
+        $this->assertSame($expected, $this->body($this->render(Issue129GrabRequest::class, false)));
+    }
+
+    public function test_tagged_spread_follows_nested_spreads(): void
+    {
+        $expected = <<<'TS'
+            export type NestedSpreadQueryRequest = {
+              name: string;
+            };
+
+            export type NestedSpreadQueryRequestQuery = {
+              page?: number;
+              sort?: string;
+              direction?: 'asc' | 'desc';
+            };
+
+            TS;
+
+        $this->assertSame($expected, $this->body($this->render(NestedSpreadQueryRequest::class, false)));
+        $this->assertArrayNotHasKey('warnings', $this->requestExtractor->extract(NestedSpreadQueryRequest::class));
+    }
+
+    public function test_tagged_spread_whose_keys_cannot_be_read_warns(): void
+    {
+        $result = $this->requestExtractor->extract(UnreadableSpreadQueryRequest::class);
+
+        $this->assertSame(['title', 'page'], array_column($result['fields'], 'name'));
+        $this->assertSame(
+            ['UnreadableSpreadQueryRequest: 1 @query tag was ignored: only a rule key written as a string literal, or a spread whose keys can be read, can be tagged'],
             $result['warnings'],
         );
     }
