@@ -302,7 +302,7 @@ class RequestExtractor
 
         if ($tagged['unreadable'] > 0) {
             $this->warnings[] = sprintf(
-                '%d @query %s ignored: only a rule key written as a string literal can be tagged',
+                '%d @query %s ignored: only a rule key written as a string literal, or a spread whose keys can be read, can be tagged',
                 $tagged['unreadable'],
                 $tagged['unreadable'] === 1 ? 'tag was' : 'tags were',
             );
@@ -488,6 +488,13 @@ class RequestExtractor
      */
     protected function resolveType(array $rules): mixed
     {
+        // `prohibited` lets the key through only when it is missing or empty,
+        // so no value can be typed for it. The conditional `prohibited_if` /
+        // `prohibited_unless` keep their other rules' type.
+        if (in_array('prohibited', $rules, true)) {
+            return 'never';
+        }
+
         foreach ($rules as $rule) {
             if ($rule instanceof Enum) {
                 return $this->resolveEnumRule($rule);
