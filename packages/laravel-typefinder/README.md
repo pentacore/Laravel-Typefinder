@@ -310,7 +310,8 @@ Classes extending `JsonResource`. The type comes from the first of these that ap
 3. **PHPDoc array shape** on `toArray()` — `@return array{…}` (or `@phpstan-return` / `@psalm-return`, which take precedence), or one composed from documented helpers / a documented parent `toArray()` (see [Composed shapes](#composed-shapes)). Applies whether or not the name convention is on.
 4. **Resource collection** — a `ResourceCollection` subclass that does not override `toArray()` is a list of the resource it collects, found as Laravel finds it: `#[Collects]`, `$collects`, or `UserCollection` → `User` / `UserResource` in the same namespace. `export type UserCollection = UserResource[];` (the `{ data: … }` envelope is left to the `Wrapped*` / `*Paginated*` helpers).
 5. **Name convention** — `UserResource` → `User` automatically, when `User` is one of the models typefinder generates (found under `models.paths` and not ignored). Models from other packages and models outside `models.paths` are never matched.
-6. Otherwise the resource is skipped with a warning.
+6. **Literal keys** — a `toArray()` declared in the resource itself that returns only literal-key arrays (no spread, helper call or computed key) is typed from those keys. `when*()`, `whenLoaded()`, `mergeWhen()` keys, and keys missing from another `return`, are optional. Values are typed where it is cheap and certain, otherwise `unknown`: scalar literals and casts, `new XResource(…)` / `XResource::make(…)` (`XResource`), `XResource::collection(…)` (`XResource[]`), nested literal arrays, the value of `when($condition, $value)`, and `$this->column` (`User['column']`) when the class docblock says `@mixin User` for a generated model.
+7. Otherwise the resource is skipped with a warning.
 
 `#[TypefinderIgnore]` skips a resource before any of these run.
 
@@ -353,7 +354,7 @@ Only types typefinder generates resolve: models it generates, backed enums under
 
 The same holds outside PHPDoc: a class-string in a `#[TypefinderResource]` `shape` / `extend` / `model`, a `#[TypefinderPage]` or `#[TypefinderBroadcast]` prop, or a model relation that names a model, resource or enum with no generated type (`#[TypefinderIgnore]`d, outside the configured paths, or skipped) becomes `unknown` with a warning, never an import of a file that does not exist.
 
-The name convention assumes the resource returns the model's attributes. If your resources rename fields, flatten relations or add computed keys, the inferred type is wrong and nothing flags it. Set `'resources.infer_from_model_name' => false` to turn the convention off; every resource then needs an attribute or a PHPDoc shape (or `#[TypefinderIgnore]`), and undeclared ones are reported as warnings.
+The name convention assumes the resource returns the model's attributes. If your resources rename fields, flatten relations or add computed keys, the inferred type is wrong and nothing flags it. Set `'resources.infer_from_model_name' => false` to turn the convention off; every resource then needs an attribute, a PHPDoc shape or a literal-key `toArray()` (or `#[TypefinderIgnore]`), and the others are reported as warnings.
 
 #### Composed shapes
 
@@ -393,7 +394,7 @@ export type PostResource = {
 - An open helper shape (`array{…, ...}`) composes only as the first part of a `return`, and not in one that uses `+` or a merge call; the result is open.
 - Merge calls (`merge()`, `mergeWhen()`, `mergeUnless()`) → not composed when they appear in a helper or parent `toArray()` without a `@return` shape, in a `return` that also uses `+`, or when one may add nothing (an empty array, or a helper whose keys are all optional) and more keys follow it.
 - A literal key (`'note' => …`) has no documented type: it is `unknown`, and the run warns once per resource: `{R}::toArray() composes a shape but "note" has no documented type — add @return array{…} to toArray()`.
-- A body made only of literal keys is not composed (the name convention applies as before), nor is `parent::toArray()` when the parent is `JsonResource` itself (that is the model's attributes). If any part cannot be typed — a variable, a call on another object, a computed key, an undocumented helper that does not compose — nothing is composed. "Not composed" always means the resource falls back as before (next tier: name convention, or skipped), with no warning.
+- A body made only of literal keys is not composed (the name convention applies, then the literal-keys tier), nor is `parent::toArray()` when the parent is `JsonResource` itself (that is the model's attributes). If any part cannot be typed — a variable, a call on another object, a computed key, an undocumented helper that does not compose — nothing is composed. "Not composed" always means the resource falls back as before (next tier: name convention, or skipped), with no warning.
 
 **Upgrading (composed shapes):** a resource whose undocumented `toArray()` returns parts of documented helper methods or of a documented parent `toArray()` is now typed from the composed shape instead of the name convention or the parent's doc. Add an explicit `@return array{…}` to `toArray()`, or `#[TypefinderResource(model: User::class)]`, to control the type.
 

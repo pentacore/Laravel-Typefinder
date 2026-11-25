@@ -144,6 +144,8 @@ trait RendersResources
             case 'resource':
                 return $this->resolveClassReference(ltrim((string) $node['fqcn'], '\\'), 'resources', $allModels, $allEnums, $allResources, $imports, $selfFqcn)
                     ?? 'unknown';
+            case 'property':
+                return $this->modelProperty((string) $node['fqcn'], (string) $node['name'], $imports, $selfFqcn, $allModels, $allEnums, $allResources);
             case 'array':
                 $element = $render($node['of']);
 
@@ -186,6 +188,36 @@ trait RendersResources
             default:
                 return 'unknown';
         }
+    }
+
+    /**
+     * `Model['col']` for a column of a generated model's type; `unknown`
+     * for anything else (a relation, an accessor the type lacks).
+     *
+     * @param  list<string>  $imports
+     * @param  list<array>  $allModels
+     * @param  list<array>  $allEnums
+     * @param  list<array>  $allResources
+     */
+    private function modelProperty(string $model, string $column, array &$imports, string $selfFqcn, array $allModels, array $allEnums, array $allResources): string
+    {
+        foreach ($allModels as $entry) {
+            if (ltrim((string) $entry['fqcn'], '\\') !== ltrim($model, '\\')) {
+                continue;
+            }
+
+            if (! in_array($column, array_map(strval(...), array_column($entry['columns'] ?? [], 'name')), true)) {
+                return 'unknown';
+            }
+
+            $reference = $this->resolveClassReference(ltrim($model, '\\'), 'resources', $allModels, $allEnums, $allResources, $imports, $selfFqcn);
+
+            return $reference === null || $reference === 'unknown'
+                ? 'unknown'
+                : $reference.'['.TypeScriptRenderer::stringLiteral($column).']';
+        }
+
+        return 'unknown';
     }
 
     /**

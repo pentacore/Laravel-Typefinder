@@ -42,7 +42,7 @@ use Pentacore\Typefinder\Analysis\ReturnedPart;
  *
  * Also not composable: no returns, a `dynamic` part, an `expr` part the
  * resolver cannot type, or no `expr` part at all (a literal-only body is not
- * delegation).
+ * delegation) unless the caller asks for literal-only shapes.
  */
 final class ShapeComposer
 {
@@ -51,15 +51,21 @@ final class ShapeComposer
     /**
      * @param  list<ReturnedArray>  $returns
      * @param  callable(ReturnedPart): ?array  $resolveExpr  object node for an 'expr' part, or null = not composable
+     * @param  null|callable(ReturnedPart): array  $resolveItem  type node of a literal-key item; `unknown` when not given
+     * @param  bool  $literalOnly  also compose returns made only of literal-key items
      * @return ?array{type: array, undocumented: list<string>} object node + literal keys with no documented type; null = not composable
      */
-    public function compose(array $returns, callable $resolveExpr): ?array
+    public function compose(array $returns, callable $resolveExpr, ?callable $resolveItem = null, bool $literalOnly = false): ?array
     {
+        if ($returns === []) {
+            return null;
+        }
+
         $composed = [];
         $delegated = false;
 
         foreach ($returns as $returned) {
-            $one = $this->composeReturn($returned, $resolveExpr);
+            $one = $this->composeReturn($returned, $resolveExpr, $resolveItem);
 
             if ($one === null) {
                 return null;
@@ -69,14 +75,15 @@ final class ShapeComposer
             $delegated = $delegated || $one['delegated'];
         }
 
-        return $delegated ? $this->acrossReturns($composed) : null;
+        return $delegated || $literalOnly ? $this->acrossReturns($composed) : null;
     }
 
     /**
      * @param  callable(ReturnedPart): ?array  $resolveExpr
+     * @param  null|callable(ReturnedPart): array  $resolveItem
      * @return ?array{fields: array<string, array{type: array, optional: bool, literal: bool}>, open: bool, delegated: bool}
      */
-    private function composeReturn(ReturnedArray $returned, callable $resolveExpr): ?array
+    private function composeReturn(ReturnedArray $returned, callable $resolveExpr, ?callable $resolveItem): ?array
     {
         $plus = $returned->usesPlus();
         $merges = array_any($returned->parts, fn (ReturnedPart $part): bool => $part->merged !== null);
@@ -94,7 +101,7 @@ final class ShapeComposer
         $contributing = 0;
 
         foreach ($returned->parts as $index => $part) {
-            $contributions = $this->contributions($part, $resolveExpr);
+            $contributions = $this->contributions($part, $resolveExpr, $resolveItem);
 
             if ($contributions === null) {
                 return null;
@@ -154,13 +161,14 @@ final class ShapeComposer
      * array it stands for is never empty (always true for an item).
      *
      * @param  callable(ReturnedPart): ?array  $resolveExpr
+     * @param  null|callable(ReturnedPart): array  $resolveItem
      * @return ?array{fields: array<string, array{type: array, optional: bool, literal: bool}>, open: bool, required: bool}
      */
-    private function contributions(ReturnedPart $part, callable $resolveExpr): ?array
+    private function contributions(ReturnedPart $part, callable $resolveExpr, ?callable $resolveItem): ?array
     {
         if ($part->kind === ReturnedPart::ITEM && $part->key !== null) {
             return [
-                'fields' => [$part->key => ['type' => self::UNKNOWN, 'optional' => $this->isOptional($part), 'literal' => true]],
+                'fields' => [$part->key => ['type' => $resolveItem === null ? self::UNKNOWN : $resolveItem($part), 'optional' => $this->isOptional($part), 'literal' => true]],
                 'open' => false,
                 'required' => true,
             ];

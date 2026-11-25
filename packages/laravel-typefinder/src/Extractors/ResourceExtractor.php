@@ -10,6 +10,7 @@ use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Http\Resources\Json\ResourceCollection;
 use Pentacore\Typefinder\Attributes\TypefinderIgnore;
 use Pentacore\Typefinder\Attributes\TypefinderResource;
+use Pentacore\Typefinder\Resolvers\LiteralShapeResolver;
 use Pentacore\Typefinder\Resolvers\PhpDocShapeResolver;
 use Pentacore\Typefinder\Support\ClassDiscovery;
 use Pentacore\Typefinder\Support\GeneratedClasses;
@@ -23,6 +24,8 @@ class ResourceExtractor
     private readonly GeneratedClasses $generatedClasses;
 
     private readonly PhpDocShapeResolver $phpDocShapeResolver;
+
+    private readonly LiteralShapeResolver $literalShapeResolver;
 
     /**
      * @param  bool  $inferFromModelName  Fall back to the `UserResource` → `User` name
@@ -43,6 +46,7 @@ class ResourceExtractor
     ) {
         $this->generatedClasses = new GeneratedClasses($modelClasses, $enumClasses, $resourceClasses);
         $this->phpDocShapeResolver = new PhpDocShapeResolver($this->generatedClasses, $onWarn);
+        $this->literalShapeResolver = new LiteralShapeResolver($this->generatedClasses);
     }
 
     /**
@@ -132,6 +136,16 @@ class ResourceExtractor
                     ],
                 ];
             }
+        }
+
+        // Last: the literal keys its own toArray() returns.
+        $type = $this->literalShapeResolver->resolve($reflectionClass);
+        if ($type !== null) {
+            return [
+                'name' => $short,
+                'fqcn' => $resourceClass,
+                'shape' => ['kind' => 'inferred', 'type' => $type],
+            ];
         }
 
         return null;
