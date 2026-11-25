@@ -491,6 +491,12 @@ final class PhpDocShapeResolver
                 continue;
             }
 
+            $typefinderType = PhpDocReader::typefinderReturnType($doc);
+
+            if ($typefinderType instanceof TypeNode) {
+                return [$typefinderType, $ownerName];
+            }
+
             foreach (PhpDocReader::RETURN_TAGS as $rank => $tag) {
                 $values = $doc->getReturnTagValues($tag);
 

@@ -14,8 +14,8 @@ use Attribute;
  *
  *   1. `shape` — explicit key-by-key declaration (Tier 1).
  *   2. `model` + `omit` / `extend` — "wrap this model with tweaks" (Tier 2).
- *   3. A PHPDoc `@return array{…}` (or `@phpstan-return` / `@psalm-return`)
- *      on `toArray()`, with no attribute present — or, without one on the
+ *   3. A PHPDoc `@return array{…}` (or `@phpstan-return` / `@psalm-return`,
+ *      or the Typefinder-only `@typefinder-return`, read first) on `toArray()`, with no attribute present — or, without one on the
  *      resource's own `toArray()`, a shape composed from the documented
  *      helpers (`$this->m()`, `self::m()`, `static::m()`) and documented
  *      `parent::toArray()` its body returns. Applies even when the name

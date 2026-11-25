@@ -39,8 +39,8 @@ use Throwable;
  * generates (model / enum / resource); everything it cannot express becomes
  * `unknown` with a warning.
  *
- * Nodes: `ts` (`ts`), `model`|`enum`|`resource` (`fqcn`), `array`|`record`
- * (`of`), `tuple` (`items`), `union`|`intersection` (`of`), `object`
+ * Nodes: `ts` (`ts`), `model`|`enum`|`resource` (`fqcn`), `array` (`of`),
+ * `record` (`of`, and `key` when narrower than `string`), `tuple` (`items`), `union`|`intersection` (`of`), `object`
  * (`fields`, `open`).
  */
 final class PhpDocTypeMapper
@@ -358,7 +358,46 @@ final class PhpDocTypeMapper
             return ['kind' => 'union', 'of' => [['kind' => 'array', 'of' => $of], ['kind' => 'record', 'of' => $of]]];
         }
 
+        // A key narrower than `string` (an enum's values, a literal union) is kept (#236).
+        if (! $this->isStringKey($args[0])) {
+            $key = $this->mapType($args[0], $scope, $fieldPath);
+
+            if ($this->isLiteralKey($key)) {
+                return ['kind' => 'record', 'of' => $of, 'key' => $key];
+            }
+        }
+
         return ['kind' => 'record', 'of' => $of];
+    }
+
+    /**
+     * Whether a mapped key names a fixed set of object keys: an enum, a
+     * string or integer literal, or a union of them.
+     *
+     * @param  array<string, mixed>  $key
+     */
+    private function isLiteralKey(array $key): bool
+    {
+        return match ($key['kind']) {
+            'enum' => true,
+            'ts' => preg_match("/^(?:'(?:[^'\\\\]|\\\\.)*'|-?\\d+)$/", (string) $key['ts']) === 1,
+            'union' => array_all($key['of'], $this->isLiteralKey(...)),
+            default => false,
+        };
+    }
+
+    /**
+     * A key that is any string: `string`, a `*-string` keyword or a `class-string<…>`.
+     */
+    private function isStringKey(TypeNode $key): bool
+    {
+        $name = match (true) {
+            $key instanceof IdentifierTypeNode => $key->name,
+            $key instanceof GenericTypeNode => $key->type->name,
+            default => null,
+        };
+
+        return $name !== null && $this->keyword($name) === 'string';
     }
 
     /**

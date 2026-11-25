@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Pentacore\Typefinder\Analysis;
 
+use Pentacore\Typefinder\Resolvers\PhpDocReader;
 use Pentacore\Typefinder\Resolvers\PhpDocScope;
 use Pentacore\Typefinder\Resolvers\PhpDocTypeMapper;
 use Pentacore\Typefinder\Support\ClassNameResolver;
@@ -12,6 +13,7 @@ use Pentacore\Typefinder\Support\ParsedSource;
 use PhpParser\Node\Stmt\ClassMethod;
 use PHPStan\PhpDocParser\Ast\PhpDoc\PhpDocNode;
 use PHPStan\PhpDocParser\Ast\Type\ArrayShapeNode;
+use PHPStan\PhpDocParser\Ast\Type\TypeNode;
 use PHPStan\PhpDocParser\Lexer\Lexer;
 use PHPStan\PhpDocParser\Parser\ConstExprParser;
 use PHPStan\PhpDocParser\Parser\PhpDocParser;
@@ -150,6 +152,12 @@ final class InertiaSharedProps
 
     private static function returnType(PhpDocNode $doc): mixed
     {
+        $typefinderType = PhpDocReader::typefinderReturnType($doc);
+
+        if ($typefinderType instanceof TypeNode) {
+            return $typefinderType;
+        }
+
         foreach (self::RETURN_TAGS as $tag) {
             $values = $doc->getReturnTagValues($tag);
 

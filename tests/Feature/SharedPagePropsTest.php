@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Enums\PostStatus;
 use App\Models\User;
 use Pentacore\Typefinder\Analysis\InertiaSharedProps;
 use Pentacore\Typefinder\Renderers\TypeScriptRenderer;
@@ -75,6 +76,30 @@ final class SharedPagePropsTest extends TestCase
 
             export type PageProps = {
               'Home': { title: string };
+            };
+            TS, $output);
+    }
+
+    /** #237: a Typefinder-only return tag wins; #236: narrowed keys are kept. */
+    public function test_typefinder_return_declares_the_serialised_props(): void
+    {
+        $enums = [['name' => 'PostStatus', 'fqcn' => PostStatus::class]];
+        $shape = InertiaSharedProps::shape(
+            __DIR__.'/../Fixtures/Middleware/TypefinderReturn',
+            null,
+            new GeneratedClasses([], [PostStatus::class], []),
+        );
+
+        $output = new TypeScriptRenderer()->renderPages([], [], $enums, [], $shape);
+
+        $this->assertStringContainsString("import type { PostStatus } from './enums';", $output);
+        $this->assertStringContainsString(<<<'TS'
+            export type SharedPageProps = {
+              errors: Record<string, string>;
+              name: string;
+              nav: { unread: number };
+              can: Partial<Record<PostStatus, boolean>>;
+              modes: Partial<Record<'light' | 'dark', string>>;
             };
             TS, $output);
     }
