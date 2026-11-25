@@ -63,8 +63,10 @@ final class EndToEndTest extends TestCase
         // Relationships
         $this->assertStringContainsString('posts?: Post[];', $userContent);
         $this->assertStringContainsString('roles?:', $userContent);
-        // $hidden filtering: password should not be present
-        $this->assertStringNotContainsString('password:', $userContent);
+        // $hidden filtering: password is not read, but stays writable (#192)
+        $readShape = strstr($userContent, 'export type UserCreate', true);
+        $this->assertStringNotContainsString('password:', (string) $readShape);
+        $this->assertMatchesRegularExpression('/export type UserCreate = \{[^}]*password: string;/', $userContent);
 
         // Verify model output — Post
         $postContent = File::get($this->outputPath.'/models/Post.d.ts');

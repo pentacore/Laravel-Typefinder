@@ -19,10 +19,11 @@ final class PivotResolver
     }
 
     /**
-     * The first relation that uses a table decides its pivot's columns.
+     * The first relation that uses a table decides its pivot's columns:
+     * typed from the pivot table and the `using` class's casts at extraction.
      *
      * @param  list<array{relationships: list<array<string, mixed>>}>  $allModels
-     * @return list<array{name: string, columns: list<array{name: string, type: string, nullable?: bool}>, withTimestamps: bool}>
+     * @return list<array{name: string, columns: list<array{name: string, type: mixed, nullable?: bool}>, withTimestamps: bool}>
      */
     public function resolve(array $allModels): array
     {
@@ -48,6 +49,18 @@ final class PivotResolver
 
                 $pivotName = self::typeName($tableName);
 
+                if (isset($rel['pivot']['columns'])) {
+                    $pivots[] = [
+                        'name' => $pivotName,
+                        'columns' => $rel['pivot']['columns'],
+                        'withTimestamps' => $rel['pivot']['withTimestamps'],
+                    ];
+
+                    continue;
+                }
+
+                // No typed columns (a relation not read from a model): keys
+                // are numbers, the other columns nullable strings.
                 $columns = [
                     ['name' => $rel['pivot']['foreignKey'], 'type' => 'number'],
                     ['name' => $rel['pivot']['relatedKey'], 'type' => 'number'],

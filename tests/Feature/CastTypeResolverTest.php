@@ -8,6 +8,7 @@ use App\Casts\SettingsCast;
 use App\Enums\PostStatus;
 use App\Enums\PostTag;
 use Illuminate\Database\Eloquent\Casts\AsArrayObject;
+use Illuminate\Database\Eloquent\Casts\AsBinary;
 use Illuminate\Database\Eloquent\Casts\AsCollection;
 use Illuminate\Database\Eloquent\Casts\AsEncryptedArrayObject;
 use Illuminate\Database\Eloquent\Casts\AsEncryptedCollection;
@@ -17,10 +18,13 @@ use Illuminate\Database\Eloquent\Casts\AsFluent;
 use Illuminate\Database\Eloquent\Casts\AsHtmlString;
 use Illuminate\Database\Eloquent\Casts\AsStringable;
 use Illuminate\Database\Eloquent\Casts\AsUri;
+use Illuminate\Database\Eloquent\Casts\AsVector;
 use Pentacore\Typefinder\Resolvers\CastTypeResolver;
 use Pentacore\Typefinder\TypefinderRegistry;
 use Tests\Fixtures\Casts\MoneyCast;
 use Tests\Fixtures\Casts\UnmappedCast;
+use Tests\Fixtures\Ignored\Enums\CaselessStatus;
+use Tests\Fixtures\Ignored\Enums\UnbackedStatus;
 use Tests\TestCase;
 
 final class CastTypeResolverTest extends TestCase
@@ -52,24 +56,24 @@ final class CastTypeResolverTest extends TestCase
         $this->assertSame('number', $this->castTypeResolver->resolve('float'));
         $this->assertSame('number', $this->castTypeResolver->resolve('real'));
         $this->assertSame('number', $this->castTypeResolver->resolve('double'));
-        $this->assertSame('number', $this->castTypeResolver->resolve('decimal'));
+        $this->assertSame('string', $this->castTypeResolver->resolve('decimal'));
     }
 
     public function test_built_in_date_casts(): void
     {
         $this->assertSame('string', $this->castTypeResolver->resolve('datetime'));
         $this->assertSame('string', $this->castTypeResolver->resolve('date'));
-        $this->assertSame('string', $this->castTypeResolver->resolve('timestamp'));
+        $this->assertSame('number', $this->castTypeResolver->resolve('timestamp'));
         $this->assertSame('string', $this->castTypeResolver->resolve('immutable_datetime'));
         $this->assertSame('string', $this->castTypeResolver->resolve('immutable_date'));
     }
 
     public function test_built_in_array_casts(): void
     {
-        $this->assertSame('unknown[]', $this->castTypeResolver->resolve('array'));
-        $this->assertSame('unknown[]', $this->castTypeResolver->resolve('collection'));
-        $this->assertSame('unknown[]', $this->castTypeResolver->resolve('encrypted:array'));
-        $this->assertSame('unknown[]', $this->castTypeResolver->resolve('encrypted:collection'));
+        $this->assertSame('unknown[] | Record<string, unknown>', $this->castTypeResolver->resolve('array'));
+        $this->assertSame('unknown[] | Record<string, unknown>', $this->castTypeResolver->resolve('collection'));
+        $this->assertSame('unknown[] | Record<string, unknown>', $this->castTypeResolver->resolve('encrypted:array'));
+        $this->assertSame('unknown[] | Record<string, unknown>', $this->castTypeResolver->resolve('encrypted:collection'));
     }
 
     public function test_built_in_object_casts(): void
@@ -86,7 +90,7 @@ final class CastTypeResolverTest extends TestCase
     public function test_laravel_class_casts(): void
     {
         $this->assertSame('Record<string, unknown>', $this->castTypeResolver->resolve(AsArrayObject::class));
-        $this->assertSame('unknown[]', $this->castTypeResolver->resolve(AsCollection::class));
+        $this->assertSame('unknown[] | Record<string, unknown>', $this->castTypeResolver->resolve(AsCollection::class));
         $this->assertSame('string', $this->castTypeResolver->resolve(AsStringable::class));
     }
 
@@ -131,7 +135,7 @@ final class CastTypeResolverTest extends TestCase
 
     public function test_parameterised_built_in_casts_resolve_by_base_name(): void
     {
-        $this->assertSame('number', $this->castTypeResolver->resolveOrNull('decimal:2'));
+        $this->assertSame('string', $this->castTypeResolver->resolveOrNull('decimal:2'));
         $this->assertSame('string', $this->castTypeResolver->resolveOrNull('datetime:Y-m-d'));
         $this->assertSame('string', $this->castTypeResolver->resolveOrNull('date:Y-m-d'));
         $this->assertSame('string', $this->castTypeResolver->resolveOrNull('immutable_datetime:Y-m-d H:i'));
@@ -141,14 +145,14 @@ final class CastTypeResolverTest extends TestCase
 
     public function test_exact_parameterised_keys_win_over_base_name(): void
     {
-        $this->assertSame('unknown[]', $this->castTypeResolver->resolveOrNull('encrypted:array'));
+        $this->assertSame('unknown[] | Record<string, unknown>', $this->castTypeResolver->resolveOrNull('encrypted:array'));
         $this->assertSame('Record<string, unknown>', $this->castTypeResolver->resolveOrNull('encrypted:object'));
         $this->assertSame('unknown', $this->castTypeResolver->resolveOrNull('encrypted:json'));
     }
 
     public function test_additional_laravel_class_casts(): void
     {
-        $this->assertSame('unknown[]', $this->castTypeResolver->resolveOrNull(AsEncryptedCollection::class));
+        $this->assertSame('unknown[] | Record<string, unknown>', $this->castTypeResolver->resolveOrNull(AsEncryptedCollection::class));
         $this->assertSame('Record<string, unknown>', $this->castTypeResolver->resolveOrNull(AsEncryptedArrayObject::class));
         $this->assertSame('Record<string, unknown>', $this->castTypeResolver->resolveOrNull(AsFluent::class));
         $this->assertSame('string', $this->castTypeResolver->resolveOrNull(AsUri::class));
@@ -157,9 +161,9 @@ final class CastTypeResolverTest extends TestCase
 
     public function test_parameterised_laravel_class_casts(): void
     {
-        $this->assertSame('unknown[]', $this->castTypeResolver->resolveOrNull(AsCollection::using(SettingsCast::class)));
-        $this->assertSame('unknown[]', $this->castTypeResolver->resolveOrNull(AsCollection::of(SettingsCast::class)));
-        $this->assertSame('unknown[]', $this->castTypeResolver->resolveOrNull(AsEncryptedCollection::using(SettingsCast::class)));
+        $this->assertSame('unknown[] | Record<string, unknown>', $this->castTypeResolver->resolveOrNull(AsCollection::using(SettingsCast::class)));
+        $this->assertSame('unknown[] | Record<string, unknown>', $this->castTypeResolver->resolveOrNull(AsCollection::of(SettingsCast::class)));
+        $this->assertSame('unknown[] | Record<string, unknown>', $this->castTypeResolver->resolveOrNull(AsEncryptedCollection::using(SettingsCast::class)));
     }
 
     public function test_as_enum_array_object_cast(): void
@@ -206,5 +210,18 @@ final class CastTypeResolverTest extends TestCase
         $this->assertNull($this->castTypeResolver->resolveOrNull(UnmappedCast::class.':gold'));
         $this->assertNull($this->castTypeResolver->resolveOrNull('SomeUnknown\\CustomCast:arg'));
         $this->assertNull($this->castTypeResolver->resolveOrNull('nonsense:arg'));
+    }
+
+    public function test_a_pure_enum_cast_is_the_union_of_its_case_names(): void
+    {
+        $this->assertSame("'On' | 'Off'", $this->castTypeResolver->resolveOrNull(UnbackedStatus::class));
+        $this->assertSame('never', $this->castTypeResolver->resolveOrNull(CaselessStatus::class));
+    }
+
+    public function test_vector_and_binary_casts(): void
+    {
+        $this->assertSame('number[]', $this->castTypeResolver->resolveOrNull(AsVector::class));
+        $this->assertSame('string', $this->castTypeResolver->resolveOrNull(AsBinary::uuid()));
+        $this->assertSame('string', $this->castTypeResolver->resolveOrNull(AsBinary::ulid()));
     }
 }
