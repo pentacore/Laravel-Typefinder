@@ -189,7 +189,7 @@ final class Generator
         $globalImmutable = (array) config('typefinder.models.immutable_on_update', ['id', 'created_at', 'updated_at', 'deleted_at']);
         foreach ($models as $model) {
             $immutable = array_values(array_unique([...$globalImmutable, ...$this->getContractImmutable($model['fqcn'])]));
-            $files['models'][$model['name']] = $this->typeScriptRenderer->renderModelFile($model, $enums, $models, $emitWriteShapes, $immutable);
+            $files['models'][$model['name']] = $this->typeScriptRenderer->renderModelFile($model, $enums, $models, $emitWriteShapes, $immutable, $resources);
         }
 
         foreach ($pivots as $pivot) {

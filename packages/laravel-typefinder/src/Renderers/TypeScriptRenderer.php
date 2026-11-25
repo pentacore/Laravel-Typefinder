@@ -643,10 +643,18 @@ TS;
      * @param  array<string, mixed>  $node
      * @param  list<string>  $imports
      */
+    /**
+     * The generated resources, for resource references in a model's
+     * `@property` types; set by renderModel() / renderModelFile().
+     *
+     * @var list<array>
+     */
+    private array $modelResources = [];
+
     protected function renderModelPhpDocType(array $node, array &$imports, string $selfFqcn, array $allModels, array $allEnums): string
     {
         $nodeImports = [];
-        $rendered = $this->renderTypeNode($node, $nodeImports, $selfFqcn, $allModels, $allEnums, []);
+        $rendered = $this->renderTypeNode($node, $nodeImports, $selfFqcn, $allModels, $allEnums, $this->modelResources);
 
         foreach ($nodeImports as $import) {
             $imports[] = (string) preg_replace_callback(

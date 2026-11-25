@@ -25,8 +25,10 @@ trait RendersModels
      * @param  list<array>  $allEnums
      * @param  list<array>  $allModels
      */
-    public function renderModel(array $model, array $allEnums, array $allModels): string
+    public function renderModel(array $model, array $allEnums, array $allModels, array $allResources = []): string
     {
+        $this->modelResources = $allResources;
+
         return $this->assembleFile([$this->buildModelBlock($model, $allEnums, $allModels)]);
     }
 
@@ -57,8 +59,9 @@ trait RendersModels
      * @param  list<array>  $allModels
      * @param  list<string>  $immutable
      */
-    public function renderModelFile(array $model, array $allEnums, array $allModels, bool $emitWriteShapes, array $immutable): string
+    public function renderModelFile(array $model, array $allEnums, array $allModels, bool $emitWriteShapes, array $immutable, array $allResources = []): string
     {
+        $this->modelResources = $allResources;
         $blocks = [$this->buildModelBlock($model, $allEnums, $allModels)];
 
         if ($emitWriteShapes) {

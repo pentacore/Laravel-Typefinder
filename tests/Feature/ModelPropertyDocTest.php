@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use App\Enums\PostStatus;
+use App\Http\Resources\UserResource;
 use App\Models\User;
 use Pentacore\Typefinder\Extractors\ModelExtractor;
 use Pentacore\Typefinder\Renderers\TypeScriptRenderer;
@@ -28,7 +29,7 @@ final class ModelPropertyDocTest extends TestCase
 
         $model = new ModelExtractor(new ColumnTypeResolver, new CastTypeResolver)->extract(DocumentedCastQuest::class);
         $allModels = [$model, ['name' => 'User', 'fqcn' => User::class]];
-        $output = new TypeScriptRenderer()->renderModel($model, [['name' => 'PostStatus', 'fqcn' => PostStatus::class]], $allModels);
+        $output = new TypeScriptRenderer()->renderModel($model, [['name' => 'PostStatus', 'fqcn' => PostStatus::class]], $allModels, [['name' => 'UserResource', 'fqcn' => UserResource::class]]);
 
         $this->assertStringContainsString('  rewards: { name: string; required: boolean }[] | null;', $output);
         $this->assertStringContainsString('  description: PostStatus[] | null;', $output);
