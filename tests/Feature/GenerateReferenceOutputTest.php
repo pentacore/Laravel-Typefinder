@@ -10,26 +10,60 @@ use Tests\TestCase;
 use function Orchestra\Testbench\workbench_path;
 
 /**
- * Writes generated .d.ts to a deterministic on-disk location under workbench/
- * so CI can upload the output as an artifact and type-check it with
- * `tsc -p workbench/tsconfig.typefinder.json`. Unlike GenerateCommandTest this
- * does NOT clean up after itself.
+ * Writes generated output to deterministic on-disk locations under workbench/
+ * so CI can type-check it with `tsc -p workbench/tsconfig.typefinder.json`
+ * and lint it with `workbench/eslint.typefinder.config.mjs`. Unlike
+ * GenerateCommandTest this does NOT clean up after itself.
+ *
+ * Two trees: `typefinder/` with the default options, and
+ * `typefinder-variant/` with the options that change the shape of the
+ * output switched away from their defaults.
  */
 final class GenerateReferenceOutputTest extends TestCase
 {
-    private string $outputPath;
-
-    protected function setUp(): void
+    public function test_generates_reference_dts_into_workbench_resources(): void
     {
-        parent::setUp();
-        $this->outputPath = workbench_path('resources/js/typefinder');
+        $outputPath = $this->generate('typefinder');
 
-        if (File::isDirectory($this->outputPath)) {
-            File::deleteDirectory($this->outputPath);
+        $this->assertFileExists($outputPath.'/index.d.ts');
+        $this->assertFileExists($outputPath.'/models/index.d.ts');
+        $this->assertFileExists($outputPath.'/enums/index.d.ts');
+        $this->assertFileExists($outputPath.'/requests/index.d.ts');
+        // Pivots now live alongside models in the same directory.
+        $this->assertFileExists($outputPath.'/models/RoleUserPivot.d.ts');
+        $this->assertFileExists($outputPath.'/resources/index.d.ts');
+        $this->assertFileExists($outputPath.'/pages.d.ts');
+        $this->assertFileExists($outputPath.'/broadcasting.d.ts');
+        $this->assertFileExists($outputPath.'/helpers.d.ts');
+    }
+
+    public function test_generates_variant_output_with_non_default_options(): void
+    {
+        $outputPath = $this->generate('typefinder-variant', [
+            'typefinder.enums.emit_values' => true,
+            'typefinder.requests.extract_nested' => true,
+            'typefinder.models.respect_mass_assignment' => false,
+        ]);
+
+        $this->assertFileExists($outputPath.'/index.d.ts');
+        $this->assertFileExists($outputPath.'/enums/PostStatus.ts');
+        $this->assertFileExists($outputPath.'/models/index.d.ts');
+        $this->assertFileExists($outputPath.'/requests/index.d.ts');
+    }
+
+    /**
+     * @param  array<string, mixed>  $options
+     */
+    private function generate(string $directory, array $options = []): string
+    {
+        $outputPath = workbench_path('resources/js/'.$directory);
+
+        if (File::isDirectory($outputPath)) {
+            File::deleteDirectory($outputPath);
         }
 
         config([
-            'typefinder.output_path' => $this->outputPath,
+            'typefinder.output_path' => $outputPath,
             'typefinder.models.paths' => [workbench_path('app/Models')],
             'typefinder.enums.paths' => [workbench_path('app/Enums')],
             'typefinder.requests.paths' => [workbench_path('app/Http/Requests')],
@@ -38,22 +72,11 @@ final class GenerateReferenceOutputTest extends TestCase
             'typefinder.inertia.paths' => [workbench_path('app/Http/Controllers')],
             'typefinder.broadcasting.enabled' => true,
             'typefinder.broadcasting.paths' => [workbench_path('app/Events')],
+            ...$options,
         ]);
-    }
 
-    public function test_generates_reference_dts_into_workbench_resources(): void
-    {
         $this->artisan('typefinder:generate')->assertSuccessful();
 
-        $this->assertFileExists($this->outputPath.'/index.d.ts');
-        $this->assertFileExists($this->outputPath.'/models/index.d.ts');
-        $this->assertFileExists($this->outputPath.'/enums/index.d.ts');
-        $this->assertFileExists($this->outputPath.'/requests/index.d.ts');
-        // Pivots now live alongside models in the same directory.
-        $this->assertFileExists($this->outputPath.'/models/RoleUserPivot.d.ts');
-        $this->assertFileExists($this->outputPath.'/resources/index.d.ts');
-        $this->assertFileExists($this->outputPath.'/pages.d.ts');
-        $this->assertFileExists($this->outputPath.'/broadcasting.d.ts');
-        $this->assertFileExists($this->outputPath.'/helpers.d.ts');
+        return $outputPath;
     }
 }

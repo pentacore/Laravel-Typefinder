@@ -68,7 +68,8 @@ class ColumnTypeResolver
     {
         $tsType = self::TYPE_MAP[$columnType] ?? 'unknown';
 
-        if ($nullable) {
+        // `unknown` already admits null.
+        if ($nullable && $tsType !== 'unknown') {
             return $tsType.' | null';
         }
 

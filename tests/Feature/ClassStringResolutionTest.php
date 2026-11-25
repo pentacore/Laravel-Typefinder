@@ -46,8 +46,7 @@ final class ClassStringResolutionTest extends TestCase
             ]],
         ], $this->models, $this->enums, $this->resources);
 
-        $this->assertStringContainsString("import type { User } from '../models';", $output);
-        $this->assertStringContainsString("import type { Post } from '../models';", $output);
+        $this->assertStringContainsString("import type { Post, User } from '../models';", $output);
         $this->assertStringContainsString("import type { PostStatus } from '../enums';", $output);
         $this->assertStringContainsString("import type { UserResource } from './UserResource';", $output);
         $this->assertStringNotContainsString("from './models'", $output);
@@ -72,7 +71,7 @@ final class ClassStringResolutionTest extends TestCase
         ], $this->models, $this->enums, $this->resources);
 
         $this->assertStringContainsString("import type { PostStatus } from '../enums';", $output);
-        $this->assertStringContainsString("import type { Post } from '../models';", $output);
+        $this->assertStringContainsString("import type { Post, User } from '../models';", $output);
         $this->assertStringContainsString('latest_status: PostStatus; posts: Post[]', $output);
     }
 
