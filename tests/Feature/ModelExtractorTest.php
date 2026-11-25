@@ -145,8 +145,9 @@ final class ModelExtractorTest extends TestCase
         $this->assertContains('QuirkyThing', $names);
         $this->assertContains('Quest', $names);
         $this->assertContains('Category', $names);
+        $this->assertContains('Attachment', $names);
         $this->assertNotContains('LegacyModel', $names);
-        $this->assertCount(11, $results);
+        $this->assertCount(12, $results);
     }
 
     public function test_unknown_column_type_emits_warning_and_falls_back_to_unknown(): void
