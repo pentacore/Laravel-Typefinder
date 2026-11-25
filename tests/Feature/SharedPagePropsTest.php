@@ -32,6 +32,14 @@ final class SharedPagePropsTest extends TestCase
         );
     }
 
+    public function test_a_doc_without_a_shape_leaves_keys_unknown(): void
+    {
+        $fields = InertiaSharedProps::shape(__DIR__.'/../Fixtures/Middleware/Undocumented')['fields'];
+
+        $this->assertSame(['errors', 'locale', 'theme'], array_column($fields, 'name'));
+        $this->assertSame([self::UNKNOWN, self::UNKNOWN], array_column(array_slice($fields, 1), 'type'));
+    }
+
     public function test_no_middleware_shares_only_errors(): void
     {
         $this->assertSame(['errors'], array_column(InertiaSharedProps::shape(__DIR__.'/missing')['fields'], 'name'));

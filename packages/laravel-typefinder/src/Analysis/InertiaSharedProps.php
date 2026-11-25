@@ -19,7 +19,6 @@ use PHPStan\PhpDocParser\Parser\TokenIterator;
 use PHPStan\PhpDocParser\Parser\TypeParser;
 use PHPStan\PhpDocParser\ParserConfig;
 use Symfony\Component\Finder\Finder;
-use Throwable;
 
 /**
  * The prop keys an app shares with every Inertia page: the literal keys any
@@ -131,13 +130,8 @@ final class InertiaSharedProps
         $constExprParser = new ConstExprParser($config);
         $parser = new PhpDocParser($config, new TypeParser($config, $constExprParser), $constExprParser);
 
-        try {
-            $node = $parser->parse(new TokenIterator(new Lexer($config)->tokenize($doc)));
-        } catch (Throwable) {
-            return [];
-        }
-
-        $type = self::returnType($node);
+        // A doc comment always opens with `/**`, and a bad tag parses as an invalid tag value.
+        $type = self::returnType($parser->parse(new TokenIterator(new Lexer($config)->tokenize($doc))));
 
         if (! $type instanceof ArrayShapeNode || PhpDocTypeMapper::isListShape($type)) {
             return [];

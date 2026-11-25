@@ -6,6 +6,7 @@ namespace Tests\Feature;
 
 use Pentacore\Typefinder\Extractors\ResourceExtractor;
 use Pentacore\Typefinder\Renderers\TypeScriptRenderer;
+use Tests\Fixtures\Resources\Collections\AttributeCollection;
 use Tests\Fixtures\Resources\Collections\CustomArrayCollection;
 use Tests\Fixtures\Resources\Collections\GadgetCollection;
 use Tests\Fixtures\Resources\Collections\NothingCollection;
@@ -34,6 +35,14 @@ final class ResourceCollectionTest extends TestCase
         $this->assertSame(
             ['kind' => 'collection', 'type' => ['kind' => 'array', 'of' => ['kind' => 'resource', 'fqcn' => WidgetResource::class]]],
             $this->resourceExtractor->extract(GadgetCollection::class)['shape'] ?? null,
+        );
+    }
+
+    public function test_collects_attribute_names_the_resource(): void
+    {
+        $this->assertSame(
+            ['kind' => 'array', 'of' => ['kind' => 'resource', 'fqcn' => WidgetResource::class]],
+            $this->resourceExtractor->extract(AttributeCollection::class)['shape']['type'] ?? null,
         );
     }
 

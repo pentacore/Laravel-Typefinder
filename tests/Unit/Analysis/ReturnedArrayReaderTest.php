@@ -577,10 +577,11 @@ final class ReturnedArrayReaderTest extends TestCase
             'b' => Inertia::optional(fn () => 1)->once()->until(60),
             'c' => Inertia::always(fn () => 1)->merge(),
             'd' => $this->helper()->merge(),
+            'e' => $class::optional(fn () => 1)->once(),
         ];
         PHP;
 
-        $this->assertSame(['a?', 'b?', 'c', 'd'], $this->keyList($this->single($body, $wrappers, $header)));
+        $this->assertSame(['a?', 'b?', 'c', 'd', 'e'], $this->keyList($this->single($body, $wrappers, $header)));
     }
 
     public function test_wrapper_class_matches_its_fqcn_or_the_global_alias_only(): void

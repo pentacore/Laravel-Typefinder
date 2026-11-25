@@ -51,8 +51,7 @@ trait RendersResources
         }
 
         // `unknown` (with a warning) when the model gets no generated type.
-        $modelShort = $this->resolveClassReference(ltrim((string) $shape['model'], '\\'), 'resources', $allModels, $allEnums, $allResources, $imports)
-            ?? $this->resolveModelName($shape['model'], $allModels);
+        $modelShort = $this->resolveClassReference(ltrim((string) $shape['model'], '\\'), 'resources', $allModels, $allEnums, $allResources, $imports) ?? 'unknown';
 
         $body = sprintf('export type %s = ', $name);
 
@@ -213,9 +212,8 @@ trait RendersResources
 
             $reference = $this->resolveClassReference(ltrim($model, '\\'), 'resources', $allModels, $allEnums, $allResources, $imports, $selfFqcn);
 
-            return $reference === null || $reference === 'unknown'
-                ? 'unknown'
-                : $reference.'['.TypeScriptRenderer::stringLiteral($column).']';
+            // The model is in the list, so it resolves; null only if its class vanished.
+            return $reference === null ? 'unknown' : $reference.'['.TypeScriptRenderer::stringLiteral($column).']';
         }
 
         return 'unknown';

@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Models\User;
 use Illuminate\Support\Facades\File;
 use Pentacore\Typefinder\Extractors\ResourceExtractor;
+use Pentacore\Typefinder\Renderers\TypeScriptRenderer;
 use Pentacore\Typefinder\Services\Generator;
 use Tests\Fixtures\Resources\Literal\PlainResource;
 use Tests\Fixtures\Resources\Literal\SpreadResource;
@@ -89,9 +91,21 @@ final class LiteralResourceShapeTest extends TestCase
               orphan: unknown;
               meta: { total: number; tag?: string };
               secret?: string;
+              others: unknown;
+              dynamic: unknown;
+              viewer: unknown;
               extra?: number;
             };
             TS, $typed);
+    }
+
+    public function test_property_of_a_model_with_no_type_is_unknown(): void
+    {
+        $resource = ['name' => 'R', 'fqcn' => 'App\R', 'shape' => ['kind' => 'inferred', 'type' => ['kind' => 'object', 'open' => false, 'fields' => [
+            ['name' => 'id', 'type' => ['kind' => 'property', 'fqcn' => User::class, 'name' => 'id'], 'optional' => false],
+        ]]]];
+
+        $this->assertStringContainsString('  id: unknown;', new TypeScriptRenderer()->renderResource($resource, [], [], []));
     }
 
     private function body(string $name): string

@@ -29,7 +29,6 @@ use PhpParser\Node\Scalar\InterpolatedString;
 use PhpParser\Node\Scalar\String_;
 use PhpParser\Node\Stmt\ClassMethod;
 use ReflectionClass;
-use Throwable;
 
 /**
  * The shape of a resource whose own `toArray()` returns only literal-key
@@ -228,11 +227,7 @@ final readonly class LiteralShapeResolver
         }
 
         foreach ($matches[1] as $name) {
-            try {
-                $fqcn = $source->resolveName($class, $name);
-            } catch (Throwable) {
-                continue;
-            }
+            $fqcn = $source->resolveName($class, $name);
 
             if ($this->classes->isModel($fqcn)) {
                 return $fqcn;

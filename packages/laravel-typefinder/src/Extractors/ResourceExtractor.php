@@ -241,7 +241,8 @@ class ResourceExtractor
         $collects = $class->getDefaultProperties()['collects'] ?? null;
 
         if ($attribute !== null) {
-            $candidates[] = $attribute->getArguments()[0] ?? $attribute->getArguments()['class'] ?? null;
+            $arguments = $attribute->getArguments();
+            $candidates[] = (string) ($arguments[0] ?? $arguments['class'] ?? '');
         } elseif (is_string($collects) && $collects !== '') {
             $candidates[] = $collects;
         } elseif (str_ends_with($class->getShortName(), 'Collection')) {
@@ -250,10 +251,6 @@ class ResourceExtractor
         }
 
         foreach ($candidates as $candidate) {
-            if (! is_string($candidate)) {
-                return null;
-            }
-
             $candidate = ltrim($candidate, '\\');
 
             if (class_exists($candidate)) {

@@ -7,6 +7,9 @@ namespace Tests\Fixtures\Resources\Literal;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
+/**
+ * @mixin \stdClass not a model, so `$this->id` stays unknown
+ */
 class PlainResource extends JsonResource
 {
     public function toArray(Request $request): array

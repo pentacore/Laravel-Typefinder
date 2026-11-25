@@ -32,6 +32,9 @@ class TypedLiteralResource extends JsonResource
             'orphan' => new OrphanResource($this->orphan),
             'meta' => ['total' => 1, 'tag' => $this->when($request->has('tag'), fn (): string => 'a')],
             'secret' => $this->when($request->has('secret'), 'yes'),
+            'others' => static::collection([]),
+            'dynamic' => $this->resourceClass()::make(1),
+            'viewer' => $request->user(),
             $this->mergeWhen($request->has('extra'), ['extra' => 1]),
         ];
     }
