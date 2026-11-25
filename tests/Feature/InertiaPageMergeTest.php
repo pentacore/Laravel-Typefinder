@@ -202,7 +202,7 @@ final class InertiaPageMergeTest extends TestCase
         $this->assertStringContainsString("'Dashboard'", $pages);
     }
 
-    public function test_incremental_run_deletes_pages_when_no_page_is_left(): void
+    public function test_incremental_run_keeps_shared_props_when_no_page_is_left(): void
     {
         $this->writeController('ShowController', <<<'PHP'
             #[TypefinderPage('Dashboard', ['greeting' => 'string'])]
@@ -216,9 +216,26 @@ final class InertiaPageMergeTest extends TestCase
         File::delete($deleted);
         $regenResult = $generator->generatePaths([$deleted]);
 
-        $this->assertFileDoesNotExist($this->output.'/pages.d.ts');
+        // SharedPageProps is still useful without a tagged page (#231).
+        $pages = File::get($this->output.'/pages.d.ts');
+        $this->assertStringContainsString('export type SharedPageProps = {', $pages);
+        $this->assertStringContainsString("export type PageProps = {};\n", $pages);
+        $this->assertStringNotContainsString("'Dashboard'", $pages);
         $this->assertContains('pages.d.ts', $regenResult->changed);
-        $this->assertStringNotContainsString("'./pages'", File::get($this->output.'/index.d.ts'));
+        $this->assertStringContainsString("'./pages'", File::get($this->output.'/index.d.ts'));
+    }
+
+    public function test_shared_props_are_emitted_without_any_tagged_page(): void
+    {
+        $this->writeController('PlainController', <<<'PHP'
+            public function index(): void {}
+            PHP);
+
+        $pages = $this->generate();
+
+        $this->assertStringContainsString("export type SharedPageProps = {\n  errors: Record<string, string>;", $pages);
+        $this->assertStringContainsString("export type PageProps = {};\n\nexport type PageName = keyof PageProps;\n", $pages);
+        $this->assertStringContainsString("'./pages'", File::get($this->output.'/index.d.ts'));
     }
 
     public function test_incremental_type_conflict_is_reported_as_failed(): void

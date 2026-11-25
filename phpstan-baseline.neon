@@ -145,12 +145,6 @@ parameters:
 			path: packages/laravel-typefinder/src/Extractors/RequestExtractor.php
 
 		-
-			message: '#^Offset ''override'' on array\{rules\: list\<mixed\>\|null, children\: array\<array\>\} in isset\(\) does not exist\.$#'
-			identifier: isset.offset
-			count: 2
-			path: packages/laravel-typefinder/src/Extractors/RequestExtractor.php
-
-		-
 			message: '#^Parameter \#1 \$request of static method Pentacore\\Typefinder\\Analysis\\RequestStateBranches\:\:in\(\) expects ReflectionClass\<object\>, ReflectionClass\<Illuminate\\Foundation\\Http\\FormRequest\> given\.$#'
 			identifier: argument.type
 			count: 1

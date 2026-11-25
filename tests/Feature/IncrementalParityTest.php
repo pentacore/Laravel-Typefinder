@@ -243,7 +243,8 @@ final class IncrementalParityTest extends TestCase
         ]);
         $generator->generateFull();
 
-        $this->assertFileDoesNotExist($this->output.'/pages.d.ts');
+        // pages.d.ts stays for SharedPageProps, with no page in PageProps (#231).
+        $this->assertStringContainsString("export type PageProps = {};\n", File::get($this->output.'/pages.d.ts'));
         $this->assertFileDoesNotExist($this->output.'/broadcasting.d.ts');
     }
 

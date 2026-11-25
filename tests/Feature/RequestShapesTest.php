@@ -117,7 +117,7 @@ final class RequestShapesTest extends TestCase
         $result = new RequestExtractor()->extract(RouteBranchRequest::class);
 
         $this->assertSame(
-            ['RouteBranchRequest: rules() branches on request state (request(), $this->route()), so the type follows the branch taken with no route, user or input bound; declare the fields with #[TypefinderOverrides] if that is not the branch to type'],
+            ['RouteBranchRequest: rules() branches on request state (request(), $this->route()), so the type follows the branch taken with no route, user or input bound; declare the fields with #[TypefinderOverrides] (a key ending in \'?\' is optional) if that is not the branch to type, which also silences this warning'],
             $result['warnings'],
         );
     }

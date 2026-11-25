@@ -188,15 +188,18 @@ class RequestExtractor
             }
         }
 
+        $overrides = $this->getTypeOverrides($reflectionClass);
+
+        // Declaring the fields with #[TypefinderOverrides] is the remedy, so it acknowledges the warning (#233).
         $branchReads = RequestStateBranches::in($reflectionClass);
-        if ($branchReads !== []) {
+        if ($branchReads !== [] && $overrides === []) {
             $this->warnings[] = sprintf(
-                'rules() branches on request state (%s), so the type follows the branch taken with no route, user or input bound; declare the fields with #[TypefinderOverrides] if that is not the branch to type',
+                "rules() branches on request state (%s), so the type follows the branch taken with no route, user or input bound; declare the fields with #[TypefinderOverrides] (a key ending in '?' is optional) if that is not the branch to type, which also silences this warning",
                 implode(', ', $branchReads),
             );
         }
 
-        $fields = $this->parseRules($rules, $this->getTypeOverrides($reflectionClass));
+        $fields = $this->parseRules($rules, $overrides);
 
         [$fields, $queryFields] = $this->separateQueryFields($fields, $reflectionClass);
 
@@ -346,8 +349,15 @@ class RequestExtractor
         $this->addConfirmations($root);
 
         foreach ($overrides as $key => $type) {
-            $node = &$this->treeNode($root, (string) $key);
+            $key = (string) $key;
+            // `'key?' => 'type'` declares an optional key (#233).
+            $optional = str_ends_with($key, '?');
+            $node = &$this->treeNode($root, $optional ? substr($key, 0, -1) : $key);
             $node['override'] = $type;
+            if ($optional) {
+                $node['optionalOverride'] = true;
+            }
+
             unset($node);
         }
 
@@ -379,7 +389,7 @@ class RequestExtractor
      * when missing.
      *
      * @param  array{rules: ?list<mixed>, children: array<array-key, array>}  $root
-     * @return array{rules: ?list<mixed>, children: array<array-key, array>, override?: string}
+     * @return array{rules: ?list<mixed>, children: array<array-key, array>, override?: string, optionalOverride?: true}
      */
     protected function &treeNode(array &$root, string $key): array
     {
@@ -407,7 +417,8 @@ class RequestExtractor
 
         foreach ($this->ruleKeys as $key) {
             $rules = $this->treeNode($root, $key)['rules'] ?? [];
-            $confirmed = array_values(array_filter($rules, $isConfirmed));
+            // In any branch of a `Rule::when()` too (#232).
+            $confirmed = array_values(array_filter(array_merge(...$this->variants($rules)), $isConfirmed));
 
             if ($confirmed === []) {
                 continue;
@@ -418,9 +429,31 @@ class RequestExtractor
             $this->confirmations[$key] = $confirmationKey;
 
             $node = &$this->treeNode($root, $confirmationKey);
-            $node['rules'] ??= array_values(array_filter($rules, static fn (mixed $rule): bool => ! $isConfirmed($rule)));
+            $node['rules'] ??= $this->withoutRule($rules, $isConfirmed);
             unset($node);
         }
+    }
+
+    /**
+     * Normalized rules without those `$matches` picks, `Rule::when()` branches included.
+     *
+     * @param  list<mixed>  $rules
+     * @param  callable(mixed): bool  $matches
+     * @return list<mixed>
+     */
+    protected function withoutRule(array $rules, callable $matches): array
+    {
+        $kept = [];
+
+        foreach ($rules as $rule) {
+            if (is_array($rule) && array_key_exists('when', $rule)) {
+                $kept[] = ['when' => array_map(fn (array $branch): array => $this->withoutRule($branch, $matches), $rule['when'])];
+            } elseif (! $matches($rule)) {
+                $kept[] = $rule;
+            }
+        }
+
+        return $kept;
     }
 
     /**
@@ -516,7 +549,7 @@ class RequestExtractor
     /**
      * Build one field from a node of the rule tree, with its nested shape.
      *
-     * @param  array{rules: ?list<mixed>, children: array<array-key, array>}  $node
+     * @param  array{rules: ?list<mixed>, children: array<array-key, array>, override?: string, optionalOverride?: true}  $node
      * @param  string  $path  dotted rule name of the node, for warnings
      * @return array{name: string, type: mixed, required: bool, nullable: bool, children?: list<array>, arrayDepth?: int}
      */
@@ -541,6 +574,10 @@ class RequestExtractor
         // `#[TypefinderOverrides]` replaces the type, nested shape included.
         if (isset($node['override'])) {
             $field['type'] = $node['override'];
+
+            if (isset($node['optionalOverride'])) {
+                $field['required'] = false;
+            }
 
             return $field;
         }
@@ -605,7 +642,7 @@ class RequestExtractor
      * `arrayDepth` counts the array levels around an `object-array`
      * (`items.*.*.name` is 2).
      *
-     * @param  array{rules: ?list<mixed>, children: array<array-key, array>}  $node
+     * @param  array{rules: ?list<mixed>, children: array<array-key, array>, override?: string, optionalOverride?: true}  $node
      * @return array{type: mixed, children?: list<array>, arrayDepth?: int}
      */
     protected function resolveShape(array $node, string $path): array
@@ -814,7 +851,7 @@ class RequestExtractor
 
     /**
      * The type of the values an `in` rule accepts, on a field of the declared
-     * type; null when they cannot be written in it.
+     * type; null when they cannot be written in it or there are none.
      *
      * @param  list<mixed>  $values
      */
@@ -831,6 +868,12 @@ class RequestExtractor
             array_map(static fn (mixed $value): mixed => $value instanceof UnitEnum ? enum_value($value) : $value, $values),
             is_scalar(...),
         ));
+
+        // No value to narrow to (`Rule::in([])`, often a list built from input
+        // that is empty here): the values cannot be known statically (#230).
+        if ($values === []) {
+            return null;
+        }
 
         if ($declared === 'string') {
             return ['in' => array_values(array_unique(array_map(

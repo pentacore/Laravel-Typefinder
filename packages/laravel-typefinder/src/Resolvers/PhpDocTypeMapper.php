@@ -339,7 +339,9 @@ final class PhpDocTypeMapper
     }
 
     /**
-     * The last generic argument is the element; a non-integer key makes it a record.
+     * The last generic argument is the element; a string key makes it a
+     * record. An `array-key` (or `int|string`) key may serialise either way,
+     * a JSON array when the keys are sequential, so it is both (#234).
      *
      * @param  list<TypeNode>  $args
      * @return array<string, mixed>
@@ -348,7 +350,15 @@ final class PhpDocTypeMapper
     {
         $of = $this->mapType($args[count($args) - 1], $scope, $fieldPath);
 
-        return ['kind' => count($args) === 1 || $this->isIntKey($args[0]) ? 'array' : 'record', 'of' => $of];
+        if (count($args) === 1 || $this->isIntKey($args[0])) {
+            return ['kind' => 'array', 'of' => $of];
+        }
+
+        if ($this->isEitherKey($args[0])) {
+            return ['kind' => 'union', 'of' => [['kind' => 'array', 'of' => $of], ['kind' => 'record', 'of' => $of]]];
+        }
+
+        return ['kind' => 'record', 'of' => $of];
     }
 
     /**
@@ -524,6 +534,25 @@ final class PhpDocTypeMapper
         }
 
         return $key instanceof IdentifierTypeNode && in_array(strtolower($key->name), self::INT_KEYWORDS, true);
+    }
+
+    /**
+     * A key that may be an integer or a string: `array-key`, `mixed`, or a
+     * union with both an integer and a non-integer member.
+     */
+    private function isEitherKey(TypeNode $key): bool
+    {
+        if ($key instanceof IdentifierTypeNode) {
+            return in_array(strtolower($key->name), ['array-key', 'mixed'], true);
+        }
+
+        if (! $key instanceof UnionTypeNode) {
+            return false;
+        }
+
+        $int = array_filter($key->types, $this->isIntKey(...));
+
+        return $int !== [] && count($int) < count($key->types);
     }
 
     /**

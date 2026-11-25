@@ -37,9 +37,14 @@ use Attribute;
  * class Post extends \Illuminate\Database\Eloquent\Model {}
  * </pre>
  *
+ * On a form request, a key added by an override is required unless it ends
+ * in `?` (`'password?' => 'string'` gives `password?: string`). An override
+ * on a request also acknowledges the warning that `rules()` branches on
+ * request state.
+ *
  * Example on a FormRequest:
  * <pre>
- * #[TypefinderOverrides(['attachment' => 'File | null', 'amount' => 'number'])]
+ * #[TypefinderOverrides(['attachment' => 'File | null', 'amount' => 'number', 'note?' => 'string'])]
  * class StoreInvoiceRequest extends FormRequest
  * {
  *     public function rules(): array { … }

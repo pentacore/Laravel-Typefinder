@@ -11,6 +11,7 @@ use Pentacore\Typefinder\Extractors\ModelExtractor;
 use Pentacore\Typefinder\Renderers\TypeScriptRenderer;
 use Pentacore\Typefinder\Resolvers\CastTypeResolver;
 use Pentacore\Typefinder\Resolvers\ColumnTypeResolver;
+use Tests\Fixtures\Models\ArrayKeyCastQuest;
 use Tests\Fixtures\Models\DocumentedCastQuest;
 use Tests\TestCase;
 
@@ -41,5 +42,15 @@ final class ModelPropertyDocTest extends TestCase
         $this->assertStringContainsString("import type { UserResource } from '../resources';", $output);
         // A cast with a precise type keeps it.
         $this->assertStringContainsString('  title: string;', $output);
+    }
+
+    /** #234: what ide-helper writes for an `array` cast serialises as a list or an object. */
+    public function test_array_key_keyed_property_is_a_list_or_a_record(): void
+    {
+        $model = new ModelExtractor(new ColumnTypeResolver, new CastTypeResolver)->extract(ArrayKeyCastQuest::class);
+        $output = new TypeScriptRenderer()->renderModel($model, [], [$model], []);
+
+        $this->assertStringContainsString('  description: unknown[] | Record<string, unknown> | null;', $output);
+        $this->assertStringContainsString('  rewards: Record<string, number> | null;', $output);
     }
 }
