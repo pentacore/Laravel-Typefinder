@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { compileMatcher } from '../src/matcher';
+import { compileMatcher, normalisePath } from '../src/matcher';
 
 describe('compileMatcher', () => {
     it('returns true for files under a watched directory', () => {
@@ -58,5 +58,20 @@ describe('compileMatcher', () => {
     it('accepts watched directories with a trailing slash', () => {
         const match = compileMatcher(['/app/Models/']);
         expect(match('/app/Models/User.php')).toBe(true);
+    });
+});
+
+describe('normalisePath', () => {
+    it('turns backslashes forward and trims trailing slashes', () => {
+        expect(normalisePath('C:\\app\\Models\\\\')).toBe('C:/app/Models');
+        expect(normalisePath('/app/Models///')).toBe('/app/Models');
+        expect(normalisePath('///')).toBe('');
+    });
+
+    it('stays linear on long runs of slashes', () => {
+        const path = `${'/'.repeat(100_000)}x`;
+        const start = performance.now();
+        expect(normalisePath(path)).toBe(path);
+        expect(performance.now() - start).toBeLessThan(100);
     });
 });

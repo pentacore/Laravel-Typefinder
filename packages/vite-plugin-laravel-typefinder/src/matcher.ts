@@ -1,4 +1,15 @@
-export const normalisePath = (path: string): string => path.replace(/\\/g, '/').replace(/\/+$/, '');
+/**
+ * Forward slashes, without trailing ones. The trailing slashes are trimmed in
+ * a loop: the regex `/\/+$/` backtracks polynomially on long runs of `/`.
+ */
+export const normalisePath = (path: string): string => {
+    const forward = path.replace(/\\/g, '/');
+    let end = forward.length;
+    while (end > 0 && forward[end - 1] === '/') {
+        end--;
+    }
+    return forward.slice(0, end);
+};
 
 /**
  * Matches `.php` files under any of the given directories by plain prefix
