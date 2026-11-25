@@ -1,3 +1,30 @@
+## [8.4.0](https://github.com/pentacore/Laravel-Typefinder/compare/v8.3.2...v8.4.0) (2026-11-25)
+
+### Features
+
+* prefix request type names with the key of a keyed requests path ([#223](https://github.com/pentacore/Laravel-Typefinder/issues/223)) ([c3a6aa2](https://github.com/pentacore/Laravel-Typefinder/commit/c3a6aa2522e40e430d7eee106dd77be6a2fecdee))
+
+### Bug Fixes
+
+* broadcasting payload, name and abstract-class audit fixes ([#216](https://github.com/pentacore/Laravel-Typefinder/issues/216)) ([ad8d34e](https://github.com/pentacore/Laravel-Typefinder/commit/ad8d34e0c27ae2cea841bc2819edca5ff47e8eb3))
+* emit relation keys snake-cased as toArray() serialises them ([#224](https://github.com/pentacore/Laravel-Typefinder/issues/224)) ([4dbba24](https://github.com/pentacore/Laravel-Typefinder/commit/4dbba24c0a06229e0c7c5d58a0e2601b972b34cd))
+* honour models.include_relationships ([6adb5a4](https://github.com/pentacore/Laravel-Typefinder/commit/6adb5a48d25e587c077ccef068f1b224285942cc))
+* merge type imports from the same module into one line ([#225](https://github.com/pentacore/Laravel-Typefinder/issues/225)) ([f4b3096](https://github.com/pentacore/Laravel-Typefinder/commit/f4b3096c1bca35e5a94a9955e4c1ceefc9f7f9e8))
+* model audit (morph targets, column and cast types, visibility, overrides, accessors, pivots) ([#221](https://github.com/pentacore/Laravel-Typefinder/issues/221)) ([669877b](https://github.com/pentacore/Laravel-Typefinder/commit/669877bf4651d57a2034cdd190db56b43466a291))
+* pipeline audit fixes for incremental runs, output pruning, reporting and the watch worker ([#215](https://github.com/pentacore/Laravel-Typefinder/issues/215)) ([b794cec](https://github.com/pentacore/Laravel-Typefinder/commit/b794cecc321f334db6a832fe531568fd4af3ddc5))
+* quote non-identifier keys and escape string literals in every renderer ([dccee19](https://github.com/pentacore/Laravel-Typefinder/commit/dccee197fd632a2f0d1c6520bbe996627ff72a7e))
+* regen on file create/delete, show generator errors, map container paths in Vite plugin ([a9cf071](https://github.com/pentacore/Laravel-Typefinder/commit/a9cf071201c17fdef7c47dd58081e192c09b2708))
+* request confirmation keys, nullable items, array:keys shapes and override keys ([#217](https://github.com/pentacore/Laravel-Typefinder/issues/217)) ([14a5cf6](https://github.com/pentacore/Laravel-Typefinder/commit/14a5cf631b117e8f4da0cc4ad25803000709e37f))
+* request rule typing — normalise rules once, rule objects, in values, Rule::when ([#212](https://github.com/pentacore/Laravel-Typefinder/issues/212)) ([4e9c893](https://github.com/pentacore/Laravel-Typefinder/commit/4e9c89314c4885b75373582a092a61e20babd4db))
+* resources, Inertia pages, PHPDoc mapping and helpers audit ([#219](https://github.com/pentacore/Laravel-Typefinder/issues/219)) ([ec3c2dd](https://github.com/pentacore/Laravel-Typefinder/commit/ec3c2dd80bbdbfde6802d75f27ff838b7a16d0c0))
+* run a full regen when a migration changes in the Vite plugin ([#218](https://github.com/pentacore/Laravel-Typefinder/issues/218)) ([a4ec86b](https://github.com/pentacore/Laravel-Typefinder/commit/a4ec86b37f3f756139533af08a9e162e189bb712))
+* time out a hung regen and keep a queued full regen full in the Vite plugin ([fd52c2d](https://github.com/pentacore/Laravel-Typefinder/commit/fd52c2de40db3ff2e9766fb427efb58f858cbdd9))
+* trim trailing slashes without a backtracking regex in the Vite plugin ([#229](https://github.com/pentacore/Laravel-Typefinder/issues/229)) ([2ae5ce3](https://github.com/pentacore/Laravel-Typefinder/commit/2ae5ce3afd4e8d4500ce3fd79dc08ac7b8c8dcbf))
+
+### Dependencies and Other Build Updates
+
+* commit package-lock.json with each release ([6a65e9a](https://github.com/pentacore/Laravel-Typefinder/commit/6a65e9ad15753fd413218a54018f9ff9acc505cb))
+
 ## [8.3.2](https://github.com/pentacore/Laravel-Typefinder/compare/v8.3.1...v8.3.2) (2026-11-25)
 
 ### Bug Fixes
