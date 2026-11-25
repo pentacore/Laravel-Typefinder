@@ -531,28 +531,32 @@ final class Generator
     }
 
     /**
-     * @param  list<array{event_class: string, broadcast_name: string, channels: list<array{type: string, name: string}>}>  $events
+     * Fail when two events share a broadcast name: `BroadcastEvents` is keyed
+     * by name alone, whatever their channels (#166).
+     *
+     * @param  list<array{event_class: string, broadcast_name: string}>  $events
      */
     private function assertNoBroadcastCollisions(array $events): void
     {
-        $byKey = [];
+        $byName = [];
         foreach ($events as $event) {
-            foreach ($event['channels'] as $channel) {
-                $key = sprintf('%s:%s:%s', $channel['type'], $channel['name'], $event['broadcast_name']);
-                $byKey[$key][] = $event['event_class'];
-            }
+            $byName[$event['broadcast_name']][] = $event['event_class'];
         }
 
-        $conflicts = array_filter($byKey, fn (array $classes): bool => count($classes) > 1);
+        $conflicts = array_filter($byName, fn (array $classes): bool => count($classes) > 1);
         if ($conflicts === []) {
             return;
         }
 
+        ksort($conflicts);
         $lines = [];
-        foreach ($conflicts as $key => $classes) {
-            $lines[] = $key.': '.implode(', ', $classes);
+        foreach ($conflicts as $name => $classes) {
+            $lines[] = sprintf('  %s: %s', $name, implode(', ', $classes));
         }
 
-        throw new \RuntimeException("Duplicate broadcast event on channel:\n".implode("\n", $lines));
+        throw new \RuntimeException(
+            "Several broadcast events would be emitted under the same name:\n".implode("\n", $lines)."\n"
+            .'Give one a distinct broadcastAs() or #[TypefinderBroadcast(as: …)], or mark it #[TypefinderIgnore].',
+        );
     }
 }

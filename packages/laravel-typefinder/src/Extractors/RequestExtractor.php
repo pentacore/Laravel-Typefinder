@@ -165,14 +165,20 @@ class RequestExtractor
 
     /**
      * Whether a class gets a request type of its own: a form request, not
-     * `#[TypefinderIgnore]`d.
+     * abstract, not `#[TypefinderIgnore]`d.
      *
      * @param  class-string  $requestClass
      */
     public function isEmittable(string $requestClass): bool
     {
-        return is_subclass_of($requestClass, FormRequest::class)
-            && new ReflectionClass($requestClass)->getAttributes(TypefinderIgnore::class, ReflectionAttribute::IS_INSTANCEOF) === [];
+        if (! is_subclass_of($requestClass, FormRequest::class)) {
+            return false;
+        }
+
+        $reflectionClass = new ReflectionClass($requestClass);
+
+        return ! $reflectionClass->isAbstract()
+            && $reflectionClass->getAttributes(TypefinderIgnore::class, ReflectionAttribute::IS_INSTANCEOF) === [];
     }
 
     /**
