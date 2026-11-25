@@ -1,3 +1,9 @@
+## [8.3.1](https://github.com/pentacore/Laravel-Typefinder/compare/v8.3.0...v8.3.1) (2026-11-25)
+
+### Bug Fixes
+
+* declare T on a morphTo model with no inverse relation ([5737b38](https://github.com/pentacore/Laravel-Typefinder/commit/5737b388cbd8a1424390dc70030b14b81714cdea))
+
 ## [8.3.0](https://github.com/pentacore/Laravel-Typefinder/compare/v8.2.5...v8.3.0) (2026-11-23)
 
 ### Features
