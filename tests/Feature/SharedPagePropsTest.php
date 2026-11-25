@@ -80,7 +80,10 @@ final class SharedPagePropsTest extends TestCase
             TS, $output);
     }
 
-    /** #237: a Typefinder-only return tag wins; #236: narrowed keys are kept. */
+    /**
+     * #237: a Typefinder-only return tag wins; #236: narrowed keys are kept;
+     * #239: a fully qualified class name, which Rector cannot drop the import of, resolves.
+     */
     public function test_typefinder_return_declares_the_serialised_props(): void
     {
         $enums = [['name' => 'PostStatus', 'fqcn' => PostStatus::class]];
@@ -100,6 +103,7 @@ final class SharedPagePropsTest extends TestCase
               nav: { unread: number };
               can: Partial<Record<PostStatus, boolean>>;
               modes: Partial<Record<'light' | 'dark', string>>;
+              qualified: Partial<Record<PostStatus, number>>;
             };
             TS, $output);
     }
