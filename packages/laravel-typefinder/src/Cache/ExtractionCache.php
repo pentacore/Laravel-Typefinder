@@ -11,14 +11,15 @@ namespace Pentacore\Typefinder\Cache;
  *
  * A file that yields no type (an ignored class, a helper) is recorded with a
  * null extraction: it is known and need not be read again until it changes.
- * Entries track the file's mtime and size at extraction time;
- * {@see self::isFresh()} compares those against the file on disk.
+ * Entries track the file's mtime and size at extraction time, and those of
+ * the files it builds on (parent classes, traits, cast classes);
+ * {@see self::isFresh()} compares those against the files on disk.
  *
- * Top-level invalidation (composer.lock change, config change) is enforced by
- * the static {@see self::load()} factory, which returns an empty cache if the
- * persisted hashes don't match the expected ones.
+ * Top-level invalidation (composer.lock change, config change, database
+ * schema change) is enforced by the static {@see self::load()} factory, which
+ * returns an empty cache if the persisted hashes don't match the expected ones.
  *
- * @phpstan-type Entry array{mtime: int, size: int, extraction: array<string, mixed>|null}
+ * @phpstan-type Entry array{mtime: int, size: int, extraction: array<string, mixed>|null, deps?: array<string, array{0: int, 1: int}>}
  */
 final class ExtractionCache
 {
@@ -29,15 +30,19 @@ final class ExtractionCache
 
     private bool $restored = false;
 
+    /** @var array<string, array<string, Entry>> the entries as they were persisted, deleted files included */
+    private array $persisted = [];
+
     public function __construct(
         private readonly string $path,
         private readonly string $composerLockHash,
         private readonly string $configHash,
+        private readonly string $schemaHash = '',
     ) {}
 
-    public static function load(string $path, string $composerLockHash, string $configHash): self
+    public static function load(string $path, string $composerLockHash, string $configHash, string $schemaHash = ''): self
     {
-        $cache = new self($path, $composerLockHash, $configHash);
+        $cache = new self($path, $composerLockHash, $configHash, $schemaHash);
 
         if (! is_file($path)) {
             return $cache;
@@ -66,6 +71,10 @@ final class ExtractionCache
             return $cache;
         }
 
+        if (($decoded['schema_hash'] ?? null) !== $schemaHash) {
+            return $cache;
+        }
+
         if (($decoded['schema_version'] ?? null) !== self::SCHEMA_VERSION) {
             return $cache;
         }
@@ -77,6 +86,7 @@ final class ExtractionCache
 
         /** @var array<string, array<string, Entry>> $entries */
         $cache->entries = $entries;
+        $cache->persisted = $entries;
         $cache->dropMissingFiles();
         $cache->restored = true;
 
@@ -94,8 +104,9 @@ final class ExtractionCache
 
     /**
      * @param  array<string, mixed>|null  $extraction  null when the file yields no type
+     * @param  list<string>  $dependencies  other files the extraction depends on
      */
-    public function put(string $absolutePath, string $category, ?array $extraction): void
+    public function put(string $absolutePath, string $category, ?array $extraction, array $dependencies = []): void
     {
         clearstatcache(true, $absolutePath);
         $mtime = @filemtime($absolutePath);
@@ -105,15 +116,22 @@ final class ExtractionCache
             return;
         }
 
+        $deps = [];
+        foreach ($dependencies as $dependency) {
+            clearstatcache(true, $dependency);
+            $deps[$dependency] = [(int) @filemtime($dependency), (int) @filesize($dependency)];
+        }
+
         $this->entries[$category][$absolutePath] = [
             'mtime' => $mtime,
             'size' => $size,
             'extraction' => $extraction,
-        ];
+        ] + ($deps === [] ? [] : ['deps' => $deps]);
     }
 
     /**
-     * Whether the file is unchanged since it was last recorded for the category.
+     * Whether the file, and every file it was recorded as depending on, is
+     * unchanged since it was last recorded for the category.
      */
     public function isFresh(string $absolutePath, string $category): bool
     {
@@ -123,8 +141,18 @@ final class ExtractionCache
         }
 
         clearstatcache(true, $absolutePath);
+        if (@filemtime($absolutePath) !== $entry['mtime'] || @filesize($absolutePath) !== $entry['size']) {
+            return false;
+        }
 
-        return @filemtime($absolutePath) === $entry['mtime'] && @filesize($absolutePath) === $entry['size'];
+        foreach ($entry['deps'] ?? [] as $dependency => [$mtime, $size]) {
+            clearstatcache(true, $dependency);
+            if ((int) @filemtime($dependency) !== $mtime || (int) @filesize($dependency) !== $size) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     public function forget(string $absolutePath, string $category): void
@@ -149,6 +177,20 @@ final class ExtractionCache
         return $out;
     }
 
+    /**
+     * The extractions of the previous run, of files that have since been
+     * deleted too: what the output was generated from.
+     *
+     * @return array<string, array<string, mixed>>
+     */
+    public function persistedEntriesByCategory(string $category): array
+    {
+        return array_filter(array_map(
+            static fn (array $entry): ?array => $entry['extraction'],
+            $this->persisted[$category] ?? [],
+        ));
+    }
+
     public function persist(): void
     {
         $dir = dirname($this->path);
@@ -162,6 +204,7 @@ final class ExtractionCache
             'schema_version' => self::SCHEMA_VERSION,
             'composer_lock_hash' => $this->composerLockHash,
             'config_hash' => $this->configHash,
+            'schema_hash' => $this->schemaHash,
             'entries' => $this->entries,
         ];
 

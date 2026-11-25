@@ -67,7 +67,7 @@ This copies `config/typefinder.php` into your application's `config/` directory.
 php artisan typefinder:generate
 ```
 
-Scans configured directories, resolves types, and writes `.d.ts` files to `output_path`. Only files whose content has changed are rewritten; stale generated files are pruned automatically. By default the `output_path` is added to your project `.gitignore` on first run (`gitignore_generated`). Decide whether to commit the output before setting up CI; see [Using typefinder in CI](#using-typefinder-in-ci). Warnings from the run (unknown column types, skipped classes, and so on) are printed as `[typefinder] warning: …` lines.
+Scans configured directories, resolves types, and writes `.d.ts` files to `output_path`. Only files whose content has changed are rewritten; stale generated files are pruned automatically. By default the `output_path` is added to your project `.gitignore` on first run (`gitignore_generated`), unless it is outside the project directory. The output of a category you disable is removed on the next run. Decide whether to commit the output before setting up CI; see [Using typefinder in CI](#using-typefinder-in-ci). Warnings from the run (unknown column types, skipped classes, and so on) are printed as `[typefinder] warning: …` lines.
 
 ### Flags
 
@@ -77,7 +77,7 @@ Scans configured directories, resolves types, and writes `.d.ts` files to `outpu
 | `--debug` | Print line-oriented diagnostic output prefixed with `[typefinder]`. Includes per-class parsing lines so you can pinpoint a failing class. |
 | `--json` | Output a single JSON object to stdout (machine-readable, used by the Vite plugin). |
 | `--strict` | Exit non-zero when the run produced any warning (unknown column types, casts with no TypeScript mapping, PHPDoc fields emitted as `unknown`, skipped classes, …). Combine with `--check` for a CI gate on committed output, or add it to the regular generate step in CI. |
-| `--only=<path>` | Re-extract the given absolute paths, plus any source file that changed since the last run, instead of every file, then rewrite what that changes in the output. Repeatable (`--only=/a/Foo.php --only=/a/Bar.php`). Leaves the same output as a full run; without the cache of an earlier run it is a full run. A file that cannot be extracted keeps the type it had, is reported as an error and makes the command exit non-zero. Used by the Vite plugin's watch loop for incremental regeneration; rarely useful by hand. |
+| `--only=<path>` | Re-extract the given absolute paths, plus any source file that changed since the last run, instead of every file, then rewrite what that changes in the output. Repeatable (`--only=/a/Foo.php --only=/a/Bar.php`). A cached file is also extracted again when a parent class, a trait or (for a model) a cast class it uses changed, and every resource is extracted again when the set of models or enums that get a type changed. A change to the migrations (a migration file written or edited, or one the database ran) makes it a full run, as does a missing cache of an earlier run. What it does not see: a schema change made without a migration, `Typefinder::registerCast()` calls and the `casts.type_map` of a running watcher (they are read when the process boots), and a class an extraction reads that is none of the above (an imported `@phpstan-type` alias). Run a full `typefinder:generate` after those. A file that cannot be extracted keeps the type it had, is reported as an error and makes the command exit non-zero. Used by the Vite plugin's watch loop for incremental regeneration; rarely useful by hand. |
 
 ### Watching for changes
 
@@ -87,7 +87,7 @@ php artisan typefinder:watch
 
 Starts a long-lived generator process that reads incremental regeneration requests from stdin (NDJSON) and emits status lines on stdout. Not intended for direct interactive use — the [Vite plugin](../vite-plugin-laravel-typefinder/) spawns and drives it during `vite dev` for 20–60ms per-change latency. Exits on `SIGINT` / `SIGTERM`.
 
-Each request is answered by a fork of the watcher, so an edited class is read from its file as it is now (a PHP process cannot reload a class it has loaded). Without the `pcntl` extension, or once a class the application loads while booting has been edited, each request starts a new PHP process instead: the same output, a Laravel boot slower.
+Each request is answered by a fork of the watcher, so an edited class is read from its file as it is now (a PHP process cannot reload a class it has loaded). Without the `pcntl` extension, or once a class the application loads while booting has been edited, each request starts a new PHP process instead: the same output, a Laravel boot slower. A worker that has not answered after `watch.worker_timeout` seconds (default 300, `0` for no limit) is stopped and the request is reported as failed, so one hung extraction does not block the later ones.
 
 ### Using typefinder in CI
 
@@ -122,7 +122,7 @@ Choose one of two workflows. They differ in whether the generated files are comm
 
 Every run produces a single tree under `output_path` (default `resources/js/typefinder/`). The categories below are each gated by config — most are default-on, the ones that depend on optional packages are opt-in.
 
-Each type is named after its class's short name, so two classes with the same short name in one category (for example `Api\StoreUserRequest` and `Web\StoreUserRequest`) would produce the same file. The run fails with both class names instead; rename one, mark one `#[TypefinderIgnore]`, or narrow that category's `paths`. The same name in two different categories (a `Role` model and a `Role` enum) only warns, because the top-level `index.d.ts` then exports `Role` twice. Import it from its category barrel instead.
+Each type is named after its class's short name, so two classes with the same short name in one category (for example `Api\StoreUserRequest` and `Web\StoreUserRequest`) would produce the same file. The run fails with both class names instead; rename one, mark one `#[TypefinderIgnore]`, or narrow that category's `paths`. For form requests, [keyed paths](#same-name-requests-in-several-directories) emit both under prefixed names. The same name in two different categories (a `Role` model and a `Role` enum) only warns, because the top-level `index.d.ts` then exports `Role` twice. Import it from its category barrel instead.
 
 Every category has a barrel (`models/index.d.ts`, …) that re-exports every type of every file, so the companion types are importable from it too:
 
@@ -209,7 +209,9 @@ Handy for `<select options={Object.values(PostStatus)}>` and similar runtime pat
 
 ### Form Requests
 
-Validation rules map to TypeScript types. `required` and `present` → non-optional; `nullable` → adds `| null`; `sometimes` (also next to `required` or `present`) and conditional `required_*` / `present_*` rules → optional. Fields without `required` or `present` are optional. `prohibited` → `never` (the key may only be missing or empty); the conditional `prohibited_if` / `prohibited_unless` keep the type of the key's other rules.
+Validation rules map to TypeScript types. `required` and `present` → non-optional; `nullable` → adds `| null`; `sometimes` (also next to `required` or `present`) and conditional `required_*` / `present_*` rules → optional. Fields without `required` or `present` are optional. `prohibited` and `missing` → `never` (the key may only be missing or empty); the conditional `prohibited_if` / `missing_if` / … keep the type of the key's other rules. `accepted` and `declined` make the key required and allow only the values they accept: `true | 'yes' | 'on' | 1 | '1' | 'true'` (and the `false | 'no' | …` mirror).
+
+A primitive rule (`string`, `integer`, `numeric`, `boolean`, `array`, `list`, `file`, `image`) decides the type wherever it sits in the list; a format rule (`digits`, `regex`, `email`, `date_format`, `mimes`, `extensions`, …) only when there is none, so `['digits:4', 'string']` is a `string`. Laravel's rule objects are typed like their string form: `Rule::date()`, `Rule::numeric()`, `Rule::email()`, `Rule::url()`, `Password::defaults()`, `File::image()`, …. `Rule::when()` is the union of both branches, optional unless both require the key; `Rule::forEach()` is called with no item value to read its rules. `rules()` is called through the container, so its parameters are injected; a request without `rules()` is `Record<string, never>`.
 
 ```typescript
 import type { PostStatus } from '../enums';
@@ -225,7 +227,7 @@ export type StorePostRequest = {
 
 `Rule::enum(PostStatus::class)` is the enum's type. Narrowed with `->only([...])` or `->except([...])` it is the same subset the rule accepts: `Extract<PostStatus, 'draft' | 'published'>` or `Exclude<PostStatus, 'archived'>`.
 
-`Rule::in([...])` and `in:a,b` give a union of the listed values: `'a' | 'b'`, or `1 | 2` on a numeric field (`integer`, `numeric`, …). On an `array` field they type the items: `('a' | 'b')[]`. Like `Rule::enum()`, they narrow the field wherever they sit in the rule list, so `['string', Rule::in([...])]` and `[Rule::in([...]), 'string']` give the same type.
+`Rule::in([...])` and `in:a,b` give a union of the listed values: `'a' | 'b'`, or `1 | 2` on a numeric field (`integer`, `numeric`, …). `Rule::in()` keeps the values' own types (`Rule::in([1, 2])` is `1 | 2`, `Rule::in([true, false])` is `boolean`, the cases of one backed enum are that enum narrowed with `Extract<>`). On an `array` field they type the items: `('a' | 'b')[]`. Like `Rule::enum()`, they narrow the field wherever they sit in the rule list, so `['string', Rule::in([...])]` and `[Rule::in([...]), 'string']` give the same type.
 
 Dotted rule names nest to any depth, and a `*` segment means "array of":
 
@@ -252,8 +254,14 @@ export type StoreWebhookRequest = {
 ```
 
 - A parent with no rule of its own (`address.city` without `address`) is still emitted. It is required when one of its keys is.
+- `nullable` on a `.*` item makes the items nullable: `(string | null)[]`, `({ a: string } | null)[]`.
+- `array:a,b` allows only the listed keys: each is an optional key of the object, `unknown` when no rule names it. With `.*` rules (`'g' => 'array:anime,tv'`, `'g.*.notes' => …`) each listed key takes the `.*` shape.
+- `confirmed` adds the key it compares with: `{key}_confirmation` beside the key (nested keys too), or the key named by `confirmed:other`. It takes the key's type and is required and nullable as the key is.
 - A key that is not a TypeScript identifier is quoted (`'content-type'?: string`). An escaped dot (`'config.app\.name'`) stays one key (`'app.name'`).
 - Two shapes cannot be expressed and produce a warning (so `--strict` fails): a wildcard at the top level (`'*.name'`, the body itself is a list) is left out, and a parent with both `parent.*` and named keys keeps the array shape and drops the named keys. Use `#[TypefinderOverrides]` for those fields.
+- A `rules()` that branches on request state (`$this->route()`, `$this->user()`, `request()`, … in the condition of an `if`, a ternary or a `match`) is typed from the branch taken with no route, user or input bound, with a warning.
+
+`#[TypefinderOverrides]` on a request replaces the type of a key and adds keys no rule names (required). Dotted keys reach nested fields: `'user.name' => 'Foo'`, `'lines.*.sku' => 'string'`.
 
 With `extract_nested: true`, every nested object becomes a named type, named after its path (`StorePostRequestMetadata`, `StoreWebhookRequestRequestHeaders`).
 
@@ -285,9 +293,24 @@ export type SetValueRequestQuery = {
 - The tag is read from the source of the `rules()` method the request uses (its own, an inherited one or one from a trait), on array items with a string-literal key. A tag on any other key (a constant, an expression) is ignored with a warning.
 - A tag on a spread item (`/** @query */ ...$this->targetRules()`) tags every key the spread brings in, for this request only: another request that spreads the same helper without the tag keeps those keys in its body. The keys are read from the array literals the spread method returns (a nested spread, `array_merge(…)` and `return $this->other()` are followed, through the same calls as below). A spread whose keys cannot be read that way (a method that returns a variable) is ignored with a warning.
 - Tags are also read from the methods that `rules()` takes rules from: `parent::rules()`, a helper called as `$this->m()`, `self::m()` or `static::m()`, and the `rules()` of another class written as `new X()->rules()`, `X::createFrom($this)->rules()` (any static factory of `X`), `app(X::class)->rules()` or `resolve(X::class)->rules()`. A call that does not name the class (`$other->rules()`) is not followed.
-- A tagged key takes its whole top-level field along: tagging `filter` or `filter.status` puts all of `filter` in the query type.
+- A tagged key takes its whole top-level field along: tagging `filter` or `filter.status` puts all of `filter` in the query type. An untagged key that goes along this way (`filter.page` beside a tagged `filter.status`) is reported with a warning; the keys below a tagged key are not. The confirmation key of a tagged `confirmed` key goes along too.
 - A request without tagged keys gets no `{Name}Query` type. One with only tagged keys gets `Record<string, never>` as its request type.
 - `{Name}Query` lives in the request's file and is re-exported by the `requests` barrel, like the `{Model}Create` / `{Model}Update` companions of a model.
+
+#### Same-name requests in several directories
+
+Requests are named after their short name, so `Api\StoreUserRequest` and `Web\StoreUserRequest` collide and fail the run. Give their directories a string key in `requests.paths` and the key becomes a prefix of every request under that directory:
+
+```php
+'requests' => [
+    'paths' => [
+        'Api' => app_path('Http/Requests/Api'),
+        'Web' => app_path('Http/Requests/Web'),
+    ],
+],
+```
+
+This emits `requests/ApiStoreUserRequest.d.ts` (`ApiStoreUserRequest`, and `ApiStoreUserRequestQuery` and nested types named from it) and `requests/WebStoreUserRequest.d.ts`. A list entry keeps the short name, and keyed and list entries can be mixed; when directories nest, the innermost one decides. A key must be a valid TypeScript identifier.
 
 ### Pivots
 
@@ -308,8 +331,10 @@ Classes extending `JsonResource`. The type comes from the first of these that ap
 1. **Explicit shape** via `#[TypefinderResource(shape: [...])]`.
 2. **Model extension** via `#[TypefinderResource(model: User::class, omit: [...], extend: [...])]` → `Omit<User, ...> & { ... }`.
 3. **PHPDoc array shape** on `toArray()` — `@return array{…}` (or `@phpstan-return` / `@psalm-return`, which take precedence), or one composed from documented helpers / a documented parent `toArray()` (see [Composed shapes](#composed-shapes)). Applies whether or not the name convention is on.
-4. **Name convention** — `UserResource` → `User` automatically, when `User` is one of the models typefinder generates (found under `models.paths` and not ignored). Models from other packages and models outside `models.paths` are never matched.
-5. Otherwise the resource is skipped with a warning.
+4. **Resource collection** — a `ResourceCollection` subclass that does not override `toArray()` is a list of the resource it collects, found as Laravel finds it: `#[Collects]`, `$collects`, or `UserCollection` → `User` / `UserResource` in the same namespace. `export type UserCollection = UserResource[];` (the `{ data: … }` envelope is left to the `Wrapped*` / `*Paginated*` helpers).
+5. **Name convention** — `UserResource` → `User` automatically, when `User` is one of the models typefinder generates (found under `models.paths` and not ignored). Models from other packages and models outside `models.paths` are never matched.
+6. **Literal keys** — a `toArray()` declared in the resource itself that returns only literal-key arrays (no spread, helper call or computed key) is typed from those keys. `when*()`, `whenLoaded()`, `mergeWhen()` keys, and keys missing from another `return`, are optional. Values are typed where it is cheap and certain, otherwise `unknown`: scalar literals and casts, `new XResource(…)` / `XResource::make(…)` (`XResource`), `XResource::collection(…)` (`XResource[]`), nested literal arrays, the value of `when($condition, $value)`, and `$this->column` (`User['column']`) when the class docblock says `@mixin User` for a generated model.
+7. Otherwise the resource is skipped with a warning.
 
 `#[TypefinderIgnore]` skips a resource before any of these run.
 
@@ -350,7 +375,9 @@ Only an `array{…}` (or `object{…}`) shape counts. The `make:resource` stub's
 
 Only types typefinder generates resolve: models it generates, backed enums under `enums.paths`, and resources under `resources.paths`. Any other class (a vendor model, a plain value object), and types with no JSON equivalent (`callable`, `Closure`, …), become `unknown` with a warning naming the resource and field.
 
-The name convention assumes the resource returns the model's attributes. If your resources rename fields, flatten relations or add computed keys, the inferred type is wrong and nothing flags it. Set `'resources.infer_from_model_name' => false` to turn the convention off; every resource then needs an attribute or a PHPDoc shape (or `#[TypefinderIgnore]`), and undeclared ones are reported as warnings.
+The same holds outside PHPDoc: a class-string in a `#[TypefinderResource]` `shape` / `extend` / `model`, a `#[TypefinderPage]` or `#[TypefinderBroadcast]` prop, or a model relation that names a model, resource or enum with no generated type (`#[TypefinderIgnore]`d, outside the configured paths, or skipped) becomes `unknown` with a warning, never an import of a file that does not exist.
+
+The name convention assumes the resource returns the model's attributes. If your resources rename fields, flatten relations or add computed keys, the inferred type is wrong and nothing flags it. Set `'resources.infer_from_model_name' => false` to turn the convention off; every resource then needs an attribute, a PHPDoc shape or a literal-key `toArray()` (or `#[TypefinderIgnore]`), and the others are reported as warnings.
 
 #### Composed shapes
 
@@ -390,13 +417,13 @@ export type PostResource = {
 - An open helper shape (`array{…, ...}`) composes only as the first part of a `return`, and not in one that uses `+` or a merge call; the result is open.
 - Merge calls (`merge()`, `mergeWhen()`, `mergeUnless()`) → not composed when they appear in a helper or parent `toArray()` without a `@return` shape, in a `return` that also uses `+`, or when one may add nothing (an empty array, or a helper whose keys are all optional) and more keys follow it.
 - A literal key (`'note' => …`) has no documented type: it is `unknown`, and the run warns once per resource: `{R}::toArray() composes a shape but "note" has no documented type — add @return array{…} to toArray()`.
-- A body made only of literal keys is not composed (the name convention applies as before), nor is `parent::toArray()` when the parent is `JsonResource` itself (that is the model's attributes). If any part cannot be typed — a variable, a call on another object, a computed key, an undocumented helper that does not compose — nothing is composed. "Not composed" always means the resource falls back as before (next tier: name convention, or skipped), with no warning.
+- A body made only of literal keys is not composed (the name convention applies, then the literal-keys tier), nor is `parent::toArray()` when the parent is `JsonResource` itself (that is the model's attributes). If any part cannot be typed — a variable, a call on another object, a computed key, an undocumented helper that does not compose — nothing is composed. "Not composed" always means the resource falls back as before (next tier: name convention, or skipped), with no warning.
 
 **Upgrading (composed shapes):** a resource whose undocumented `toArray()` returns parts of documented helper methods or of a documented parent `toArray()` is now typed from the composed shape instead of the name convention or the parent's doc. Add an explicit `@return array{…}` to `toArray()`, or `#[TypefinderResource(model: User::class)]`, to control the type.
 
 **Upgrading:** a resource that already documents `@return array{…}` on `toArray()` and has no `#[TypefinderResource]` attribute now gets that shape instead of the same-named model. To keep the old type, add `#[TypefinderResource(model: User::class)]`. This release also adds `nikic/php-parser` ^5 and `phpstan/phpdoc-parser` ^2 as dependencies; apps pinned to phpdoc-parser ^1 must upgrade.
 
-**Known limits:** in watch / `--only` runs, editing a parent resource's `toArray()` doc, a trait that provides `toArray()`, or a class that defines an imported `@phpstan-type` alias, does not re-render the resources that use it; run a full `typefinder:generate` to refresh. Trait conflict resolution (`insteadof` / `as`) is not considered: the first trait in `use` order that declares `toArray()` (or a helper) is read. Composition follows only `$this->m()`, `self::m()`, `static::m()` and `parent::toArray()` calls, at most 3 delegations deep from `toArray()` (a recursive helper is not composed), and only a `toArray()` declared in the resource class itself, not an inherited or trait-provided one. Editing a helper in a parent class or trait does not re-render the resources that use it in watch / `--only` runs. In watch mode, method bodies are re-read from disk on every change, but attributes (`#[TypefinderResource]`, `#[TypefinderPage]`) of a class the watcher has already loaded keep their old values, so drift warnings may compare the new code with the old attribute until the dev server restarts.
+**Known limits:** in watch / `--only` runs, editing a class that defines an imported `@phpstan-type` alias does not re-render the resources that use it; run a full `typefinder:generate` to refresh. (An edited parent resource or trait does: the resources that extend or use it are extracted again.) Trait conflict resolution (`insteadof` / `as`) is not considered: the first trait in `use` order that declares `toArray()` (or a helper) is read. Composition follows only `$this->m()`, `self::m()`, `static::m()` and `parent::toArray()` calls, at most 3 delegations deep from `toArray()` (a recursive helper is not composed), and only a `toArray()` declared in the resource class itself, not an inherited or trait-provided one. In watch mode, method bodies are re-read from disk on every change, but attributes (`#[TypefinderResource]`, `#[TypefinderPage]`) of a class the watcher has already loaded keep their old values, so drift warnings may compare the new code with the old attribute until the dev server restarts.
 
 ### Pages (opt-in, `typefinder.inertia.enabled`)
 
@@ -408,13 +435,32 @@ Several actions can render the same component, for example `create` and `edit` s
 - A prop that only some actions declare, or that any action marks optional, becomes optional (`post?: …`).
 - One prop declared with different types in different actions fails the run, naming each `Class::method` and its type. If the type really varies, declare the union in every action.
 
+`pages.d.ts` also declares `SharedPageProps`, the props every page gets: Inertia's `errors` (`Record<string, string>`) and each key the `share()` method of your Inertia middleware (classes under `app/Http/Middleware` extending `Inertia\Middleware`) returns. Keys are `unknown` unless `share()` documents them:
+
+```php
+/**
+ * @return array{auth: array{user: User|null}, flash: array{message: string|null}}
+ */
+public function share(Request $request): array
+```
+
+`PageProps` entries do not include the shared props. Combine them where you read the props; a page's own prop wins over a shared one of the same name, as in Inertia:
+
+```typescript
+import type { PageName, PageProps, SharedPageProps } from '@/typefinder';
+
+type Props<N extends PageName> = Omit<SharedPageProps, keyof PageProps[N]> & PageProps[N];
+
+const { auth, post } = usePage<Props<'Posts/Show'>>().props;
+```
+
 ### Broadcasting (opt-in, `typefinder.broadcasting.enabled`)
 
 Consolidated `broadcasting.d.ts` with four maps: `BroadcastPublicChannels`, `BroadcastPrivateChannels`, `BroadcastPresenceChannels`, and a flat `BroadcastEvents` keyed by broadcast name. Classes implementing `ShouldBroadcast` are discovered automatically; `#[TypefinderBroadcast(payload: [...], channel: ...)]` overrides reflection for the tricky cases.
 
 ### Helpers (always emitted)
 
-`helpers.d.ts` ships nine generic response wrappers that work with *any* generated type:
+`helpers.d.ts` ships eleven generic response wrappers that work with *any* generated type:
 
 ```typescript
 // JsonResource / ResourceCollection envelopes
@@ -423,26 +469,28 @@ WrappedResourceCollection<T>            { data: T[] }
 
 // Paginated JsonResource collections
 PaginatedResourceCollection<T>          paginate()       — adds links + full meta
-CursorPaginatedResourceCollection<T>    cursorPaginate() — adds meta (next/prev cursor)
-SimplePaginatedResourceCollection<T>    simplePaginate() — adds meta (no total)
+CursorPaginatedResourceCollection<T>    cursorPaginate() — adds links (no first/last) + meta (next/prev cursor)
+SimplePaginatedResourceCollection<T>    simplePaginate() — adds links (no last) + meta (no total)
 
-// Raw model paginator (Model::paginate() without a Resource)
-PaginatedModel<T>                       PaginationFields & { data: T[] }
+// Raw model paginators (returned without a Resource)
+PaginatedModel<T>                       paginate()       — PaginationFields & { data: T[] }
 PaginationFields                        current_page, last_page, total, links, …
+SimplePaginatedModel<T>                 simplePaginate() — current_page, current_page_url, next_page_url, …
+CursorPaginatedModel<T>                 cursorPaginate() — next_cursor, prev_cursor, next_page_url, …
 
 // Error envelopes
 ValidationErrorResponse                 { message: string; errors: Record<string, string[]> }
 ErrorResponse                           { message: string }
 ```
 
-Consumers write `WrappedResource<UserResource>` or `PaginatedResourceCollection<PostResource>` at the fetch site. When you return a raw paginator from `Model::paginate()` without wrapping in a Resource, use `PaginatedModel<User>` instead.
+Consumers write `WrappedResource<UserResource>` or `PaginatedResourceCollection<PostResource>` at the fetch site. When you return a raw paginator from `Model::paginate()` without wrapping in a Resource, use `PaginatedModel<User>` instead (`SimplePaginatedModel<User>` / `CursorPaginatedModel<User>` for `simplePaginate()` / `cursorPaginate()`).
 
 ### Drift checks
 
 Generation compares what you declare with what your code actually produces, by key name only (types are never compared), and reports mismatches as warnings:
 
 - **Resources:** the keys of a declared shape (`#[TypefinderResource(shape: [...])]`, or a PHPDoc `@return array{…}`) against the literal keys returned by the `toArray()` in the resource's own file. Inherited or trait-provided `toArray()` methods are not read.
-- **Model-typed resources:** a resource typed as a model (by the `{Model}Resource` name convention or `#[TypefinderResource(model: …)]`) against that model's type: columns (required, nullable or not), relations (optional), less `omit`, plus `extend`. Hidden columns are not in the model type, so returning one is reported. The resource's default `toArray()` and `return parent::toArray($request);` are not checked. Incremental runs (`--only`, watch) read the model's type from the extraction cache, which every run brings up to date with the model files first. A cached model does not notice a migration or an edited parent model or trait until the next full run.
+- **Model-typed resources:** a resource typed as a model (by the `{Model}Resource` name convention or `#[TypefinderResource(model: …)]`) against that model's type: columns (required, nullable or not), relations (optional), less `omit`, plus `extend`. Hidden columns are not in the model type, so returning one is reported. The resource's default `toArray()` and `return parent::toArray($request);` are not checked. Incremental runs (`--only`, watch) read the model's type from the extraction cache, which every run brings up to date with the model files first. A migration, or an edited parent model or trait, makes the models that depend on it extracted again.
 - **Pages:** the props of a `#[TypefinderPage]` against the props the same action passes to `Inertia::render()` or the `inertia()` helper for that component (literal arrays, `compact()`, chained `->with()` calls, and `Inertia::optional|lazy|defer` wrappers). Several `#[TypefinderPage]` attributes for one component on one action are merged first, as in the generated type: a prop is optional when any of them leaves it out or lists it in `optional`. Only with `typefinder.inertia.enabled`.
 
 The checks favour precision. When the code is not fully literal (a spread, `parent::toArray()`, a computed key), only "undeclared key" warnings are reported, since a key that is certainly returned and not declared is still a fact, while a missing key cannot be proven. Only renders the action makes directly are read, not renders in a helper method or a base controller: an action whose every return is such a call gets no page warnings, and an action that also returns anything other than a direct render of the page (a helper call, a redirect, another page, a bare `return;`) gets only "undeclared prop" warnings. A key is called conditional only when it is conditional everywhere it appears (`$this->when*()`, `unless()` or `transform()` without a default, `mergeWhen()`, `mergeUnless()`). An early `return [];` guard in `toArray()` does not make the other keys "not always returned". A file that fails to parse produces no drift warnings.
@@ -589,6 +637,10 @@ return [
     'casts' => [
         'type_map' => [],
     ],
+
+    'watch' => [
+        'worker_timeout' => 300,                        // seconds; 0 = no limit
+    ],
 ];
 ```
 
@@ -597,15 +649,17 @@ return [
 ```json
 {
   "success": true,
-  "counts": { "models": 3, "enums": 2, "requests": 2, "resources": 1, "pivots": 1 },
+  "counts": { "models": 4, "enums": 2, "requests": 2, "resources": 1 },
   "files": [
-    { "path": "models/Post.d.ts", "written": true },
-    { "path": "models/User.d.ts", "written": false }
+    { "path": "models/Post.d.ts", "written": true, "removed": false },
+    { "path": "resources/OldResource.d.ts", "written": false, "removed": true }
   ],
   "warnings": ["skipped App\\Http\\Resources\\Foo: no shape, model, or name-match"],
   "errors": []
 }
 ```
+
+`counts` is the number of types each output directory or file holds after the run (`models` includes pivots; `pages` and `broadcasting` count pages and events), changed or not. It is `{}` when nothing is generated. `files` lists only the files the run wrote or removed.
 
 ## Publishing the Claude Code skill
 

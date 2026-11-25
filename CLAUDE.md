@@ -83,9 +83,9 @@ Every generation run produces a tree under `output_path` (default `resources/js/
 | Form Requests | `requests/{Name}.d.ts` (plus `{Name}Query` for rule keys tagged `@query`, read by `Analysis\QueryRuleKeys` from `rules()` and the methods / other classes it takes rules from) | on | `app/Http/Requests/*` |
 | Pivots | `models/{Name}Pivot.d.ts` (alongside models — derived, not a separate category) | on | derived from `belongsToMany`/`morphToMany` |
 | Resources | `resources/{Name}.d.ts` | on | `app/Http/Resources/*` (`JsonResource` subclasses) |
-| Pages | `pages.d.ts` (single file) | **off** | controller actions tagged `#[TypefinderPage]` |
+| Pages | `pages.d.ts` (single file, plus `SharedPageProps` from `Analysis\InertiaSharedProps::shape()`) | **off** | controller actions tagged `#[TypefinderPage]` |
 | Broadcasting | `broadcasting.d.ts` (single file) | **off** | classes implementing `ShouldBroadcast` |
-| Helpers | `helpers.d.ts` (single file) | always | nine generic response wrappers (`WrappedResource`, `WrappedResourceCollection`, three resource paginators, `PaginatedModel` + `PaginationFields`, `ValidationErrorResponse`, `ErrorResponse`) — see README |
+| Helpers | `helpers.d.ts` (single file) | always | eleven generic response wrappers (`WrappedResource`, `WrappedResourceCollection`, three resource paginators, `PaginatedModel` + `PaginationFields`, `SimplePaginatedModel`, `CursorPaginatedModel`, `ValidationErrorResponse`, `ErrorResponse`) — see README |
 | Category barrels | `{category}/index.d.ts` | with the category | re-export every type of every file, companions included (`Generator::barrelExports()` leaves out a companion name another file also exports, with a warning) |
 | Top-level barrel | `index.d.ts` | always | re-exports every emitted category |
 
@@ -113,7 +113,7 @@ All under `Pentacore\Typefinder\Attributes\`. Detected via reflection; no trait 
 - `#[TypefinderIgnore]` — skip any model/enum/request/resource/controller/event.
 - `#[TypefinderOverrides(['col' => 'TSType'])]` — override or add fields on a model or form request.
 - `#[TypefinderWriteShape(serverFilled: [...], respectMassAssignment: null, immutableOnUpdate: [...])]` — tune the Create/Update companion shapes.
-- `#[TypefinderResource(shape / model / omit / extend)]` — declare a JSON resource's shape. Without the attribute, a PHPDoc `@return array{…}` on `toArray()` declares it (beats the name convention, applies even with `infer_from_model_name` off), or, with no shape on its own `toArray()`, `Resolvers\PhpDocShapeResolver` composes one from the documented helpers / `parent::toArray()` that body returns (`Resolvers\ShapeComposer`); then the class-name convention (`UserResource` → `User`).
+- `#[TypefinderResource(shape / model / omit / extend)]` — declare a JSON resource's shape. Without the attribute, a PHPDoc `@return array{…}` on `toArray()` declares it (beats the name convention, applies even with `infer_from_model_name` off), or, with no shape on its own `toArray()`, `Resolvers\PhpDocShapeResolver` composes one from the documented helpers / `parent::toArray()` that body returns (`Resolvers\ShapeComposer`); then a `ResourceCollection` subclass is a list of the resource it collects; then the class-name convention (`UserResource` → `User`); last, `Resolvers\LiteralShapeResolver` types a literal-key `toArray()` from its keys.
 - `#[TypefinderPage(component, props, optional)]` — tag a controller action method as an Inertia page (repeatable).
 - `#[TypefinderBroadcast(payload, as, channel, channelType)]` — override reflection for broadcast events with dynamic `broadcastOn()`/`broadcastWith()`.
 - `#[TypefinderCast('{ … }')]` — declare the TS shape for a custom cast class you own. For third-party casts, use `Typefinder::registerCast()` from a service provider instead.

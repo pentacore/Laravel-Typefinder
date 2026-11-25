@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Models\Post;
+use App\Models\Tag;
 use Pentacore\Typefinder\Analysis\KeyDriftDetector;
 use Pentacore\Typefinder\Extractors\ModelExtractor;
 use Pentacore\Typefinder\Renderers\TypeScriptRenderer;
@@ -121,7 +123,9 @@ final class SnakeCaseRelationKeysTest extends TestCase
     private function readShape(string $class): string
     {
         $model = $this->extractor()->extract($class);
-        $output = new TypeScriptRenderer()->renderModelFile($model, [], [$model], true, []);
+        // The related models, so their references are not dropped as dangling.
+        $models = [$model, $this->extractor()->extract(Post::class), $this->extractor()->extract(Tag::class)];
+        $output = new TypeScriptRenderer()->renderModelFile($model, [], $models, true, []);
 
         return (string) strstr($output, 'export type '.$model['name'].'Create', true);
     }

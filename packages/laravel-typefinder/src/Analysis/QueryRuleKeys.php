@@ -317,7 +317,7 @@ final class QueryRuleKeys
     /**
      * The AST of a method, read from the file that declares it.
      */
-    private static function methodNode(ReflectionMethod $method): ?ClassMethod
+    public static function methodNode(ReflectionMethod $method): ?ClassMethod
     {
         $file = $method->getFileName();
         $source = $file === false ? null : ParsedSource::forFile($file);

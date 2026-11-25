@@ -236,9 +236,14 @@ final class RequestQueryParametersTest extends TestCase
         );
     }
 
-    public function test_readable_tags_do_not_warn(): void
+    public function test_readable_tags_warn_only_about_an_untagged_sibling(): void
     {
-        $this->assertArrayNotHasKey('warnings', $this->requestExtractor->extract(QueryRulesRequest::class));
+        // `sort.direction` is tagged, `sort.by` goes along untagged (#162); the
+        // keys below the tagged `filter` do not warn.
+        $this->assertSame(
+            ["QueryRulesRequest: 'sort.by' is not tagged @query, but is in the query type: a query parameter is typed as its whole top-level key 'sort'"],
+            $this->requestExtractor->extract(QueryRulesRequest::class)['warnings'],
+        );
     }
 
     public function test_request_with_only_query_keys_has_an_empty_body(): void

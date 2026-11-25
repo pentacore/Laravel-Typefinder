@@ -86,6 +86,11 @@ typefinder({
     // the host Vite runs on. Needed when PHP runs in a container (Sail,
     // Docker): see "Sail and Docker" below.
     pathMap: undefined,
+
+    // Directories whose files change the database schema. A change there
+    // triggers a full regeneration. Defaults to `database/migrations` under
+    // the Vite root; `false` turns it off.
+    migrations: undefined,
 });
 ```
 
@@ -125,6 +130,8 @@ Symlinked project directories need no mapping: the plugin resolves symlinks on b
 A PHP process cannot reload a class it has loaded, so the watcher answers each request in a forked worker that reads the edited classes from the files as they are now. Forking needs PHP's `pcntl` extension. Without it (Windows, some Docker images), or once a class the application loads while booting (a service provider, for example) has been edited, each request starts a new PHP process instead: the same output, but a Laravel boot slower per change. The watcher says so once on stderr; in the second case, restarting the dev server makes it fast again.
 
 The watched paths are read from the watcher's startup handshake, which mirrors your `config/typefinder.php`. If you enable Inertia pages or broadcasting in the config, the plugin automatically watches those directories too — no manual `watch` array needed.
+
+Creating, editing or deleting a migration triggers a full regeneration. The schema itself changes only when the migration runs, and the watcher notices that on the next regeneration: after `php artisan migrate`, save any watched file (or send the `typefinder:full-regen` event) to pick up the new columns.
 
 Warnings and per-file failures of every regeneration, the initial one included, are written to stderr. A regeneration that gets no answer within `regenTimeoutMs` is reported as failed and the next one is sent.
 
