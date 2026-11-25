@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use Rector\CodingStyle\Rector\PostInc\PostIncDecToPreIncDecRector;
 use Rector\Config\RectorConfig;
 
 return RectorConfig::configure()
@@ -22,7 +21,4 @@ return RectorConfig::configure()
         earlyReturn: true,
         carbon: true,
         rectorPreset: true,
-    )
-    ->withSkip([
-        PostIncDecToPreIncDecRector::class,
-    ]);
+    );
