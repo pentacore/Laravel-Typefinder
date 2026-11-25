@@ -34,9 +34,7 @@ final class EnumSubsetRuleTest extends TestCase
     public function test_request_type_narrows_the_enum(): void
     {
         $expected = <<<'TS'
-            import type { Issue117Priority } from '../enums';
-            import type { Issue117Suit } from '../enums';
-            import type { PostStatus } from '../enums';
+            import type { Issue117Priority, Issue117Suit, PostStatus } from '../enums';
 
             export type Issue117EnumSubsetRequest = {
               only: Extract<PostStatus, 'draft' | 'published'>;
