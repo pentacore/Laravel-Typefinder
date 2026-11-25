@@ -1,0 +1,199 @@
+parameters:
+	ignoreErrors:
+		-
+			message: '#^Access to an undefined property PhpParser\\Node\\Expr\\CallLike\:\:\$args\.$#'
+			identifier: property.notFound
+			count: 2
+			path: packages/laravel-typefinder/src/Analysis/KeyDriftDetector.php
+
+		-
+			message: '#^Strict comparison using \!\=\= between non\-empty\-list\<non\-falsy\-string\> and array\{\} will always evaluate to true\.$#'
+			identifier: notIdentical.alwaysTrue
+			count: 4
+			path: packages/laravel-typefinder/src/Analysis/KeyDriftDetector.php
+
+		-
+			message: '#^Access to an undefined property PhpParser\\Node\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: packages/laravel-typefinder/src/Analysis/QueryRuleKeys.php
+
+		-
+			message: '#^Parameter \#1 \$call of static method Pentacore\\Typefinder\\Analysis\\QueryRuleKeys\:\:calledClass\(\) expects PhpParser\\Node\\Expr\\MethodCall\|PhpParser\\Node\\Expr\\StaticCall, PhpParser\\Node given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/laravel-typefinder/src/Analysis/QueryRuleKeys.php
+
+		-
+			message: '#^Call to method Pentacore\\Typefinder\\Analysis\\ReturnedArrayReader\:\:isThisCall\(\) with PhpParser\\Node\\Expr and ''mergeUnless'' will always evaluate to false\.$#'
+			identifier: method.impossibleType
+			count: 2
+			path: packages/laravel-typefinder/src/Analysis/ReturnedArrayReader.php
+
+		-
+			message: '#^Call to method Pentacore\\Typefinder\\Analysis\\ReturnedArrayReader\:\:isThisCall\(\) with PhpParser\\Node\\Expr and ''mergeWhen'' will always evaluate to false\.$#'
+			identifier: method.impossibleType
+			count: 2
+			path: packages/laravel-typefinder/src/Analysis/ReturnedArrayReader.php
+
+		-
+			message: '#^Variable \$outputPath on left side of \?\? always exists and is not nullable\.$#'
+			identifier: nullCoalesce.variable
+			count: 1
+			path: packages/laravel-typefinder/src/Commands/GenerateCommand.php
+
+		-
+			message: '#^Call to function is_string\(\) with \*NEVER\* will always evaluate to true\.$#'
+			identifier: function.alreadyNarrowedType
+			count: 1
+			path: packages/laravel-typefinder/src/Commands/WatchCommand.php
+
+		-
+			message: '#^Call to function is_string\(\) with null will always evaluate to false\.$#'
+			identifier: function.impossibleType
+			count: 1
+			path: packages/laravel-typefinder/src/Commands/WatchCommand.php
+
+		-
+			message: '#^Empty array passed to foreach\.$#'
+			identifier: foreach.emptyArray
+			count: 1
+			path: packages/laravel-typefinder/src/Commands/WatchCommand.php
+
+		-
+			message: '#^Offset ''id'' on array\{type\: ''regen''\} on left side of \?\? does not exist\.$#'
+			identifier: nullCoalesce.offset
+			count: 1
+			path: packages/laravel-typefinder/src/Commands/WatchCommand.php
+
+		-
+			message: '#^Offset ''id'' on array\{type\: string\} on left side of \?\? does not exist\.$#'
+			identifier: nullCoalesce.offset
+			count: 1
+			path: packages/laravel-typefinder/src/Commands/WatchCommand.php
+
+		-
+			message: '#^Offset ''paths'' on array\{type\: ''regen''\} on left side of \?\? does not exist\.$#'
+			identifier: nullCoalesce.offset
+			count: 1
+			path: packages/laravel-typefinder/src/Commands/WatchCommand.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>as" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: packages/laravel-typefinder/src/Extractors/BroadcastExtractor.php
+
+		-
+			message: '#^Instanceof between Illuminate\\Database\\Eloquent\\Relations\\Relation and Illuminate\\Database\\Eloquent\\Relations\\MorphToMany will always evaluate to false\.$#'
+			identifier: instanceof.alwaysFalse
+			count: 1
+			path: packages/laravel-typefinder/src/Extractors/ModelExtractor.php
+
+		-
+			message: '#^Parameter \#1 \$relation of method Pentacore\\Typefinder\\Extractors\\ModelExtractor\:\:extractPivotInfo\(\) expects Illuminate\\Database\\Eloquent\\Relations\\BelongsToMany, Illuminate\\Database\\Eloquent\\Relations\\Relation given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/laravel-typefinder/src/Extractors/ModelExtractor.php
+
+		-
+			message: '#^Binary operation "\+" between string and 0 results in an error\.$#'
+			identifier: binaryOp.invalid
+			count: 1
+			path: packages/laravel-typefinder/src/Extractors/RequestExtractor.php
+
+		-
+			message: '#^Call to an undefined method Illuminate\\Foundation\\Http\\FormRequest\:\:rules\(\)\.$#'
+			identifier: method.notFound
+			count: 2
+			path: packages/laravel-typefinder/src/Extractors/RequestExtractor.php
+
+		-
+			message: '#^Empty array passed to foreach\.$#'
+			identifier: foreach.emptyArray
+			count: 2
+			path: packages/laravel-typefinder/src/Extractors/RequestExtractor.php
+
+		-
+			message: '#^Offset \*NEVER\* on array\{\} in isset\(\) does not exist\.$#'
+			identifier: isset.offset
+			count: 1
+			path: packages/laravel-typefinder/src/Extractors/RequestExtractor.php
+
+		-
+			message: '#^Offset string on array\{\} on left side of \?\?\= does not exist\.$#'
+			identifier: nullCoalesce.offset
+			count: 1
+			path: packages/laravel-typefinder/src/Extractors/RequestExtractor.php
+
+		-
+			message: '#^Parameter \#2 \$reflectionClass of method Pentacore\\Typefinder\\Extractors\\RequestExtractor\:\:separateQueryFields\(\) expects ReflectionClass\<object\>, ReflectionClass\<Illuminate\\Foundation\\Http\\FormRequest\> given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/laravel-typefinder/src/Extractors/RequestExtractor.php
+
+		-
+			message: '#^Strict comparison using \=\=\= between \*NEVER\* and ''\*'' will always evaluate to false\.$#'
+			identifier: identical.alwaysFalse
+			count: 1
+			path: packages/laravel-typefinder/src/Extractors/RequestExtractor.php
+
+		-
+			message: '#^Parameter \#1 \$resource of method Pentacore\\Typefinder\\Resolvers\\PhpDocShapeResolver\:\:resolve\(\) expects ReflectionClass\<object\>, ReflectionClass\<Illuminate\\Http\\Resources\\Json\\JsonResource\> given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/laravel-typefinder/src/Extractors/ResourceExtractor.php
+
+		-
+			message: '#^PHPDoc tag @param references unknown parameter\: \$allEnums$#'
+			identifier: parameter.notFound
+			count: 1
+			path: packages/laravel-typefinder/src/Renderers/TypeScriptRenderer.php
+
+		-
+			message: '#^PHPDoc tag @param references unknown parameter\: \$allModels$#'
+			identifier: parameter.notFound
+			count: 1
+			path: packages/laravel-typefinder/src/Renderers/TypeScriptRenderer.php
+
+		-
+			message: '#^PHPDoc tag @param references unknown parameter\: \$allResources$#'
+			identifier: parameter.notFound
+			count: 1
+			path: packages/laravel-typefinder/src/Renderers/TypeScriptRenderer.php
+
+		-
+			message: '#^PHPDoc tag @param references unknown parameter\: \$resource$#'
+			identifier: parameter.notFound
+			count: 1
+			path: packages/laravel-typefinder/src/Renderers/TypeScriptRenderer.php
+
+		-
+			message: '#^Expression on left side of \?\? is not nullable\.$#'
+			identifier: nullCoalesce.expr
+			count: 2
+			path: packages/laravel-typefinder/src/Resolvers/PhpDocShapeResolver.php
+
+		-
+			message: '#^Parameter \#1 \$class of method Pentacore\\Typefinder\\Resolvers\\PhpDocShapeResolver\:\:documentedShape\(\) expects ReflectionClass\<object\>, ReflectionClass\<Illuminate\\Http\\Resources\\Json\\JsonResource\> given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/laravel-typefinder/src/Resolvers/PhpDocShapeResolver.php
+
+		-
+			message: '#^Parameter \#1 \$class of method Pentacore\\Typefinder\\Resolvers\\PhpDocShapeResolver\:\:tierFour\(\) expects ReflectionClass\<object\>, ReflectionClass\<Illuminate\\Http\\Resources\\Json\\JsonResource\> given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/laravel-typefinder/src/Resolvers/PhpDocShapeResolver.php
+
+		-
+			message: '#^Using nullsafe method call on non\-nullable type PHPStan\\PhpDocParser\\Parser\\ParserException\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: packages/laravel-typefinder/src/Resolvers/PhpDocShapeResolver.php
+
+		-
+			message: '#^Parameter \#1 \$array \(list\<mixed\>\) of array_values is already a list, call has no effect\.$#'
+			identifier: arrayValues.list
+			count: 1
+			path: packages/laravel-typefinder/src/Services/FileExtractor.php
