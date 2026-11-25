@@ -23,6 +23,7 @@ class HandleInertiaRequests extends Middleware
      *     nav: array{unread: int},
      *     can: array<value-of<PostStatus>, bool>,
      *     modes: array<'light'|'dark', string>,
+     *     qualified: array<value-of<\App\Enums\PostStatus>, int>,
      * }
      *
      * @return array<string, mixed>
@@ -35,6 +36,7 @@ class HandleInertiaRequests extends Middleware
             'nav' => fn (): array => ['unread' => 3],
             'can' => [],
             'modes' => [],
+            'qualified' => [],
         ];
     }
 }

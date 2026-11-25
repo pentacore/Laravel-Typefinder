@@ -330,7 +330,7 @@ Classes extending `JsonResource`. The type comes from the first of these that ap
 
 1. **Explicit shape** via `#[TypefinderResource(shape: [...])]`.
 2. **Model extension** via `#[TypefinderResource(model: User::class, omit: [...], extend: [...])]` → `Omit<User, ...> & { ... }`.
-3. **PHPDoc array shape** on `toArray()` — `@return array{…}` (or `@phpstan-return` / `@psalm-return`, which take precedence, or `@typefinder-return`, which beats them all and is checked by no analyser — for a shape PHPStan or Psalm would reject), or one composed from documented helpers / a documented parent `toArray()` (see [Composed shapes](#composed-shapes)). Applies whether or not the name convention is on.
+3. **PHPDoc array shape** on `toArray()` — `@return array{…}` (or `@phpstan-return` / `@psalm-return`, which take precedence, or `@typefinder-return`, which beats them all and is checked by no analyser — for a shape PHPStan or Psalm would reject; write a class used only in it fully qualified, since Rector removes its import, see [Pages](#pages-opt-in-typefinderinertiaenabled)), or one composed from documented helpers / a documented parent `toArray()` (see [Composed shapes](#composed-shapes)). Applies whether or not the name convention is on.
 4. **Resource collection** — a `ResourceCollection` subclass that does not override `toArray()` is a list of the resource it collects, found as Laravel finds it: `#[Collects]`, `$collects`, or `UserCollection` → `User` / `UserResource` in the same namespace. `export type UserCollection = UserResource[];` (the `{ data: … }` envelope is left to the `Wrapped*` / `*Paginated*` helpers).
 5. **Name convention** — `UserResource` → `User` automatically, when `User` is one of the models typefinder generates (found under `models.paths` and not ignored). Models from other packages and models outside `models.paths` are never matched.
 6. **Literal keys** — a `toArray()` declared in the resource itself that returns only literal-key arrays (no spread, helper call or computed key) is typed from those keys. `when*()`, `whenLoaded()`, `mergeWhen()` keys, and keys missing from another `return`, are optional. Values are typed where it is cheap and certain, otherwise `unknown`: scalar literals and casts, `new XResource(…)` / `XResource::make(…)` (`XResource`), `XResource::collection(…)` (`XResource[]`), nested literal arrays, the value of `when($condition, $value)`, and `$this->column` (`User['column']`) when the class docblock says `@mixin User` for a generated model.
@@ -454,6 +454,8 @@ What the frontend gets is the serialised props, which can differ from what `shar
  */
 public function share(Request $request): array
 ```
+
+Static analysers and Rector do not read `@typefinder-return`, so a class used only in it counts as an unused import: Rector's import cleanup (`withImportNames(removeUnusedImports: true)`) removes its `use` line, and the short name then resolves to the wrong class or to `unknown`. Write such a class fully qualified in the tag (`array<value-of<\App\Enums\Ability>, bool>`). This applies to a resource's `toArray()` too.
 
 `PageProps` entries do not include the shared props. Combine them where you read the props; a page's own prop wins over a shared one of the same name, as in Inertia:
 
