@@ -112,7 +112,7 @@ final class RequestRuleTypesTest extends TestCase
               a: unknown;
               pin: string;
               count: number;
-              items?: string[];
+              items?: (string | null)[];
               broken_when?: unknown;
               many?: string;
               broken_each?: unknown[];

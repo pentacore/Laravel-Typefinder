@@ -254,8 +254,14 @@ export type StoreWebhookRequest = {
 ```
 
 - A parent with no rule of its own (`address.city` without `address`) is still emitted. It is required when one of its keys is.
+- `nullable` on a `.*` item makes the items nullable: `(string | null)[]`, `({ a: string } | null)[]`.
+- `array:a,b` allows only the listed keys: each is an optional key of the object, `unknown` when no rule names it. With `.*` rules (`'g' => 'array:anime,tv'`, `'g.*.notes' => …`) each listed key takes the `.*` shape.
+- `confirmed` adds the key it compares with: `{key}_confirmation` beside the key (nested keys too), or the key named by `confirmed:other`. It takes the key's type and is required and nullable as the key is.
 - A key that is not a TypeScript identifier is quoted (`'content-type'?: string`). An escaped dot (`'config.app\.name'`) stays one key (`'app.name'`).
 - Two shapes cannot be expressed and produce a warning (so `--strict` fails): a wildcard at the top level (`'*.name'`, the body itself is a list) is left out, and a parent with both `parent.*` and named keys keeps the array shape and drops the named keys. Use `#[TypefinderOverrides]` for those fields.
+- A `rules()` that branches on request state (`$this->route()`, `$this->user()`, `request()`, … in the condition of an `if`, a ternary or a `match`) is typed from the branch taken with no route, user or input bound, with a warning.
+
+`#[TypefinderOverrides]` on a request replaces the type of a key and adds keys no rule names (required). Dotted keys reach nested fields: `'user.name' => 'Foo'`, `'lines.*.sku' => 'string'`.
 
 With `extract_nested: true`, every nested object becomes a named type, named after its path (`StorePostRequestMetadata`, `StoreWebhookRequestRequestHeaders`).
 
@@ -287,7 +293,7 @@ export type SetValueRequestQuery = {
 - The tag is read from the source of the `rules()` method the request uses (its own, an inherited one or one from a trait), on array items with a string-literal key. A tag on any other key (a constant, an expression) is ignored with a warning.
 - A tag on a spread item (`/** @query */ ...$this->targetRules()`) tags every key the spread brings in, for this request only: another request that spreads the same helper without the tag keeps those keys in its body. The keys are read from the array literals the spread method returns (a nested spread, `array_merge(…)` and `return $this->other()` are followed, through the same calls as below). A spread whose keys cannot be read that way (a method that returns a variable) is ignored with a warning.
 - Tags are also read from the methods that `rules()` takes rules from: `parent::rules()`, a helper called as `$this->m()`, `self::m()` or `static::m()`, and the `rules()` of another class written as `new X()->rules()`, `X::createFrom($this)->rules()` (any static factory of `X`), `app(X::class)->rules()` or `resolve(X::class)->rules()`. A call that does not name the class (`$other->rules()`) is not followed.
-- A tagged key takes its whole top-level field along: tagging `filter` or `filter.status` puts all of `filter` in the query type.
+- A tagged key takes its whole top-level field along: tagging `filter` or `filter.status` puts all of `filter` in the query type. An untagged key that goes along this way (`filter.page` beside a tagged `filter.status`) is reported with a warning; the keys below a tagged key are not. The confirmation key of a tagged `confirmed` key goes along too.
 - A request without tagged keys gets no `{Name}Query` type. One with only tagged keys gets `Record<string, never>` as its request type.
 - `{Name}Query` lives in the request's file and is re-exported by the `requests` barrel, like the `{Model}Create` / `{Model}Update` companions of a model.
 

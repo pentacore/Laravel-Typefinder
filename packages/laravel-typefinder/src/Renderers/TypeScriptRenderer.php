@@ -698,8 +698,15 @@ TS;
             return;
         }
 
-        // `items.*.*.name` is an array of arrays of objects.
-        $arraySuffix = $isObjectArray ? str_repeat('[]', max(1, (int) ($field['arrayDepth'] ?? 1))) : '';
+        // `items.*.*.name` is an array of arrays of objects; `nullableItems`
+        // says, from the outer array in, which may hold null: `({ … } | null)[]`.
+        $depth = $isObjectArray ? max(1, (int) ($field['arrayDepth'] ?? 1)) : 0;
+        $nullableItems = $field['nullableItems'] ?? array_fill(0, $depth, false);
+        $arrayPrefix = str_repeat('(', count(array_filter($nullableItems)));
+        $arraySuffix = '';
+        foreach (array_reverse($nullableItems) as $nullableItem) {
+            $arraySuffix .= ($nullableItem ? ' | null)' : '').'[]';
+        }
 
         if ($extractNested) {
             $nestedName = $this->nestedTypeName($typeName, (string) $field['name'], $extractedTypes);
@@ -712,12 +719,12 @@ TS;
             }
 
             $extractedTypes[$nestedName] = "export type {$nestedName} = {\n".implode("\n", $nestedLines)."\n};";
-            $lines[] = sprintf('%s%s%s: %s;', $prefix, $key, $optional, self::appendNullable($nestedName.$arraySuffix, $nullable));
+            $lines[] = sprintf('%s%s%s: %s;', $prefix, $key, $optional, self::appendNullable($arrayPrefix.$nestedName.$arraySuffix, $nullable));
 
             return;
         }
 
-        $lines[] = sprintf('%s%s%s: {', $prefix, $key, $optional);
+        $lines[] = sprintf('%s%s%s: %s{', $prefix, $key, $optional, $arrayPrefix);
         foreach ($field['children'] as $child) {
             $this->renderRequestField($child, $typeName, $allEnums, $imports, $lines, $extractedTypes, false, $indent + 1);
         }
