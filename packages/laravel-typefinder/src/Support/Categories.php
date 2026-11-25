@@ -17,6 +17,22 @@ final class Categories
      */
     public const array ALL = ['enums', 'models', 'requests', 'resources', 'inertia', 'broadcasting'];
 
+    /**
+     * Where each category is emitted under the output path: a directory with
+     * a file per type and a barrel, or a single `{name}.d.ts` file. The
+     * names are also what the top-level barrel re-exports.
+     *
+     * @var array<string, array{0: 'directory'|'file', 1: string}>
+     */
+    public const array OUTPUT = [
+        'enums' => ['directory', 'enums'],
+        'models' => ['directory', 'models'],
+        'requests' => ['directory', 'requests'],
+        'resources' => ['directory', 'resources'],
+        'inertia' => ['file', 'pages'],
+        'broadcasting' => ['file', 'broadcasting'],
+    ];
+
     /** Off unless the config turns them on: they need Inertia or broadcasting. */
     private const array OPT_IN = ['inertia', 'broadcasting'];
 
