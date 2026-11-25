@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Tests\Fixtures\Requests\RuleTypes;
+namespace Tests\Fixtures\RuleTypeRequests;
 
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -32,6 +32,13 @@ final class RuleValuesRequest extends FormRequest
             'maybe' => 'accepted_if:other,1',
             'gone' => 'missing',
             'gone_if' => ['missing_if:other,1', 'string'],
+            'words' => ['integer', Rule::in(['a', 'b'])],
+            'numbers' => ['numeric', Rule::in(['1', 2.5])],
+            'on' => ['string', Rule::in([true, false])],
+            'yes' => [Rule::in([true])],
+            'mixed' => [Rule::in(['a', false])],
+            'picks' => ['array', Rule::in([1, 2])],
+            'tuple_if' => [['required_if', 'other', Issue117Priority::Low], 'string'],
         ];
     }
 }

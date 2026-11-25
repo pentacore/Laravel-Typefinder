@@ -9,12 +9,12 @@ use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\AnyOf;
 use Pentacore\Typefinder\Extractors\RequestExtractor;
 use Pentacore\Typefinder\Renderers\TypeScriptRenderer;
-use Tests\Fixtures\Requests\RuleTypes\InjectedRulesRequest;
-use Tests\Fixtures\Requests\RuleTypes\NoRulesRequest;
-use Tests\Fixtures\Requests\RuleTypes\RecentRuleObjectsRequest;
-use Tests\Fixtures\Requests\RuleTypes\RuleObjectsRequest;
-use Tests\Fixtures\Requests\RuleTypes\RuleOrderAndBranchesRequest;
-use Tests\Fixtures\Requests\RuleTypes\RuleValuesRequest;
+use Tests\Fixtures\RuleTypeRequests\InjectedRulesRequest;
+use Tests\Fixtures\RuleTypeRequests\NoRulesRequest;
+use Tests\Fixtures\RuleTypeRequests\RecentRuleObjectsRequest;
+use Tests\Fixtures\RuleTypeRequests\RuleObjectsRequest;
+use Tests\Fixtures\RuleTypeRequests\RuleOrderAndBranchesRequest;
+use Tests\Fixtures\RuleTypeRequests\RuleValuesRequest;
 use Tests\TestCase;
 
 /**
@@ -86,6 +86,13 @@ final class RequestRuleTypesTest extends TestCase
               maybe?: boolean;
               gone?: never;
               gone_if?: string;
+              words?: number;
+              numbers?: 1 | 2.5;
+              on?: '1' | '';
+              yes?: true;
+              mixed?: 'a' | false;
+              picks?: (1 | 2)[];
+              tuple_if?: string;
             };
 
             TS);
@@ -105,9 +112,22 @@ final class RequestRuleTypesTest extends TestCase
               a: unknown;
               pin: string;
               count: number;
+              items?: string[];
+              broken_when?: unknown;
+              many?: string;
+              broken_each?: unknown[];
             };
 
             TS);
+    }
+
+    public function test_unreadable_branches_and_for_each_rules_warn(): void
+    {
+        $warnings = new RequestExtractor()->extract(RuleOrderAndBranchesRequest::class)['warnings'] ?? [];
+
+        $this->assertCount(2, $warnings);
+        $this->assertStringContainsString('a Rule::when() branch could not be read (needs input)', $warnings[0]);
+        $this->assertStringContainsString("the Rule::forEach() rules of 'broken_each.*' could not be read", $warnings[1]);
     }
 
     public function test_rules_is_called_through_the_container(): void

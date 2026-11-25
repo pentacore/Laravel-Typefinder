@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Tests\Fixtures\Requests\RuleTypes;
+namespace Tests\Fixtures\RuleTypeRequests;
 
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -31,6 +31,13 @@ final class RuleOrderAndBranchesRequest extends FormRequest
             'a' => ['required_with:b', 'required'],
             'pin' => ['required', 'digits:4', 'string'],
             'count' => ['required', 'regex:/^\d+$/', 'integer'],
+            'items' => ['array'],
+            'items.*' => ['nullable', Rule::forEach(fn (): string => 'string|max:5')],
+            'broken_when' => [Rule::when($cond, fn (): array => throw new \RuntimeException('needs input'))],
+            // 2^7 branch combinations, more than are typed.
+            'many' => array_fill(0, 7, Rule::when($cond, 'string')),
+            'broken_each' => ['array'],
+            'broken_each.*' => Rule::forEach(fn (string $value): array => ['integer']),
         ];
     }
 }
