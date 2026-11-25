@@ -30,6 +30,7 @@ use Pentacore\Typefinder\Attributes\TypefinderOverrides;
 use Pentacore\Typefinder\Attributes\TypefinderWriteShape;
 use Pentacore\Typefinder\Resolvers\CastTypeResolver;
 use Pentacore\Typefinder\Resolvers\ColumnTypeResolver;
+use Pentacore\Typefinder\Resolvers\ModelPropertyDocReader;
 use Pentacore\Typefinder\Support\ClassDiscovery;
 use Pentacore\Typefinder\Support\ThrowableMessage;
 use ReflectionAttribute;
@@ -59,8 +60,15 @@ class ModelExtractor
         'morphOne', 'morphTo', 'morphMany', 'morphToMany', 'morphedByMany',
     ];
 
+    /** What the array, collection, object and JSON casts resolve to. */
+    private const array LOOSE_CAST_TYPES = [
+        'unknown', 'unknown[]', 'Record<string, unknown>', 'unknown[] | Record<string, unknown>',
+    ];
+
     /** @var array<string, list<string>> */
     private array $enumTypesByConnection = [];
+
+    private ?ModelPropertyDocReader $propertyDocReader = null;
 
     public function __construct(
         protected ColumnTypeResolver $columnTypeResolver,
@@ -160,6 +168,7 @@ class ModelExtractor
         $contractServerFilled = $this->getContractServerFilled($model);
         // What a new model starts with: the defaults in its `$attributes`.
         $modelDefaults = $model->getAttributes();
+        $propertyDocs = ($this->propertyDocReader ??= new ModelPropertyDocReader)->read(new ReflectionClass($model));
         $columns = [];
 
         foreach ($schemaColumns as $schemaColumn) {
@@ -207,6 +216,12 @@ class ModelExtractor
                             $casts[$name],
                         ));
                     }
+                }
+
+                // A cast that only says "array" or "JSON" defers to the
+                // column's class-level `@property` type.
+                if (is_string($castType) && in_array($castType, self::LOOSE_CAST_TYPES, true) && isset($propertyDocs[$name])) {
+                    $castType = ['phpdoc' => $propertyDocs[$name]];
                 }
 
                 $columns[] = ['type' => $castType] + $base;

@@ -1,0 +1,33 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Tests\Feature;
+
+use App\Enums\PostStatus;
+use Pentacore\Typefinder\Extractors\ModelExtractor;
+use Pentacore\Typefinder\Renderers\TypeScriptRenderer;
+use Pentacore\Typefinder\Resolvers\CastTypeResolver;
+use Pentacore\Typefinder\Resolvers\ColumnTypeResolver;
+use Tests\Fixtures\Models\DocumentedCastQuest;
+use Tests\TestCase;
+
+use function Orchestra\Testbench\workbench_path;
+
+/** A class-level @property type narrows an array / JSON cast (#193). */
+final class ModelPropertyDocTest extends TestCase
+{
+    public function test_property_docs_type_array_and_json_casts(): void
+    {
+        config(['typefinder.enums.paths' => [workbench_path('app/Enums')]]);
+
+        $model = new ModelExtractor(new ColumnTypeResolver, new CastTypeResolver)->extract(DocumentedCastQuest::class);
+        $output = new TypeScriptRenderer()->renderModel($model, [['name' => 'PostStatus', 'fqcn' => PostStatus::class]], [$model]);
+
+        $this->assertStringContainsString('  rewards: { name: string; required: boolean }[] | null;', $output);
+        $this->assertStringContainsString('  description: PostStatus[] | null;', $output);
+        $this->assertStringContainsString("import type { PostStatus } from '../enums';", $output);
+        // A cast with a precise type keeps it.
+        $this->assertStringContainsString('  title: string;', $output);
+    }
+}

@@ -569,6 +569,10 @@ TS;
                 return $this->narrowEnum($enumName, $type);
             }
 
+            if (isset($type['phpdoc'])) {
+                return $this->renderModelPhpDocType($type['phpdoc'], $imports, (string) $selfFqcn, $allModels, $allEnums);
+            }
+
             if (isset($type['enumCollection'])) {
                 $enumName = $this->resolveEnumName($type['enumCollection'], $allEnums);
                 $imports[] = sprintf("import type { %s } from '../enums';", $enumName);
@@ -622,6 +626,32 @@ TS;
         }
 
         return $enumName;
+    }
+
+    /**
+     * A model column typed by its class-level `@property` PHPDoc: the
+     * resource type tree, with the imports a resource file would use moved
+     * to the model directory.
+     *
+     * @param  array<string, mixed>  $node
+     * @param  list<string>  $imports
+     */
+    protected function renderModelPhpDocType(array $node, array &$imports, string $selfFqcn, array $allModels, array $allEnums): string
+    {
+        $nodeImports = [];
+        $rendered = $this->renderTypeNode($node, $nodeImports, $selfFqcn, $allModels, $allEnums, []);
+
+        foreach ($nodeImports as $import) {
+            $imports[] = (string) preg_replace_callback(
+                "/^import type \\{ (\\w+) \\} from '(\\.\\.\\/models|\\.\\/\\w+)';$/",
+                fn (array $match): string => $match[2] === '../models'
+                    ? sprintf("import type { %s } from './%s';", $match[1], $match[1])
+                    : sprintf("import type { %s } from '../resources';", $match[1]),
+                $import,
+            );
+        }
+
+        return $rendered;
     }
 
     /**
