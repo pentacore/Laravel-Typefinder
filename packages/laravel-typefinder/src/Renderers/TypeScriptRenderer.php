@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Pentacore\Typefinder\Renderers;
 
+use Closure;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Pentacore\Typefinder\Renderers\Concerns\RendersBroadcasting;
@@ -25,6 +26,25 @@ class TypeScriptRenderer
         // ───────────────────────────────────────────────────────────────────────
 
         TS;
+
+    /** Receives a warning for each reference to a class that gets no generated type. */
+    private ?Closure $onWarn = null;
+
+    /** @var array<string, true> warnings already given since the handler was set */
+    private array $warned = [];
+
+    /**
+     * Where warnings about the output go (a reference to a model, resource or
+     * enum that gets no generated type is emitted as `unknown`). Setting it
+     * starts a new run: each warning is given once per run.
+     *
+     * @param  null|callable(string): void  $onWarn
+     */
+    public function onWarn(?callable $onWarn): void
+    {
+        $this->onWarn = $onWarn === null ? null : $onWarn(...);
+        $this->warned = [];
+    }
 
     /**
      * Append ` | null` to a TS type string when the column/field is nullable,
@@ -223,24 +243,25 @@ class TypeScriptRenderer
      * Every namespaced class name in the string is checked, so unions, `[]`
      * suffixes and generics keep their exact text (`App\Models\User | null`
      * becomes `User | null`). Names that are not a model, enum or resource
-     * are left as written.
+     * are left as written; a model, enum or resource that gets no generated
+     * type becomes `unknown` ({@see self::resolveClassReference()}).
      *
      * @param  string  $fromDir  Directory of the file being written, relative to
      *                           the output path: '' for root files (pages.d.ts,
      *                           broadcasting.d.ts), else 'models', 'resources'
      *                           or 'requests'.
-     * @param  list<array>  $allModels
-     * @param  list<array>  $allEnums
-     * @param  list<array>  $allResources
+     * @param  ?list<array>  $allModels  null when the caller does not know them
+     * @param  ?list<array>  $allEnums
+     * @param  ?list<array>  $allResources
      * @param  list<string>  $imports
      * @param  ?string  $selfFqcn  The class the file declares; never imported.
      */
     protected function resolveClassString(
         string $type,
         string $fromDir,
-        array $allModels,
-        array $allEnums,
-        array $allResources,
+        ?array $allModels,
+        ?array $allEnums,
+        ?array $allResources,
         array &$imports,
         ?string $selfFqcn = null,
     ): string {
@@ -263,36 +284,49 @@ class TypeScriptRenderer
      * The generated type name for one class, recording the import it needs;
      * null when the class is not a resource, model or enum.
      *
+     * A resource, model or enum that is not in its list (ignored, outside the
+     * configured paths, skipped) has no file to import: it is `unknown`, with
+     * a warning. A null list is not known, so its classes are not checked.
+     *
      * @param  string  $fqcn  Without a leading backslash; may have no namespace.
      * @param  string  $fromDir  See resolveClassString().
-     * @param  list<array>  $allModels
-     * @param  list<array>  $allEnums
-     * @param  list<array>  $allResources
+     * @param  ?list<array>  $allModels
+     * @param  ?list<array>  $allEnums
+     * @param  ?list<array>  $allResources
      * @param  list<string>  $imports
      * @param  ?string  $selfFqcn  The class the file declares; never imported.
      */
     protected function resolveClassReference(
         string $fqcn,
         string $fromDir,
-        array $allModels,
-        array $allEnums,
-        array $allResources,
+        ?array $allModels,
+        ?array $allEnums,
+        ?array $allResources,
         array &$imports,
         ?string $selfFqcn = null,
     ): ?string {
         $prefix = $fromDir === '' ? './' : '../';
 
         if (class_exists($fqcn) && is_subclass_of($fqcn, JsonResource::class)) {
-            $short = $this->resolveResourceName($fqcn, $allResources);
+            $all = $allResources;
+            $short = $this->resolveResourceName($fqcn, $allResources ?? []);
             $from = $fromDir === 'resources' ? './'.$short : $prefix.'resources';
         } elseif (class_exists($fqcn) && is_subclass_of($fqcn, Model::class)) {
-            $short = $this->resolveModelName($fqcn, $allModels);
+            $all = $allModels;
+            $short = $this->resolveModelName($fqcn, $allModels ?? []);
             $from = $fromDir === 'models' ? './'.$short : $prefix.'models';
         } elseif (enum_exists($fqcn)) {
-            $short = $this->resolveEnumName($fqcn, $allEnums);
+            $all = $allEnums;
+            $short = $this->resolveEnumName($fqcn, $allEnums ?? []);
             $from = $prefix.'enums';
         } else {
             return null;
+        }
+
+        if ($fqcn !== $selfFqcn && ! $this->isGenerated($fqcn, $all)) {
+            $this->warnNotGenerated($fqcn, $selfFqcn ?? $fromDir);
+
+            return 'unknown';
         }
 
         if ($fqcn !== $selfFqcn) {
@@ -590,11 +624,12 @@ TS;
         array &$imports,
         string $fromDir,
         ?string $selfFqcn = null,
-        array $allModels = [],
+        ?array $allModels = null,
     ): string {
         if (is_string($type)) {
-            // Overrides (#[TypefinderOverrides]) may carry class-strings.
-            return $this->resolveClassString($type, $fromDir, $allModels, $allEnums, [], $imports, $selfFqcn);
+            // Overrides (#[TypefinderOverrides]) may carry class-strings. The
+            // resources (and, for a request, the models) are not known here.
+            return $this->resolveClassString($type, $fromDir, $allModels, $allEnums, null, $imports, $selfFqcn);
         }
 
         if (is_array($type)) {
@@ -663,27 +698,24 @@ TS;
     /**
      * Render a relationship as a type field line.
      */
-    protected function renderRelationshipField(array $rel, array $allModels, array &$imports): ?string
+    protected function renderRelationshipField(array $rel, array $allModels, array &$imports, ?string $selfFqcn = null): ?string
     {
         $name = $rel['name'];
 
         switch ($rel['type']) {
             case 'one':
             case 'belongsTo':
-                $relatedName = $this->resolveModelName($rel['related'], $allModels);
-                $imports[] = sprintf("import type { %s } from './%s';", $relatedName, $relatedName);
+                $relatedName = $this->relatedModel((string) $rel['related'], $allModels, $imports, sprintf('%s relation "%s"', $selfFqcn ?? 'A model', $name));
 
-                return sprintf('  %s?: %s | null;', $name, $relatedName);
+                return sprintf('  %s?: %s;', $name, $relatedName === 'unknown' ? 'unknown' : $relatedName.' | null');
 
             case 'many':
-                $relatedName = $this->resolveModelName($rel['related'], $allModels);
-                $imports[] = sprintf("import type { %s } from './%s';", $relatedName, $relatedName);
+                $relatedName = $this->relatedModel((string) $rel['related'], $allModels, $imports, sprintf('%s relation "%s"', $selfFqcn ?? 'A model', $name));
 
                 return sprintf('  %s?: %s[];', $name, $relatedName);
 
             case 'manyWithPivot':
-                $relatedName = $this->resolveModelName($rel['related'], $allModels);
-                $imports[] = sprintf("import type { %s } from './%s';", $relatedName, $relatedName);
+                $relatedName = $this->relatedModel((string) $rel['related'], $allModels, $imports, sprintf('%s relation "%s"', $selfFqcn ?? 'A model', $name));
                 $pivotName = $this->generatePivotName($rel['pivot']['table'] ?? $name);
                 $imports[] = sprintf("import type { %s } from './%s';", $pivotName, $pivotName);
 
@@ -694,6 +726,57 @@ TS;
 
             default:
                 return null;
+        }
+    }
+
+    /**
+     * The type name of a relation's related model, importing it; `unknown`,
+     * with a warning, when that model gets no generated type.
+     *
+     * @param  list<array>  $allModels
+     * @param  list<string>  $imports
+     */
+    protected function relatedModel(string $fqcn, array $allModels, array &$imports, string $referencedFrom): string
+    {
+        $fqcn = ltrim($fqcn, '\\');
+
+        if (! $this->isGenerated($fqcn, $allModels)) {
+            $this->warnNotGenerated($fqcn, $referencedFrom);
+
+            return 'unknown';
+        }
+
+        $relatedName = $this->resolveModelName($fqcn, $allModels);
+        $imports[] = sprintf("import type { %s } from './%s';", $relatedName, $relatedName);
+
+        return $relatedName;
+    }
+
+    /**
+     * Whether a class has an entry (so a generated file) in its list; a null
+     * list is not known and counts as yes.
+     *
+     * @param  ?list<array>  $all
+     */
+    private function isGenerated(string $fqcn, ?array $all): bool
+    {
+        return $all === null || in_array($fqcn, array_map(
+            static fn (array $entry): string => ltrim((string) $entry['fqcn'], '\\'),
+            $all,
+        ), true);
+    }
+
+    private function warnNotGenerated(string $fqcn, string $referencedFrom): void
+    {
+        $message = sprintf(
+            '%s references %s, which gets no generated type (ignored, outside the configured paths, or skipped): emitted as unknown',
+            $referencedFrom === '' ? 'a root file' : $referencedFrom,
+            $fqcn,
+        );
+
+        if ($this->onWarn instanceof Closure && ! isset($this->warned[$message])) {
+            $this->warned[$message] = true;
+            ($this->onWarn)($message);
         }
     }
 

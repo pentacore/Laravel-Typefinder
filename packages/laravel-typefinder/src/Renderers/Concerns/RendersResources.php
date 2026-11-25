@@ -50,15 +50,18 @@ trait RendersResources
             return $this->renderPhpdocResource($resource, $allModels, $allEnums, $allResources);
         }
 
-        $modelShort = $this->resolveModelName($shape['model'], $allModels);
-        $imports[] = sprintf("import type { %s } from '../models';", $modelShort);
+        // `unknown` (with a warning) when the model gets no generated type.
+        $modelShort = $this->resolveClassReference(ltrim((string) $shape['model'], '\\'), 'resources', $allModels, $allEnums, $allResources, $imports)
+            ?? $this->resolveModelName($shape['model'], $allModels);
 
         $body = sprintf('export type %s = ', $name);
 
         $omit = $shape['omit'];
         $extend = $shape['extend'];
 
-        if ($omit !== []) {
+        if ($modelShort === 'unknown') {
+            $body .= $extend === [] ? 'unknown' : 'Record<string, unknown>';
+        } elseif ($omit !== []) {
             $omitUnion = implode(' | ', array_map(TypeScriptRenderer::stringLiteral(...), $omit));
             $body .= sprintf('Omit<%s, %s>', $modelShort, $omitUnion);
         } else {

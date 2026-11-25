@@ -168,6 +168,8 @@ final class Generator
      */
     private function emit(ExtractionCache $extractionCache, array $roots, callable $warn): array
     {
+        $this->typeScriptRenderer->onWarn($warn);
+
         $sets = array_fill_keys(Categories::ALL, []);
         foreach ($roots as $category => $dirs) {
             $sets[$category] = $this->inSourceOrder($extractionCache->entriesByCategory($category), $dirs);

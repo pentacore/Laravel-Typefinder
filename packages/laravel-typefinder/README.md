@@ -351,6 +351,8 @@ Only an `array{…}` (or `object{…}`) shape counts. The `make:resource` stub's
 
 Only types typefinder generates resolve: models it generates, backed enums under `enums.paths`, and resources under `resources.paths`. Any other class (a vendor model, a plain value object), and types with no JSON equivalent (`callable`, `Closure`, …), become `unknown` with a warning naming the resource and field.
 
+The same holds outside PHPDoc: a class-string in a `#[TypefinderResource]` `shape` / `extend` / `model`, a `#[TypefinderPage]` or `#[TypefinderBroadcast]` prop, or a model relation that names a model, resource or enum with no generated type (`#[TypefinderIgnore]`d, outside the configured paths, or skipped) becomes `unknown` with a warning, never an import of a file that does not exist.
+
 The name convention assumes the resource returns the model's attributes. If your resources rename fields, flatten relations or add computed keys, the inferred type is wrong and nothing flags it. Set `'resources.infer_from_model_name' => false` to turn the convention off; every resource then needs an attribute or a PHPDoc shape (or `#[TypefinderIgnore]`), and undeclared ones are reported as warnings.
 
 #### Composed shapes
