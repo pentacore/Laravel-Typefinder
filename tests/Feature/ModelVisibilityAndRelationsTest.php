@@ -58,7 +58,7 @@ final class ModelVisibilityAndRelationsTest extends TestCase
 
         $relations = array_column($this->extractor()->extract($model::class)['relationships'], 'name');
 
-        $this->assertSame(['secretOwner'], $relations);
+        $this->assertSame(['secret_owner'], $relations);
     }
 
     public function test_a_hidden_fillable_column_stays_in_the_write_shapes(): void

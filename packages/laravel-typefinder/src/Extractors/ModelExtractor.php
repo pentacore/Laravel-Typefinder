@@ -261,7 +261,8 @@ class ModelExtractor
         $taken = array_column($columns, 'name');
 
         foreach ($this->getTypeOverrides($model) as $name => $type) {
-            $name = (string) $name;
+            // A relation's override may name its method or its serialised key.
+            $name = self::serialisedRelationKey(['relationships' => $relationships], (string) $name);
             if (in_array($name, $taken, true) || ! $this->isSerialised($model, $name)) {
                 continue;
             }
@@ -285,6 +286,34 @@ class ModelExtractor
         }
 
         return [$columns, $relationships];
+    }
+
+    /**
+     * The key `toArray()` serialises a relation under: snake-cased while the
+     * model's `$snakeAttributes` is on (the default), else the method name.
+     */
+    protected function relationKey(Model $model, string $method): string
+    {
+        return $model::$snakeAttributes ? Str::snake($method) : $method;
+    }
+
+    /**
+     * The serialised key of the relation an `omit` / override key names: a
+     * relation's method name or its snake-cased form maps to the key it is
+     * emitted under; any other key is returned as is.
+     *
+     * @param  array{relationships?: list<array<string, mixed>>}  $model  a model extraction
+     */
+    public static function serialisedRelationKey(array $model, string $key): string
+    {
+        foreach ($model['relationships'] ?? [] as $relationship) {
+            $method = (string) ($relationship['method'] ?? $relationship['name']);
+            if ($key === $method || $key === Str::snake($method)) {
+                return (string) $relationship['name'];
+            }
+        }
+
+        return $key;
     }
 
     /**
@@ -577,7 +606,10 @@ class ModelExtractor
      * as `artisan model:show` does. Relations `toArray()` leaves out
      * (`$hidden`, `$visible`) are left out.
      *
-     * @return list<array{name: string, type: string, related: class-string, relationType: string, pivot?: array}>
+     * `name` is the key `toArray()` serialises the relation under, `method`
+     * the method that builds it.
+     *
+     * @return list<array{name: string, method: string, type: string, related: class-string, relationType: string, pivot?: array}>
      */
     protected function extractRelationships(Model $model, ReflectionClass $reflectionClass): array
     {
@@ -674,7 +706,8 @@ class ModelExtractor
         $methodName = $reflectionMethod->getName();
 
         $result = [
-            'name' => $methodName,
+            'name' => $this->relationKey($model, $methodName),
+            'method' => $methodName,
             'related' => $relatedClass,
             'relationType' => $relation::class,
         ];

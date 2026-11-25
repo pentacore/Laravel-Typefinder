@@ -23,7 +23,7 @@ namespace Pentacore\Typefinder\Cache;
  */
 final class ExtractionCache
 {
-    public const int SCHEMA_VERSION = 3;
+    public const int SCHEMA_VERSION = 4;
 
     /** @var array<string, array<string, Entry>> entries by category, then by path */
     private array $entries = [];

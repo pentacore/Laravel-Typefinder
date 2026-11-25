@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Pentacore\Typefinder\Renderers\Concerns;
 
+use Pentacore\Typefinder\Extractors\ModelExtractor;
 use Pentacore\Typefinder\Renderers\TypeScriptRenderer;
 
 /**
@@ -55,7 +56,13 @@ trait RendersResources
 
         $body = sprintf('export type %s = ', $name);
 
-        $omit = $shape['omit'];
+        // `omit` may name a relation by its method; the model type has it
+        // under the key `toArray()` serialises it as.
+        $modelExtraction = array_find($allModels, fn (array $model): bool => ($model['fqcn'] ?? null) === $shape['model']) ?? [];
+        $omit = array_values(array_unique(array_map(
+            fn (string $key): string => ModelExtractor::serialisedRelationKey($modelExtraction, $key),
+            array_map(strval(...), $shape['omit']),
+        )));
         $extend = $shape['extend'];
 
         if ($modelShort === 'unknown') {

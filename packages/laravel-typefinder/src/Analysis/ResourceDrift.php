@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Pentacore\Typefinder\Analysis;
 
 use Closure;
+use Pentacore\Typefinder\Extractors\ModelExtractor;
 use Pentacore\Typefinder\Resolvers\PhpDocShapeResolver;
 use PhpParser\Node\Stmt\ClassMethod;
 use ReflectionClass;
@@ -102,7 +103,8 @@ final readonly class ResourceDrift
         $declared = [];
 
         foreach ($model['columns'] as $column) {
-            $declared[(string) $column['name']] = false;
+            // An overridden relation stays optional.
+            $declared[(string) $column['name']] = ! empty($column['optional']);
         }
 
         foreach ($model['relationships'] as $relationship) {
@@ -110,7 +112,8 @@ final readonly class ResourceDrift
         }
 
         foreach ($omit as $key) {
-            unset($declared[$key]);
+            // A relation may be omitted by its method name.
+            unset($declared[ModelExtractor::serialisedRelationKey($model, $key)]);
         }
 
         foreach (array_keys($extend) as $key) {
