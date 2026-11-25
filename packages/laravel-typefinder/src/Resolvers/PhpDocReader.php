@@ -37,6 +37,12 @@ final readonly class PhpDocReader
     /** In precedence order (PHPStan's own). */
     public const array RETURN_TAGS = ['@phpstan-return', '@psalm-return', '@return'];
 
+    /**
+     * Read before RETURN_TAGS, and by no static analyser: the serialised
+     * shape where it differs from what the method returns in PHP (#237).
+     */
+    public const string TYPEFINDER_RETURN_TAG = '@typefinder-return';
+
     private const array ALIAS_TAGS = ['@phpstan-type', '@psalm-type'];
 
     private const array IMPORT_TAGS = ['@phpstan-import-type', '@psalm-import-type'];
@@ -76,7 +82,7 @@ final readonly class PhpDocReader
     public function hasReturnTag(?PhpDocNode $doc): bool
     {
         return $doc instanceof PhpDocNode && array_any(
-            self::RETURN_TAGS,
+            [self::TYPEFINDER_RETURN_TAG, ...self::RETURN_TAGS],
             static fn (string $tag): bool => $doc->getTagsByName($tag) !== [],
         );
     }
@@ -87,6 +93,10 @@ final readonly class PhpDocReader
      */
     public function returnType(?PhpDocNode $doc): ?TypeNode
     {
+        if ($doc instanceof PhpDocNode && ($type = self::typefinderReturnType($doc)) instanceof TypeNode) {
+            return $type;
+        }
+
         foreach (self::RETURN_TAGS as $tag) {
             $values = $doc?->getReturnTagValues($tag) ?? [];
 
@@ -96,6 +106,32 @@ final readonly class PhpDocReader
         }
 
         return null;
+    }
+
+    /**
+     * The type of the first `@typefinder-return` tag, or null when there is
+     * none or its text is not a type. Its value is not parsed as a return
+     * tag (phpdoc-parser does not know the tag), so it is parsed here.
+     */
+    public static function typefinderReturnType(PhpDocNode $doc): ?TypeNode
+    {
+        $tag = array_values($doc->getTagsByName(self::TYPEFINDER_RETURN_TAG))[0] ?? null;
+
+        if ($tag === null) {
+            return null;
+        }
+
+        $config = new ParserConfig([]);
+        $tokens = new TokenIterator(new Lexer($config)->tokenize((string) $tag->value));
+
+        try {
+            $type = new TypeParser($config, new ConstExprParser($config))->parse($tokens);
+        } catch (Throwable) {
+            return null;
+        }
+
+        // Anything after the type is its description.
+        return $type;
     }
 
     /**

@@ -158,7 +158,10 @@ trait RendersResources
 
                 return ($this->hasTopLevelOperator($element) ? "({$element})" : $element).'[]';
             case 'record':
-                return sprintf('Record<string, %s>', $render($node['of']));
+                // `array<K, V>` does not promise every key of a narrowed K.
+                return isset($node['key'])
+                    ? sprintf('Partial<Record<%s, %s>>', $render($node['key']), $render($node['of']))
+                    : sprintf('Record<string, %s>', $render($node['of']));
             case 'tuple':
                 return '['.implode(', ', array_map(function (array $item) use ($render): string {
                     $text = $render($item['type']);

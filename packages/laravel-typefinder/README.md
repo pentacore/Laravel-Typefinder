@@ -330,7 +330,7 @@ Classes extending `JsonResource`. The type comes from the first of these that ap
 
 1. **Explicit shape** via `#[TypefinderResource(shape: [...])]`.
 2. **Model extension** via `#[TypefinderResource(model: User::class, omit: [...], extend: [...])]` → `Omit<User, ...> & { ... }`.
-3. **PHPDoc array shape** on `toArray()` — `@return array{…}` (or `@phpstan-return` / `@psalm-return`, which take precedence), or one composed from documented helpers / a documented parent `toArray()` (see [Composed shapes](#composed-shapes)). Applies whether or not the name convention is on.
+3. **PHPDoc array shape** on `toArray()` — `@return array{…}` (or `@phpstan-return` / `@psalm-return`, which take precedence, or `@typefinder-return`, which beats them all and is checked by no analyser — for a shape PHPStan or Psalm would reject), or one composed from documented helpers / a documented parent `toArray()` (see [Composed shapes](#composed-shapes)). Applies whether or not the name convention is on.
 4. **Resource collection** — a `ResourceCollection` subclass that does not override `toArray()` is a list of the resource it collects, found as Laravel finds it: `#[Collects]`, `$collects`, or `UserCollection` → `User` / `UserResource` in the same namespace. `export type UserCollection = UserResource[];` (the `{ data: … }` envelope is left to the `Wrapped*` / `*Paginated*` helpers).
 5. **Name convention** — `UserResource` → `User` automatically, when `User` is one of the models typefinder generates (found under `models.paths` and not ignored). Models from other packages and models outside `models.paths` are never matched.
 6. **Literal keys** — a `toArray()` declared in the resource itself that returns only literal-key arrays (no spread, helper call or computed key) is typed from those keys. `when*()`, `whenLoaded()`, `mergeWhen()` keys, and keys missing from another `return`, are optional. Values are typed where it is cheap and certain, otherwise `unknown`: scalar literals and casts, `new XResource(…)` / `XResource::make(…)` (`XResource`), `XResource::collection(…)` (`XResource[]`), nested literal arrays, the value of `when($condition, $value)`, and `$this->column` (`User['column']`) when the class docblock says `@mixin User` for a generated model.
@@ -371,7 +371,7 @@ export type CommentResource = {
 };
 ```
 
-Only an `array{…}` (or `object{…}`) shape counts. The `make:resource` stub's `@return array<string, mixed>`, a plain `array`, `list<…>` and other generics fall through to the name convention, unchanged. Nested shapes, lists, `array<string, T>`, unions, literals, `?T`, collections (`Collection<int, X>` → `X[]`), Carbon/`DateTimeInterface` (→ `string`), `@phpstan-type` aliases and `@phpstan-import-type` are understood. A `X|MissingValue` field (the `whenLoaded()` / `when()` idiom) becomes optional. A `toArray()` provided by a trait is read from the trait's file. A subclass that does not override `toArray()`, or whose override has no doc or only `{@inheritDoc}` and does not compose (below), uses its parent's doc; `static` in it refers to the subclass. An abstract resource never takes a PHPDoc shape (it falls through to the attribute/name-convention tiers as before).
+Only an `array{…}` (or `object{…}`) shape counts. The `make:resource` stub's `@return array<string, mixed>`, a plain `array`, `list<…>` and other generics fall through to the name convention, unchanged. Nested shapes, lists, `array<string, T>` (→ `Record<string, T>`; an `array-key` key → `T[] | Record<string, T>`, since sequential keys serialise as a JSON array; an enum or literal key such as `array<value-of<Status>, bool>` → `Partial<Record<Status, boolean>>`), unions, literals, `?T`, collections (`Collection<int, X>` → `X[]`), Carbon/`DateTimeInterface` (→ `string`), `@phpstan-type` aliases and `@phpstan-import-type` are understood. A `X|MissingValue` field (the `whenLoaded()` / `when()` idiom) becomes optional. A `toArray()` provided by a trait is read from the trait's file. A subclass that does not override `toArray()`, or whose override has no doc or only `{@inheritDoc}` and does not compose (below), uses its parent's doc; `static` in it refers to the subclass. An abstract resource never takes a PHPDoc shape (it falls through to the attribute/name-convention tiers as before).
 
 Only types typefinder generates resolve: models it generates, backed enums under `enums.paths`, and resources under `resources.paths`. Any other class (a vendor model, a plain value object), and types with no JSON equivalent (`callable`, `Closure`, …), become `unknown` with a warning naming the resource and field.
 
@@ -440,6 +440,17 @@ Several actions can render the same component, for example `create` and `edit` s
 ```php
 /**
  * @return array{auth: array{user: User|null}, flash: array{message: string|null}}
+ */
+public function share(Request $request): array
+```
+
+What the frontend gets is the serialised props, which can differ from what `share()` returns in PHP: Inertia resolves lazy closures (`'nav' => fn (): array => …`), and a `...parent::share($request)` spread is only `array<string, mixed>` to an analyser. A `@return` shape that describes the serialised props then fails PHPStan or Psalm. Use `@typefinder-return` instead: Typefinder reads it before `@phpstan-return` / `@psalm-return` / `@return`, and no analyser checks it against the body:
+
+```php
+/**
+ * @typefinder-return array{name: string, nav: array{unread: int}}
+ *
+ * @return array<string, mixed>
  */
 public function share(Request $request): array
 ```

@@ -211,6 +211,42 @@ final class PhpDocTypeMapperTest extends TestCase
     /**
      * @return array<string, array{string}>
      */
+    public static function anyStringKeyedTypes(): array
+    {
+        return [
+            'non-empty-string key' => ['array<non-empty-string, float>'],
+            'class-string key' => ['array<class-string, float>'],
+            'class-string generic key' => ['array<class-string<User>, float>'],
+        ];
+    }
+
+    #[DataProvider('anyStringKeyedTypes')]
+    public function test_any_string_key_is_a_plain_record(string $type): void
+    {
+        $this->assertSame(['kind' => 'record', 'of' => self::ts('number')], $this->map($type));
+    }
+
+    /** #236: a key narrower than `string` is kept. */
+    public function test_narrowed_keys_are_kept(): void
+    {
+        $this->assertSame(
+            ['kind' => 'record', 'of' => self::ts('boolean'), 'key' => ['kind' => 'enum', 'fqcn' => PostStatus::class]],
+            $this->map('array<value-of<PostStatus>, bool>'),
+        );
+        $this->assertSame(
+            ['kind' => 'record', 'of' => self::ts('string'), 'key' => ['kind' => 'union', 'of' => [self::ts("'light'"), self::ts("'dark'")]]],
+            $this->map("array<'light'|'dark', string>"),
+        );
+        $this->assertSame(
+            ['kind' => 'record', 'of' => self::ts('number'), 'key' => ['kind' => 'union', 'of' => [self::ts("'a'"), self::ts("'b'")]]],
+            $this->map('array<key-of<array{a: int, b: int}>, int>'),
+        );
+        $this->assertSame([], $this->warnings);
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
     public static function eitherKeyedTypes(): array
     {
         return [
