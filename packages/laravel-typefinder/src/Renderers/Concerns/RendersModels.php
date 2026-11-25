@@ -81,7 +81,11 @@ trait RendersModels
         $morphToRel = collect($model['relationships'] ?? [])->firstWhere('type', 'morphTo');
 
         $genericParam = '';
-        if ($morphToRel && ! empty($morphToRel['morphTargets'])) {
+        if ($morphToRel && empty($morphToRel['morphTargets'])) {
+            // No model declares the inverse morphMany / morphOne, so nothing
+            // narrows T; still declare it so the morphTo field compiles.
+            $genericParam = '<T = unknown>';
+        } elseif ($morphToRel) {
             $targetNames = $this->resolveModelNames($morphToRel['morphTargets'], $allModels);
             $union = implode(' | ', $targetNames);
             $genericParam = sprintf('<T extends %s = %s>', $union, $union);

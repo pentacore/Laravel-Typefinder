@@ -302,6 +302,25 @@ final class TypeScriptRendererTest extends TestCase
         $this->assertStringContainsString('commentable?: T | null;', $output);
     }
 
+    public function test_renders_morph_to_without_targets_with_unknown_default(): void
+    {
+        $model = [
+            'name' => 'Activity',
+            'fqcn' => 'Workbench\\App\\Models\\Activity',
+            'columns' => [
+                ['name' => 'id', 'type' => 'number', 'nullable' => false],
+            ],
+            'relationships' => [
+                ['name' => 'subject', 'type' => 'morphTo', 'related' => Model::class, 'relationType' => 'MorphTo', 'morphTargets' => []],
+            ],
+        ];
+
+        $output = $this->typeScriptRenderer->renderModel($model, [], []);
+
+        $this->assertStringContainsString('export type Activity<T = unknown> = {', $output);
+        $this->assertStringContainsString('subject?: T | null;', $output);
+    }
+
     public function test_renders_request_type(): void
     {
         $request = [
