@@ -150,6 +150,21 @@ final class ModelExtractorTest extends TestCase
         $this->assertCount(12, $results);
     }
 
+    public function test_include_relationships_false_emits_no_relationship_fields(): void
+    {
+        $this->assertNotSame([], $this->modelExtractor->extract(User::class)['relationships']);
+
+        config(['typefinder.models.include_relationships' => false]);
+
+        $result = $this->modelExtractor->extract(User::class);
+
+        $this->assertSame([], $result['relationships']);
+        $this->assertNotNull($this->findColumn($result, 'id'));
+
+        $rendered = new TypeScriptRenderer()->renderModelFile($result, [], [], true, []);
+        $this->assertStringNotContainsString('posts', $rendered);
+    }
+
     public function test_unknown_column_type_emits_warning_and_falls_back_to_unknown(): void
     {
         $warnings = [];
