@@ -22,6 +22,7 @@ use Illuminate\Validation\Rules\Numeric;
 use Illuminate\Validation\Rules\Password;
 use Illuminate\Validation\Rules\StringRule;
 use Pentacore\Typefinder\Analysis\QueryRuleKeys;
+use Pentacore\Typefinder\Analysis\RequestStateBranches;
 use Pentacore\Typefinder\Attributes\TypefinderIgnore;
 use Pentacore\Typefinder\Attributes\TypefinderOverrides;
 use Pentacore\Typefinder\Renderers\TypeScriptRenderer;
@@ -142,6 +143,20 @@ class RequestExtractor
     protected array $warnings = [];
 
     /**
+     * The rule keys of the request being extracted, in order.
+     *
+     * @var list<string>
+     */
+    protected array $ruleKeys = [];
+
+    /**
+     * The confirmation key of each rule key with a `confirmed` rule.
+     *
+     * @var array<string, string>
+     */
+    protected array $confirmations = [];
+
+    /**
      * Extract type information from a single FormRequest class.
      *
      * @param  class-string<FormRequest>  $requestClass
@@ -173,17 +188,15 @@ class RequestExtractor
             }
         }
 
-        $fields = $this->parseRules($rules);
-
-        $overrides = $this->getTypeOverrides($reflectionClass);
-        if ($overrides !== []) {
-            $fields = array_map(
-                fn (array $field): array => isset($overrides[$field['name']])
-                    ? ['type' => $overrides[$field['name']]] + $field
-                    : $field,
-                $fields,
+        $branchReads = RequestStateBranches::in($reflectionClass);
+        if ($branchReads !== []) {
+            $this->warnings[] = sprintf(
+                'rules() branches on request state (%s), so the type follows the branch taken with no route, user or input bound; declare the fields with #[TypefinderOverrides] if that is not the branch to type',
+                implode(', ', $branchReads),
             );
         }
+
+        $fields = $this->parseRules($rules, $this->getTypeOverrides($reflectionClass));
 
         [$fields, $queryFields] = $this->separateQueryFields($fields, $reflectionClass);
 
@@ -287,13 +300,18 @@ class RequestExtractor
      *
      * The dotted rule names are folded into a tree first, so a rule at any
      * depth lands below its own parent: `a.b.*.c` is `a` → `b` → `*` → `c`.
+     * The confirmation keys of `confirmed` rules and the keys of
+     * `#[TypefinderOverrides]` are added to the tree the same way.
      *
      * @param  array<array-key, mixed>  $rules
+     * @param  array<string, string>  $overrides  type by dotted key
      * @return list<array>
      */
-    protected function parseRules(array $rules): array
+    protected function parseRules(array $rules, array $overrides = []): array
     {
         $root = ['rules' => null, 'children' => []];
+        $this->ruleKeys = [];
+        $this->confirmations = [];
 
         while ($rules !== []) {
             $fieldName = array_key_first($rules);
@@ -313,19 +331,21 @@ class RequestExtractor
                 }
             }
 
-            $node = &$root;
-
-            foreach ($this->splitFieldName((string) $fieldName) as $segment) {
-                $node['children'][$segment] ??= ['rules' => null, 'children' => []];
-                $node = &$node['children'][$segment];
-            }
-
+            $this->ruleKeys[] = (string) $fieldName;
+            $node = &$this->treeNode($root, (string) $fieldName);
             $node['rules'] = $this->normalizeRules($fieldRules);
             unset($node);
         }
 
+        $this->addConfirmations($root);
+
+        foreach ($overrides as $key => $type) {
+            $node = &$this->treeNode($root, (string) $key);
+            $node['override'] = $type;
+            unset($node);
+        }
+
         $fields = [];
-        $confirmedFields = [];
 
         foreach ($root['children'] as $segment => $node) {
             $segment = (string) $segment;
@@ -343,26 +363,58 @@ class RequestExtractor
             }
 
             $fields[] = $this->buildField($segment, $node, $segment);
-
-            if ($node['rules'] !== null && $this->hasRule($node['rules'], 'confirmed')) {
-                $confirmedFields[$this->segmentName($segment).'_confirmation'] = $this->resolveType($node['rules']);
-            }
-        }
-
-        // Add auto-generated confirmation fields
-        foreach ($confirmedFields as $confirmFieldName => $confirmType) {
-            // Only add if not explicitly defined
-            if (! isset($root['children'][$confirmFieldName])) {
-                $fields[] = [
-                    'name' => $confirmFieldName,
-                    'type' => $confirmType,
-                    'required' => false,
-                    'nullable' => false,
-                ];
-            }
         }
 
         return $fields;
+    }
+
+    /**
+     * The node of the rule tree at a dotted key, created (with its parents)
+     * when missing.
+     *
+     * @param  array{rules: ?list<mixed>, children: array<array-key, array>}  $root
+     * @return array{rules: ?list<mixed>, children: array<array-key, array>, override?: string}
+     */
+    protected function &treeNode(array &$root, string $key): array
+    {
+        $node = &$root;
+
+        foreach ($this->splitFieldName($key) as $segment) {
+            $node['children'][$segment] ??= ['rules' => null, 'children' => []];
+            $node = &$node['children'][$segment];
+        }
+
+        return $node;
+    }
+
+    /**
+     * Add the key each `confirmed` rule compares with: `{key}_confirmation`
+     * beside the key, or the key it names (`confirmed:pin_repeat`). It must
+     * hold the same value, so it takes the key's other rules: the same type,
+     * required and nullable as the key is. A key with rules of its own keeps them.
+     *
+     * @param  array{rules: ?list<mixed>, children: array<array-key, array>}  $root
+     */
+    protected function addConfirmations(array &$root): void
+    {
+        $isConfirmed = static fn (mixed $rule): bool => $rule === 'confirmed' || (is_string($rule) && str_starts_with($rule, 'confirmed:'));
+
+        foreach ($this->ruleKeys as $key) {
+            $rules = $this->treeNode($root, $key)['rules'] ?? [];
+            $confirmed = array_values(array_filter($rules, $isConfirmed));
+
+            if ($confirmed === []) {
+                continue;
+            }
+
+            $named = substr((string) $confirmed[0], strlen('confirmed:'));
+            $confirmationKey = $named !== '' ? $named : $key.'_confirmation';
+            $this->confirmations[$key] = $confirmationKey;
+
+            $node = &$this->treeNode($root, $confirmationKey);
+            $node['rules'] ??= array_values(array_filter($rules, static fn (mixed $rule): bool => ! $isConfirmed($rule)));
+            unset($node);
+        }
     }
 
     /**
@@ -385,10 +437,20 @@ class RequestExtractor
             );
         }
 
-        $queryNames = array_map(
+        // The confirmation key of a tagged key is sent with it.
+        $keys = $tagged['keys'];
+        foreach ($tagged['keys'] as $key) {
+            if (isset($this->confirmations[$key])) {
+                $keys[] = $this->confirmations[$key];
+            }
+        }
+
+        $queryNames = array_values(array_unique(array_map(
             fn (string $key): string => $this->segmentName($this->splitFieldName($key)[0]),
-            $tagged['keys'],
-        );
+            $keys,
+        )));
+
+        $this->warnAboutUntaggedQueryKeys($keys, $queryNames);
 
         $isQuery = fn (array $field): bool => in_array($field['name'], $queryNames, true);
 
@@ -396,6 +458,33 @@ class RequestExtractor
             array_values(array_filter($fields, fn (array $field): bool => ! $isQuery($field))),
             array_values(array_filter($fields, $isQuery)),
         ];
+    }
+
+    /**
+     * A query parameter is a whole top-level key, so tagging `filter.page`
+     * takes an untagged `filter.status` to the query type too: say so.
+     *
+     * @param  list<string>  $tagged  the tagged keys and their confirmation keys
+     * @param  list<string>  $queryNames  the top-level names they put in the query type
+     */
+    protected function warnAboutUntaggedQueryKeys(array $tagged, array $queryNames): void
+    {
+        foreach ($this->ruleKeys as $key) {
+            $top = $this->segmentName($this->splitFieldName($key)[0]);
+
+            // A parent of a tagged key goes with it, and so do the keys below a tagged one.
+            if (! in_array($top, $queryNames, true)
+                || in_array($key, $tagged, true)
+                || array_any($tagged, static fn (string $taggedKey): bool => str_starts_with($taggedKey, $key.'.') || str_starts_with($key, $taggedKey.'.'))) {
+                continue;
+            }
+
+            $this->warnings[] = sprintf(
+                "'%s' is not tagged @query, but is in the query type: a query parameter is typed as its whole top-level key '%s'",
+                $key,
+                $top,
+            );
+        }
     }
 
     /**
@@ -433,12 +522,22 @@ class RequestExtractor
         $field = [
             'name' => $this->segmentName($segment),
             'type' => $shape['type'],
-            // A parent without a rule of its own must be present when one of its keys must.
-            'required' => $node['rules'] === null
-                ? $shape['type'] === 'object' && array_any($shape['children'], fn (array $child): bool => $child['required'])
-                : $this->isRequired($rules),
+            'required' => match (true) {
+                $node['rules'] !== null => $this->isRequired($rules),
+                // A key only `#[TypefinderOverrides]` adds.
+                $node['children'] === [] => true,
+                // A parent without a rule of its own must be present when one of its keys must.
+                default => $this->anyKeyRequired($node),
+            },
             'nullable' => $this->isNullable($rules),
         ];
+
+        // `#[TypefinderOverrides]` replaces the type, nested shape included.
+        if (isset($node['override'])) {
+            $field['type'] = $node['override'];
+
+            return $field;
+        }
 
         if (isset($shape['children'])) {
             $field['children'] = $shape['children'];
@@ -448,7 +547,49 @@ class RequestExtractor
             $field['arrayDepth'] = $shape['arrayDepth'];
         }
 
+        if (in_array(true, $shape['nullableItems'] ?? [], true)) {
+            $field['nullableItems'] = $shape['nullableItems'];
+        }
+
         return $field;
+    }
+
+    /**
+     * Whether a node without rules of its own has a named key that must be
+     * sent (a list of items has none).
+     *
+     * @param  array{rules: ?list<mixed>, children: array<array-key, array>}  $node
+     */
+    protected function anyKeyRequired(array $node): bool
+    {
+        if (isset($node['children']['*'])) {
+            return false;
+        }
+
+        return array_any($node['children'], fn (array $child): bool => match (true) {
+            $child['rules'] !== null => $this->isRequired($child['rules']),
+            $child['children'] === [] => true,
+            default => $this->anyKeyRequired($child),
+        });
+    }
+
+    /**
+     * The keys an `array:a,b` rule allows, or null without one.
+     *
+     * @param  list<mixed>  $rules
+     * @return ?list<string>
+     */
+    protected function allowedKeys(array $rules): ?array
+    {
+        foreach ($rules as $rule) {
+            if (is_string($rule) && str_starts_with($rule, 'array:')) {
+                $keys = array_values(array_filter(array_map(trim(...), explode(',', substr($rule, 6))), static fn (string $key): bool => $key !== ''));
+
+                return $keys === [] ? null : $keys;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -463,6 +604,10 @@ class RequestExtractor
      */
     protected function resolveShape(array $node, string $path): array
     {
+        if (isset($node['override'])) {
+            return ['type' => $node['override']];
+        }
+
         $rules = $node['rules'] ?? [];
         $ownType = $this->resolveType($rules);
 
@@ -475,11 +620,41 @@ class RequestExtractor
         $named = $node['children'];
         $wildcard = $named['*'] ?? null;
         unset($named['*']);
+        $allowedKeys = $this->allowedKeys($rules);
 
         if ($wildcard === null) {
             $children = [];
             foreach ($named as $segment => $child) {
                 $children[] = $this->buildField((string) $segment, $child, $path.'.'.$segment);
+            }
+
+            // `array:a,b` also allows the listed keys that have no rule.
+            foreach ($allowedKeys ?? [] as $key) {
+                if (! isset($named[$key])) {
+                    $children[] = ['name' => $key, 'type' => 'unknown', 'required' => false, 'nullable' => false];
+                }
+            }
+
+            return ['type' => 'object', 'children' => $children];
+        }
+
+        // `array:a,b` with `.*` rules: an object of those keys, each typed by the `.*` rules.
+        if ($allowedKeys !== null) {
+            $children = [];
+            foreach ($allowedKeys as $key) {
+                if (! isset($named[$key])) {
+                    $children[] = ['required' => false] + $this->buildField($key, $wildcard, $path.'.'.$key);
+
+                    continue;
+                }
+
+                // A key's own rules win; the `.*` rules below it still apply.
+                $child = $named[$key];
+                if ($child['children'] === []) {
+                    $child['children'] = $wildcard['children'];
+                }
+
+                $children[] = $this->buildField($key, $child, $path.'.'.$key);
             }
 
             return ['type' => 'object', 'children' => $children];
@@ -497,13 +672,22 @@ class RequestExtractor
         }
 
         $item = $this->resolveShape($wildcard, $path.'.*');
+        $itemNullable = $wildcard['rules'] !== null && $this->isNullable($wildcard['rules']);
 
         if (isset($item['children'])) {
+            $depth = ($item['arrayDepth'] ?? 0) + 1;
+
             return [
                 'type' => 'object-array',
                 'children' => $item['children'],
-                'arrayDepth' => ($item['arrayDepth'] ?? 0) + 1,
+                'arrayDepth' => $depth,
+                // Whether the items are nullable, from the outer array in.
+                'nullableItems' => [$itemNullable, ...($item['nullableItems'] ?? array_fill(0, $depth - 1, false))],
             ];
+        }
+
+        if ($itemNullable) {
+            $item['type'] = is_string($item['type']) ? $item['type'].' | null' : ['anyOf' => [$item['type'], 'null']];
         }
 
         return ['type' => $this->arrayOf($item['type'])];
@@ -839,24 +1023,6 @@ class RequestExtractor
     }
 
     /**
-     * Check if a specific rule exists, in any branch of the rules.
-     *
-     * @param  list<mixed>  $rules
-     */
-    protected function hasRule(array $rules, string $ruleName): bool
-    {
-        foreach ($this->variants($rules) as $variant) {
-            foreach ($variant as $rule) {
-                if ($rule === $ruleName || (is_string($rule) && str_starts_with($rule, $ruleName.':'))) {
-                    return true;
-                }
-            }
-        }
-
-        return false;
-    }
-
-    /**
      * Normalize a field's rules once, so the resolvers only see rule strings
      * (`|`-separated ones split) and the rule objects they read (`In`,
      * `Enum`, `AnyOf`), plus a `['when' => [rules, defaultRules]]` entry
@@ -1070,26 +1236,15 @@ class RequestExtractor
      * #[TypefinderOverrides(...)] attribute as the full field set.
      * Returns null if the attribute is absent.
      *
-     * @return ?list<array{name: string, type: string, required: bool, nullable: bool}>
+     * Dotted keys nest, as they do next to rules.
+     *
+     * @return ?list<array>
      */
     protected function synthesizeFieldsFromOverrides(ReflectionClass $reflectionClass): ?array
     {
         $overrides = $this->getTypeOverrides($reflectionClass);
-        if ($overrides === []) {
-            return null;
-        }
 
-        $fields = [];
-        foreach ($overrides as $name => $type) {
-            $fields[] = [
-                'name' => $name,
-                'type' => $type,
-                'required' => true,
-                'nullable' => false,
-            ];
-        }
-
-        return $fields;
+        return $overrides === [] ? null : $this->parseRules([], $overrides);
     }
 
     /**

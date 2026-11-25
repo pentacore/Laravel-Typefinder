@@ -68,6 +68,8 @@ final class DelegatedQueryTagsTest extends TestCase
 
         $this->assertSame(['value', 'comment', 'owner'], array_column($result['fields'], 'name'));
         $this->assertSame(['scope', 'sort', 'filter'], array_column($result['query'], 'name'));
-        $this->assertArrayNotHasKey('warnings', $result);
+        // Only the `owner` rule, which branches on the user (#194).
+        $this->assertCount(1, $result['warnings']);
+        $this->assertStringContainsString('rules() branches on request state ($this->user())', $result['warnings'][0]);
     }
 }
