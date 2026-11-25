@@ -43,8 +43,8 @@ final class BroadcastExtractorTest extends TestCase
         $this->assertArrayHasKey('OrderShipped', $byName->toArray());
         $event = $byName['OrderShipped'];
         $this->assertSame([['type' => 'private', 'name' => 'orders.{orderId}']], $event['channels']);
-        $this->assertArrayHasKey('order', $event['payload']);
-        $this->assertArrayHasKey('trackingNumber', $event['payload']);
+        // broadcastWith() reads constructor state, so its literal keys are read from source.
+        $this->assertSame(['orderId' => 'unknown', 'trackingNumber' => 'unknown'], $event['payload']);
     }
 
     public function test_extracts_presence_channel(): void

@@ -128,7 +128,7 @@ class ResourceExtractor
 
     /**
      * Whether a class gets a resource type of its own: a `JsonResource`, not
-     * `#[TypefinderIgnore]`d.
+     * abstract, not `#[TypefinderIgnore]`d.
      *
      * @param  class-string  $resourceClass
      */
@@ -137,6 +137,7 @@ class ResourceExtractor
         $reflectionClass = new ReflectionClass($resourceClass);
 
         return $reflectionClass->isSubclassOf(JsonResource::class)
+            && ! $reflectionClass->isAbstract()
             && $reflectionClass->getAttributes(TypefinderIgnore::class, ReflectionAttribute::IS_INSTANCEOF) === [];
     }
 

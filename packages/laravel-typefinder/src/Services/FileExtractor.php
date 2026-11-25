@@ -241,7 +241,7 @@ final class FileExtractor
      */
     private function broadcast(string $class): ?array
     {
-        $this->broadcastExtractor ??= new BroadcastExtractor;
+        $this->broadcastExtractor ??= new BroadcastExtractor($this->warn);
 
         return $this->broadcastExtractor->isEmittable($class)
             ? $this->broadcastExtractor->tryExtract($class, $this->skipped(...))
