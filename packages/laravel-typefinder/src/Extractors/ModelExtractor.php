@@ -741,7 +741,73 @@ class ModelExtractor
             $pivot['using'] = $using;
         }
 
+        $accessor = $relation->getPivotAccessor();
+        if ($accessor !== 'pivot') {
+            $pivot['accessor'] = $accessor;
+        }
+
+        $pivot['columns'] = $this->pivotColumns($relation, $pivot);
+
         return $pivot;
+    }
+
+    /**
+     * The pivot's columns typed from the pivot table, with the `using`
+     * class's casts first. A column the table does not have (it is not
+     * migrated yet) keeps the old default: keys are numbers, the rest
+     * nullable strings.
+     *
+     * @param  array{table: string, foreignKey: string, relatedKey: string, withPivot: list<string>, morphType?: string, using?: class-string}  $pivot
+     * @return list<array{name: string, type: mixed, nullable: bool}>
+     */
+    protected function pivotColumns(BelongsToMany|MorphToMany $relation, array $pivot): array
+    {
+        // The relation queries the related model's connection, joining the pivot table there.
+        $connection = $relation->getRelated()->getConnection();
+        $driver = $connection->getDriverName();
+
+        try {
+            $schemaColumns = array_column($connection->getSchemaBuilder()->getColumns($pivot['table']), null, 'name');
+        } catch (Throwable) {
+            $schemaColumns = [];
+        }
+
+        $casts = [];
+        if (isset($pivot['using'])) {
+            try {
+                $casts = new $pivot['using']()->getCasts();
+            } catch (Throwable) {
+                $casts = [];
+            }
+        }
+
+        $names = [$pivot['foreignKey'], $pivot['relatedKey']];
+        if (isset($pivot['morphType'])) {
+            $names[] = $pivot['morphType'];
+        }
+
+        $keys = $names;
+        $columns = [];
+        foreach (array_values(array_unique([...$names, ...$pivot['withPivot']])) as $name) {
+            $schemaColumn = $schemaColumns[$name] ?? null;
+            $isKey = in_array($name, $keys, true);
+            $fallback = $name === ($pivot['morphType'] ?? null) ? 'string' : ($isKey ? 'number' : 'string');
+
+            $type = isset($casts[$name]) ? $this->castTypeResolver->resolveOrNull($casts[$name]) : null;
+            if ($type === null && $schemaColumn !== null) {
+                $type = $this->columnTypeResolver->recognises($schemaColumn['type_name'], $driver)
+                    ? $this->columnTypeResolver->resolve($schemaColumn['type_name'], false, $driver)
+                    : null;
+            }
+
+            $columns[] = [
+                'name' => $name,
+                'type' => $type ?? $fallback,
+                'nullable' => $schemaColumn !== null ? (bool) $schemaColumn['nullable'] : ! $isKey,
+            ];
+        }
+
+        return $columns;
     }
 
     /**

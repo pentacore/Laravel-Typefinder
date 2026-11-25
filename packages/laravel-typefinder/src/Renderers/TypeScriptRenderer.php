@@ -376,6 +376,7 @@ class TypeScriptRenderer
     {
         $lines = [];
         $seen = [];
+        $imports = [];
 
         foreach ($pivot['columns'] as $column) {
             if (isset($seen[$column['name']])) {
@@ -384,7 +385,9 @@ class TypeScriptRenderer
 
             $seen[$column['name']] = true;
             $nullable = (bool) ($column['nullable'] ?? false);
-            $lines[] = '  '.self::member((string) $column['name'], self::appendNullable($column['type'], $nullable)).';';
+            // A `using` pivot class's cast may name an enum.
+            $type = $this->resolveTypeString($column['type'], $nullable, [], $imports, 'models');
+            $lines[] = '  '.self::member((string) $column['name'], self::appendNullable($type, $nullable)).';';
         }
 
         // Laravel's withTimestamps() already lists the timestamp columns among
@@ -397,7 +400,11 @@ class TypeScriptRenderer
             }
         }
 
-        return self::FILE_HEADER."\nexport type {$pivot['name']} = {\n".implode("\n", $lines)."\n};\n";
+        $imports = array_values(array_unique($imports));
+        sort($imports);
+        $importBlock = $imports === [] ? '' : implode("\n", $imports)."\n\n";
+
+        return self::FILE_HEADER."\n".$importBlock."export type {$pivot['name']} = {\n".implode("\n", $lines)."\n};\n";
     }
 
     /**
@@ -681,7 +688,7 @@ TS;
                 $pivotName = $this->generatePivotName($rel['pivot']['table'] ?? $name);
                 $imports[] = sprintf("import type { %s } from './%s';", $pivotName, $pivotName);
 
-                return sprintf('  %s?: (%s & { pivot: %s })[];', $name, $relatedName, $pivotName);
+                return sprintf('  %s?: (%s & { %s: %s })[];', $name, $relatedName, self::propertyKey((string) ($rel['pivot']['accessor'] ?? 'pivot')), $pivotName);
 
             case 'morphTo':
                 return sprintf('  %s?: %s | null;', $name, $rel['generic'] ?? 'T');
