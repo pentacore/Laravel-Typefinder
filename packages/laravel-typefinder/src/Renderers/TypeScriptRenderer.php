@@ -53,9 +53,38 @@ class TypeScriptRenderer
      */
     public static function propertyKey(string $name): string
     {
-        return self::isIdentifier($name)
-            ? $name
-            : "'".str_replace(['\\', "'"], ['\\\\', "\\'"], $name)."'";
+        return self::isIdentifier($name) ? $name : self::stringLiteral($name);
+    }
+
+    /**
+     * A key from a declared shape, where a trailing `?` marks the member
+     * optional: the base name is quoted when needed and the `?` stays outside
+     * the quotes (`'x-y'?`).
+     */
+    public static function memberKey(string $key): string
+    {
+        if (str_ends_with($key, '?') && $key !== '?') {
+            return self::propertyKey(substr($key, 0, -1)).'?';
+        }
+
+        return self::propertyKey($key);
+    }
+
+    /**
+     * One object member without indentation or terminator: `key?: T`.
+     */
+    public static function member(string $name, string $type, bool $optional = false): string
+    {
+        return self::propertyKey($name).($optional ? '?' : '').': '.$type;
+    }
+
+    /**
+     * A single-quoted TS string literal, with quotes, backslashes and line
+     * breaks escaped.
+     */
+    public static function stringLiteral(string $value): string
+    {
+        return "'".str_replace(['\\', "'", "\n", "\r"], ['\\\\', "\\'", '\n', '\r'], $value)."'";
     }
 
     private static function isIdentifier(string $name): bool
@@ -121,13 +150,13 @@ class TypeScriptRenderer
         if (! $emitValues) {
             $valueStrings = array_map(function (string|int $value) use ($backingType): string {
                 if ($backingType === 'string') {
-                    return sprintf("'%s'", $value);
+                    return self::stringLiteral((string) $value);
                 }
 
                 return (string) $value;
             }, $enum['values']);
 
-            $union = implode(' | ', $valueStrings);
+            $union = $valueStrings === [] ? 'never' : implode(' | ', $valueStrings);
 
             return self::FILE_HEADER."\nexport type {$name} = {$union};\n";
         }
@@ -135,7 +164,7 @@ class TypeScriptRenderer
         $cases = $enum['cases'] ?? [];
         $entries = array_map(function (array $case) use ($backingType): string {
             $value = $backingType === 'string'
-                ? sprintf("'%s'", $case['value'])
+                ? self::stringLiteral((string) $case['value'])
                 : (string) $case['value'];
 
             return sprintf('    %s: %s,', $case['name'], $value);
@@ -166,10 +195,10 @@ class TypeScriptRenderer
             foreach ($page['props'] as $name => $type) {
                 $resolved = $this->resolveClassString((string) $type, '', $allModels, $allEnums, $allResources, $imports);
                 $optional = in_array($name, $page['optional'], true) ? '?' : '';
-                $propLines[] = sprintf('%s%s: %s', $name, $optional, $resolved);
+                $propLines[] = self::propertyKey((string) $name).$optional.': '.$resolved;
             }
 
-            $entries[] = sprintf("  '%s': { ", $page['component']).implode('; ', $propLines).' };';
+            $entries[] = sprintf('  %s: { ', self::stringLiteral((string) $page['component'])).implode('; ', $propLines).' };';
         }
 
         $imports = array_values(array_unique($imports));
@@ -355,7 +384,7 @@ class TypeScriptRenderer
 
             $seen[$column['name']] = true;
             $nullable = (bool) ($column['nullable'] ?? false);
-            $lines[] = sprintf('  %s: %s;', $column['name'], self::appendNullable($column['type'], $nullable));
+            $lines[] = '  '.self::member((string) $column['name'], self::appendNullable($column['type'], $nullable)).';';
         }
 
         // Laravel's withTimestamps() already lists the timestamp columns among
@@ -555,7 +584,7 @@ TS;
 
             if (isset($type['in'])) {
                 // Numbers are the values of an `in` rule on a numeric field.
-                $values = array_map(fn (int|float|string $v): string => is_string($v) ? sprintf("'%s'", $v) : (string) $v, $type['in']);
+                $values = array_map(fn (int|float|string $v): string => is_string($v) ? self::stringLiteral($v) : (string) $v, $type['in']);
 
                 return implode(' | ', $values);
             }
@@ -585,7 +614,7 @@ TS;
             $literals = array_map(
                 static fn (int|string $value): string => is_int($value)
                     ? (string) $value
-                    : "'".str_replace(['\\', "'"], ['\\\\', "\\'"], $value)."'",
+                    : self::stringLiteral($value),
                 $values,
             );
 
