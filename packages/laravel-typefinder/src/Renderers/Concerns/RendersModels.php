@@ -98,7 +98,7 @@ trait RendersModels
 
         foreach ($model['columns'] as $column) {
             $typeStr = $this->resolveTypeString($column['type'], $column['nullable'], $allEnums, $imports, 'models', $model['fqcn'] ?? null, $allModels);
-            $lines[] = sprintf('  %s: %s;', $column['name'], TypeScriptRenderer::appendNullable($typeStr, (bool) $column['nullable']));
+            $lines[] = '  '.TypeScriptRenderer::member((string) $column['name'], TypeScriptRenderer::appendNullable($typeStr, (bool) $column['nullable'])).';';
         }
 
         foreach ($model['relationships'] ?? [] as $rel) {
@@ -136,8 +136,8 @@ trait RendersModels
         foreach ($eligible as $column) {
             $typeStr = $this->resolveTypeString($column['type'], $column['nullable'], $allEnums, $imports, 'models', $model['fqcn'] ?? null, $allModels);
             // An insert may leave out what is nullable or has a default.
-            $optional = $column['nullable'] || ! empty($column['has_default']) ? '?' : '';
-            $lines[] = sprintf('  %s%s: %s;', $column['name'], $optional, TypeScriptRenderer::appendNullable($typeStr, (bool) $column['nullable']));
+            $optional = $column['nullable'] || ! empty($column['has_default']);
+            $lines[] = '  '.TypeScriptRenderer::member((string) $column['name'], TypeScriptRenderer::appendNullable($typeStr, (bool) $column['nullable']), $optional).';';
         }
 
         $body = $lines === []
@@ -165,7 +165,7 @@ trait RendersModels
 
         foreach ($eligible as $column) {
             $typeStr = $this->resolveTypeString($column['type'], $column['nullable'], $allEnums, $imports, 'models', $model['fqcn'] ?? null, $allModels);
-            $lines[] = sprintf('  %s?: %s;', $column['name'], TypeScriptRenderer::appendNullable($typeStr, (bool) $column['nullable']));
+            $lines[] = '  '.TypeScriptRenderer::member((string) $column['name'], TypeScriptRenderer::appendNullable($typeStr, (bool) $column['nullable']), true).';';
         }
 
         $body = $lines === []

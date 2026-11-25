@@ -36,10 +36,11 @@ trait RendersBroadcasting
 
         foreach ($events as $event) {
             $payloadStr = $this->renderPayloadRecord($event['payload'], $allModels, $allEnums, $allResources, $imports);
-            $flatEvents[] = sprintf("  '%s': %s;", $event['broadcast_name'], $payloadStr);
+            $eventKey = self::stringLiteral((string) $event['broadcast_name']);
+            $flatEvents[] = sprintf('  %s: %s;', $eventKey, $payloadStr);
 
             foreach ($event['channels'] as $channel) {
-                $byType[$channel['type']][$channel['name']][] = sprintf("'%s': %s", $event['broadcast_name'], $payloadStr);
+                $byType[$channel['type']][$channel['name']][] = sprintf('%s: %s', $eventKey, $payloadStr);
             }
         }
 
@@ -73,7 +74,7 @@ trait RendersBroadcasting
 
         $lines = [];
         foreach ($entries as $channelName => $eventBodies) {
-            $lines[] = sprintf("  '%s': { ", $channelName).implode('; ', $eventBodies).' };';
+            $lines[] = sprintf('  %s: { ', self::stringLiteral((string) $channelName)).implode('; ', $eventBodies).' };';
         }
 
         return "export type {$typeName} = {\n".implode("\n", $lines)."\n};\n";
@@ -94,7 +95,7 @@ trait RendersBroadcasting
         $parts = [];
         foreach ($payload as $name => $type) {
             $resolved = $this->resolveClassString((string) $type, '', $allModels, $allEnums, $allResources, $imports);
-            $parts[] = sprintf('%s: %s', $name, $resolved);
+            $parts[] = sprintf('%s: %s', self::memberKey((string) $name), $resolved);
         }
 
         return '{ '.implode('; ', $parts).' }';

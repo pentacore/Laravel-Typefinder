@@ -38,7 +38,7 @@ trait RendersResources
             $lines = [];
             foreach ($shape['fields'] as $fieldName => $type) {
                 $resolved = $this->resolveClassString((string) $type, 'resources', $allModels, $allEnums, $allResources, $imports, $resource['fqcn']);
-                $lines[] = sprintf('  %s: %s;', $fieldName, $resolved);
+                $lines[] = sprintf('  %s: %s;', TypeScriptRenderer::memberKey((string) $fieldName), $resolved);
             }
 
             return $this->assembleResourceFile($imports, "export type {$name} = {\n".implode("\n", $lines)."\n};\n");
@@ -57,7 +57,7 @@ trait RendersResources
         $extend = $shape['extend'];
 
         if ($omit !== []) {
-            $omitUnion = implode(' | ', array_map(fn (string $field): string => sprintf("'%s'", $field), $omit));
+            $omitUnion = implode(' | ', array_map(TypeScriptRenderer::stringLiteral(...), $omit));
             $body .= sprintf('Omit<%s, %s>', $modelShort, $omitUnion);
         } else {
             $body .= $modelShort;
@@ -67,7 +67,7 @@ trait RendersResources
             $parts = [];
             foreach ($extend as $fieldName => $type) {
                 $resolved = $this->resolveClassString((string) $type, 'resources', $allModels, $allEnums, $allResources, $imports, $resource['fqcn']);
-                $parts[] = sprintf('%s: %s', $fieldName, $resolved);
+                $parts[] = sprintf('%s: %s', TypeScriptRenderer::memberKey((string) $fieldName), $resolved);
             }
 
             $body .= ' & { '.implode('; ', $parts).' }';
@@ -204,21 +204,7 @@ trait RendersResources
      */
     private function renderObjectField(array $field, string $renderedType): string
     {
-        return sprintf(
-            '%s%s: %s',
-            $this->renderObjectKey((string) $field['name']),
-            $field['optional'] ? '?' : '',
-            $renderedType,
-        );
-    }
-
-    private function renderObjectKey(string $name): string
-    {
-        if (preg_match('/^[A-Za-z_$][A-Za-z0-9_$]*$/', $name) === 1) {
-            return $name;
-        }
-
-        return "'".str_replace(['\\', "'"], ['\\\\', "\\'"], $name)."'";
+        return TypeScriptRenderer::member((string) $field['name'], $renderedType, (bool) $field['optional']);
     }
 
     /**
