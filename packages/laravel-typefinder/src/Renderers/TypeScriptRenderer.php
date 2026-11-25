@@ -440,6 +440,12 @@ export type PaginatedResourceCollection<T> = WrappedResourceCollection<T> & {
 };
 
 export type CursorPaginatedResourceCollection<T> = WrappedResourceCollection<T> & {
+  links: {
+    first: null;
+    last: null;
+    prev: string | null;
+    next: string | null;
+  };
   meta: {
     path: string;
     per_page: number;
@@ -449,8 +455,15 @@ export type CursorPaginatedResourceCollection<T> = WrappedResourceCollection<T> 
 };
 
 export type SimplePaginatedResourceCollection<T> = WrappedResourceCollection<T> & {
+  links: {
+    first: string | null;
+    last: null;
+    prev: string | null;
+    next: string | null;
+  };
   meta: {
     current_page: number;
+    current_page_url: string;
     from: number | null;
     path: string;
     per_page: number;
@@ -461,6 +474,29 @@ export type SimplePaginatedResourceCollection<T> = WrappedResourceCollection<T> 
 export type PaginatedModel<TData> = PaginationFields & {
     "data": TData[]
 }
+
+export type SimplePaginatedModel<TData> = {
+  current_page: number;
+  current_page_url: string;
+  data: TData[];
+  first_page_url: string;
+  from: number | null;
+  next_page_url: string | null;
+  path: string;
+  per_page: number;
+  prev_page_url: string | null;
+  to: number | null;
+};
+
+export type CursorPaginatedModel<TData> = {
+  data: TData[];
+  path: string;
+  per_page: number;
+  next_cursor: string | null;
+  next_page_url: string | null;
+  prev_cursor: string | null;
+  prev_page_url: string | null;
+};
 
 export type PaginationFields = {
   current_page: number,

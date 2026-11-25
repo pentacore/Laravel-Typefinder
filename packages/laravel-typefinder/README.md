@@ -414,7 +414,7 @@ Consolidated `broadcasting.d.ts` with four maps: `BroadcastPublicChannels`, `Bro
 
 ### Helpers (always emitted)
 
-`helpers.d.ts` ships nine generic response wrappers that work with *any* generated type:
+`helpers.d.ts` ships eleven generic response wrappers that work with *any* generated type:
 
 ```typescript
 // JsonResource / ResourceCollection envelopes
@@ -423,19 +423,21 @@ WrappedResourceCollection<T>            { data: T[] }
 
 // Paginated JsonResource collections
 PaginatedResourceCollection<T>          paginate()       — adds links + full meta
-CursorPaginatedResourceCollection<T>    cursorPaginate() — adds meta (next/prev cursor)
-SimplePaginatedResourceCollection<T>    simplePaginate() — adds meta (no total)
+CursorPaginatedResourceCollection<T>    cursorPaginate() — adds links (no first/last) + meta (next/prev cursor)
+SimplePaginatedResourceCollection<T>    simplePaginate() — adds links (no last) + meta (no total)
 
-// Raw model paginator (Model::paginate() without a Resource)
-PaginatedModel<T>                       PaginationFields & { data: T[] }
+// Raw model paginators (returned without a Resource)
+PaginatedModel<T>                       paginate()       — PaginationFields & { data: T[] }
 PaginationFields                        current_page, last_page, total, links, …
+SimplePaginatedModel<T>                 simplePaginate() — current_page, current_page_url, next_page_url, …
+CursorPaginatedModel<T>                 cursorPaginate() — next_cursor, prev_cursor, next_page_url, …
 
 // Error envelopes
 ValidationErrorResponse                 { message: string; errors: Record<string, string[]> }
 ErrorResponse                           { message: string }
 ```
 
-Consumers write `WrappedResource<UserResource>` or `PaginatedResourceCollection<PostResource>` at the fetch site. When you return a raw paginator from `Model::paginate()` without wrapping in a Resource, use `PaginatedModel<User>` instead.
+Consumers write `WrappedResource<UserResource>` or `PaginatedResourceCollection<PostResource>` at the fetch site. When you return a raw paginator from `Model::paginate()` without wrapping in a Resource, use `PaginatedModel<User>` instead (`SimplePaginatedModel<User>` / `CursorPaginatedModel<User>` for `simplePaginate()` / `cursorPaginate()`).
 
 ### Drift checks
 

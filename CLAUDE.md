@@ -85,7 +85,7 @@ Every generation run produces a tree under `output_path` (default `resources/js/
 | Resources | `resources/{Name}.d.ts` | on | `app/Http/Resources/*` (`JsonResource` subclasses) |
 | Pages | `pages.d.ts` (single file) | **off** | controller actions tagged `#[TypefinderPage]` |
 | Broadcasting | `broadcasting.d.ts` (single file) | **off** | classes implementing `ShouldBroadcast` |
-| Helpers | `helpers.d.ts` (single file) | always | nine generic response wrappers (`WrappedResource`, `WrappedResourceCollection`, three resource paginators, `PaginatedModel` + `PaginationFields`, `ValidationErrorResponse`, `ErrorResponse`) — see README |
+| Helpers | `helpers.d.ts` (single file) | always | eleven generic response wrappers (`WrappedResource`, `WrappedResourceCollection`, three resource paginators, `PaginatedModel` + `PaginationFields`, `SimplePaginatedModel`, `CursorPaginatedModel`, `ValidationErrorResponse`, `ErrorResponse`) — see README |
 | Category barrels | `{category}/index.d.ts` | with the category | re-export every type of every file, companions included (`Generator::barrelExports()` leaves out a companion name another file also exports, with a warning) |
 | Top-level barrel | `index.d.ts` | always | re-exports every emitted category |
 
