@@ -1,3 +1,9 @@
+## [8.4.1](https://github.com/pentacore/Laravel-Typefinder/compare/v8.4.0...v8.4.1) (2026-11-25)
+
+### Bug Fixes
+
+* resolve request, model and Inertia typing gaps ([#230](https://github.com/pentacore/Laravel-Typefinder/issues/230)-[#234](https://github.com/pentacore/Laravel-Typefinder/issues/234)) ([f9ef7ea](https://github.com/pentacore/Laravel-Typefinder/commit/f9ef7ea6460a089d0fedb7825305d38d85b1fd99))
+
 ## [8.4.0](https://github.com/pentacore/Laravel-Typefinder/compare/v8.3.2...v8.4.0) (2026-11-25)
 
 ### Features
