@@ -27,10 +27,12 @@ use Pentacore\Typefinder\Attributes\TypefinderWriteShape;
 use Pentacore\Typefinder\Resolvers\CastTypeResolver;
 use Pentacore\Typefinder\Resolvers\ColumnTypeResolver;
 use Pentacore\Typefinder\Support\ClassDiscovery;
+use Pentacore\Typefinder\Support\ThrowableMessage;
 use ReflectionAttribute;
 use ReflectionClass;
 use ReflectionMethod;
 use ReflectionNamedType;
+use ReflectionUnionType;
 use Throwable;
 
 class ModelExtractor
@@ -43,6 +45,12 @@ class ModelExtractor
         'bool' => 'boolean',
         'true' => 'true',
         'false' => 'false',
+    ];
+
+    /** The model methods that build a relation, as `artisan model:show` lists them. */
+    private const array RELATION_BUILDERS = [
+        'hasMany', 'hasManyThrough', 'hasOneThrough', 'belongsToMany', 'hasOne', 'belongsTo',
+        'morphOne', 'morphTo', 'morphMany', 'morphToMany', 'morphedByMany',
     ];
 
     /** @var array<string, list<string>> */
@@ -70,10 +78,15 @@ class ModelExtractor
         $columns = $this->extractColumns($model, $table, $modelClass);
         $relationships = $this->extractRelationships($model, $reflectionClass);
 
+        // `$hidden` / `$visible` only shape serialisation: a hidden column
+        // stays writable, so only the read type leaves it out.
+        $readColumns = array_values(array_filter($columns, fn (array $column): bool => $this->isSerialised($model, $column['name'])));
+        $readColumns = [...$readColumns, ...$this->extractAppends($model, $reflectionClass, $readColumns)];
+
         return [
             'name' => $reflectionClass->getShortName(),
             'fqcn' => $modelClass,
-            'columns' => [...$columns, ...$this->extractAppends($model, $reflectionClass, $columns)],
+            'columns' => $readColumns,
             'relationships' => $relationships,
             // Appended attributes are read-only: computed before they join the columns.
             'assignable_columns' => $this->filterAssignable($model, $columns),
@@ -105,10 +118,8 @@ class ModelExtractor
     }
 
     /**
-     * Extract column information from the model's database table.
-     *
-     * Respects $visible/$hidden on the model: hidden columns are excluded;
-     * if $visible is set, only those columns pass through.
+     * Extract column information from the model's database table: every
+     * column that is serialised or mass assignable.
      *
      * @param  class-string<Model>|null  $modelClass
      * @return list<array{name: string, type: mixed, nullable: bool, is_primary: bool, is_server_filled: bool, has_default: bool}>
@@ -134,8 +145,10 @@ class ModelExtractor
         $enumTypes = $this->enumTypes($schemaBuilder, $driver);
         $casts = $model->getCasts();
         $overrides = $this->getTypeOverrides($model);
-        $hidden = $model->getHidden();
-        $visible = $model->getVisible();
+        $assignable = array_column($this->filterAssignable($model, array_map(
+            fn (array $schemaColumn): array => ['name' => $schemaColumn['name']],
+            $schemaColumns,
+        )), 'name');
 
         $contractServerFilled = $this->getContractServerFilled($model);
         // What a new model starts with: the defaults in its `$attributes`.
@@ -146,12 +159,8 @@ class ModelExtractor
             $name = $schemaColumn['name'];
             $nullable = $schemaColumn['nullable'];
 
-            // Visibility filtering
-            if (in_array($name, $hidden, true)) {
-                continue;
-            }
-
-            if (! empty($visible) && ! in_array($name, $visible, true)) {
+            // A column in neither the read type nor a write shape.
+            if (! $this->isSerialised($model, $name) && ! in_array($name, $assignable, true)) {
                 continue;
             }
 
@@ -213,6 +222,21 @@ class ModelExtractor
         }
 
         return $columns;
+    }
+
+    /**
+     * Whether `toArray()` includes the attribute or relation: not in
+     * `$hidden`, and in `$visible` when that is set.
+     */
+    protected function isSerialised(Model $model, string $name): bool
+    {
+        if (in_array($name, $model->getHidden(), true)) {
+            return false;
+        }
+
+        $visible = $model->getVisible();
+
+        return $visible === [] || in_array($name, $visible, true);
     }
 
     protected function warn(string $message): void
@@ -401,7 +425,11 @@ class ModelExtractor
     }
 
     /**
-     * Extract relationship information from the model.
+     * Extract relationship information from the model: every public method
+     * without parameters that returns a Relation. A method with no return
+     * type is probed when its body builds a relation (`$this->hasMany(…)`),
+     * as `artisan model:show` does. Relations `toArray()` leaves out
+     * (`$hidden`, `$visible`) are left out.
      *
      * @return list<array{name: string, type: string, related: class-string, relationType: string, pivot?: array}>
      */
@@ -416,26 +444,19 @@ class ModelExtractor
                 continue;
             }
 
-            if ($reflectionMethod->getNumberOfParameters() > 0) {
+            if ($reflectionMethod->getNumberOfParameters() > 0 || $reflectionMethod->isStatic()) {
                 continue;
             }
 
-            $returnType = $reflectionMethod->getReturnType();
-
-            if ($returnType === null) {
+            if (! $this->mayReturnRelation($reflectionMethod)) {
                 continue;
             }
 
-            $returnTypeName = $returnType instanceof ReflectionNamedType ? $returnType->getName() : null;
-            if ($returnTypeName === null) {
+            if (! $this->isSerialised($model, $reflectionMethod->getName())) {
                 continue;
             }
 
-            if (! is_subclass_of($returnTypeName, Relation::class)) {
-                continue;
-            }
-
-            $relationship = $this->extractRelationship($model, $reflectionMethod, $returnTypeName);
+            $relationship = $this->extractRelationship($model, $reflectionMethod);
 
             if ($relationship !== null) {
                 $relationships[] = $relationship;
@@ -446,13 +467,59 @@ class ModelExtractor
     }
 
     /**
+     * Whether a method is a relation to call: its return type names a
+     * Relation (alone or in a union), or it has no return type and its body
+     * calls one of the model's relation builders. Untyped methods in vendor
+     * code are not probed.
+     */
+    protected function mayReturnRelation(ReflectionMethod $reflectionMethod): bool
+    {
+        $returnType = $reflectionMethod->getReturnType();
+
+        if ($returnType instanceof ReflectionNamedType || $returnType instanceof ReflectionUnionType) {
+            $types = $returnType instanceof ReflectionUnionType ? $returnType->getTypes() : [$returnType];
+
+            return array_any($types, fn (\ReflectionNamedType|\ReflectionIntersectionType $type): bool => $type instanceof ReflectionNamedType && is_a($type->getName(), Relation::class, true));
+        }
+
+        if ($returnType instanceof \ReflectionType) {
+            return false;
+        }
+
+        $file = $reflectionMethod->getFileName();
+        if ($file === false || str_contains($file, DIRECTORY_SEPARATOR.'vendor'.DIRECTORY_SEPARATOR)) {
+            return false;
+        }
+
+        $lines = file($file);
+        if ($lines === false) {
+            return false;
+        }
+
+        $body = implode('', array_slice(
+            $lines,
+            (int) $reflectionMethod->getStartLine() - 1,
+            (int) $reflectionMethod->getEndLine() - (int) $reflectionMethod->getStartLine() + 1,
+        ));
+
+        return preg_match('/\$this->(?:'.implode('|', self::RELATION_BUILDERS).')\s*\(/i', $body) === 1;
+    }
+
+    /**
      * Extract a single relationship's information.
      */
-    protected function extractRelationship(Model $model, ReflectionMethod $reflectionMethod, string $returnTypeName): ?array
+    protected function extractRelationship(Model $model, ReflectionMethod $reflectionMethod): ?array
     {
         try {
             $relation = $reflectionMethod->invoke($model);
-        } catch (Throwable) {
+        } catch (Throwable $throwable) {
+            $this->warn(sprintf(
+                '%s::%s(): building the relation threw %s — left out of the type.',
+                $model::class,
+                $reflectionMethod->getName(),
+                ThrowableMessage::describe($throwable),
+            ));
+
             return null;
         }
 
@@ -466,7 +533,7 @@ class ModelExtractor
         $result = [
             'name' => $methodName,
             'related' => $relatedClass,
-            'relationType' => $returnTypeName,
+            'relationType' => $relation::class,
         ];
 
         // Determine cardinality
