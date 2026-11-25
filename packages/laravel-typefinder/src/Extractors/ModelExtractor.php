@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace Pentacore\Typefinder\Extractors;
 
+use BackedEnum;
+use Closure;
+use DateTimeInterface;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -30,8 +34,10 @@ use Pentacore\Typefinder\Support\ClassDiscovery;
 use Pentacore\Typefinder\Support\ThrowableMessage;
 use ReflectionAttribute;
 use ReflectionClass;
+use ReflectionFunction;
 use ReflectionMethod;
 use ReflectionNamedType;
+use ReflectionType;
 use ReflectionUnionType;
 use Throwable;
 
@@ -345,7 +351,7 @@ class ModelExtractor
             $taken[] = $name;
             [$type, $nullable] = isset($overrides[$name])
                 ? [$overrides[$name], false]
-                : $this->accessorType($reflectionClass, $name);
+                : $this->accessorType($model, $reflectionClass, $name);
 
             $appends[] = [
                 'type' => $type,
@@ -361,47 +367,138 @@ class ModelExtractor
     }
 
     /**
-     * The TypeScript type of an accessor, read from `getFooAttribute()`'s
-     * return type or from the `Attribute<TGet, TSet>` generic documented on
-     * `foo()`. Anything else is `unknown`.
+     * The TypeScript type of an accessor: `getFooAttribute()`'s return type,
+     * or for `foo(): Attribute` the `Attribute<TGet, TSet>` generic in its
+     * PHPDoc, else the return type of the getter closure it builds. Anything
+     * else is `unknown`.
      *
      * @return array{string, bool} type and nullability
      */
-    protected function accessorType(ReflectionClass $reflectionClass, string $name): array
+    protected function accessorType(Model $model, ReflectionClass $reflectionClass, string $name): array
     {
         $legacy = 'get'.Str::studly($name).'Attribute';
         if ($reflectionClass->hasMethod($legacy)) {
-            $returnType = $reflectionClass->getMethod($legacy)->getReturnType();
-            if ($returnType instanceof ReflectionNamedType) {
-                return [
-                    self::SCALAR_TYPES[$returnType->getName()] ?? 'unknown',
-                    $returnType->allowsNull() && $returnType->getName() !== 'mixed',
-                ];
-            }
-
-            return ['unknown', false];
+            return $this->reflectedType($reflectionClass->getMethod($legacy)->getReturnType()) ?? ['unknown', false];
         }
 
         $modern = Str::camel($name);
-        $doc = $reflectionClass->hasMethod($modern) ? $reflectionClass->getMethod($modern)->getDocComment() : false;
-        if ($doc === false || preg_match('/@return\s+[\w\\\\]*Attribute<([^,<>]+),/', $doc, $match) !== 1) {
+        if (! $reflectionClass->hasMethod($modern)) {
             return ['unknown', false];
         }
 
-        $members = array_map(trim(...), explode('|', ltrim(trim($match[1]), '?')));
-        $nullable = str_starts_with(trim($match[1]), '?') || in_array('null', $members, true);
-        $members = array_values(array_filter($members, fn (string $member): bool => $member !== 'null'));
-
-        $types = [];
-        foreach ($members as $member) {
-            if (! isset(self::SCALAR_TYPES[$member])) {
-                return ['unknown', false];
+        $method = $reflectionClass->getMethod($modern);
+        $doc = $method->getDocComment();
+        if ($doc !== false && preg_match('/@return\s+[\w\\\\]*Attribute<([^,<>]+),/', $doc, $match) === 1) {
+            $documented = $this->unionType(explode('|', ltrim(trim($match[1]), '?')), str_starts_with(trim($match[1]), '?'));
+            if ($documented !== null) {
+                return $documented;
             }
-
-            $types[] = self::SCALAR_TYPES[$member];
         }
 
-        return $types === [] ? ['unknown', false] : [implode(' | ', array_unique($types)), $nullable];
+        if ($method->getNumberOfRequiredParameters() > 0) {
+            return ['unknown', false];
+        }
+
+        try {
+            $attribute = $method->invoke($model);
+        } catch (Throwable) {
+            return ['unknown', false];
+        }
+
+        if (! $attribute instanceof Attribute || ! $attribute->get instanceof Closure) {
+            return ['unknown', false];
+        }
+
+        return $this->reflectedType(new ReflectionFunction($attribute->get)->getReturnType()) ?? ['unknown', false];
+    }
+
+    /**
+     * A declared PHP return type as TypeScript; null when a part of it has
+     * no TypeScript form.
+     *
+     * @return array{string, bool}|null type and nullability
+     */
+    protected function reflectedType(?ReflectionType $type): ?array
+    {
+        if ($type instanceof ReflectionNamedType) {
+            if ($type->getName() === 'mixed') {
+                return null;
+            }
+
+            return $this->unionType([$type->getName()], $type->allowsNull());
+        }
+
+        if ($type instanceof ReflectionUnionType) {
+            $names = array_map(
+                fn (ReflectionType $member): string => $member instanceof ReflectionNamedType ? $member->getName() : 'mixed',
+                $type->getTypes(),
+            );
+
+            return $this->unionType($names, false);
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  list<string>  $members  PHP type names; `null` makes it nullable
+     * @return array{string, bool}|null
+     */
+    protected function unionType(array $members, bool $nullable): ?array
+    {
+        $types = [];
+        foreach (array_map(trim(...), $members) as $member) {
+            if (strtolower($member) === 'null') {
+                $nullable = true;
+
+                continue;
+            }
+
+            $tsType = $this->phpTypeToTs($member);
+            if ($tsType === null) {
+                return null;
+            }
+
+            $types[] = $tsType;
+        }
+
+        return $types === [] ? null : [implode(' | ', array_unique($types)), $nullable];
+    }
+
+    /**
+     * One PHP type as TypeScript, as `toArray()` serialises it. Models and
+     * backed enums stay class-strings, which the renderer resolves to their
+     * generated types.
+     */
+    protected function phpTypeToTs(string $type): ?string
+    {
+        $type = ltrim($type, '\\');
+        $lower = strtolower($type);
+
+        if (isset(self::SCALAR_TYPES[$lower])) {
+            return self::SCALAR_TYPES[$lower];
+        }
+
+        if ($lower === 'array') {
+            return 'unknown[] | Record<string, unknown>';
+        }
+
+        if (is_subclass_of($type, BackedEnum::class) || is_subclass_of($type, Model::class)) {
+            return $type;
+        }
+
+        if (enum_exists($type)) {
+            // A pure enum: the union of its case names.
+            $cases = $this->castTypeResolver->resolveOrNull($type);
+
+            return is_string($cases) ? $cases : null;
+        }
+
+        if (is_a($type, DateTimeInterface::class, true)) {
+            return 'string';
+        }
+
+        return null;
     }
 
     /**
@@ -524,7 +621,7 @@ class ModelExtractor
             return array_any($types, fn (\ReflectionNamedType|\ReflectionIntersectionType $type): bool => $type instanceof ReflectionNamedType && is_a($type->getName(), Relation::class, true));
         }
 
-        if ($returnType instanceof \ReflectionType) {
+        if ($returnType instanceof ReflectionType) {
             return false;
         }
 
