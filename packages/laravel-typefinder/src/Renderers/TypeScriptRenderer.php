@@ -590,7 +590,13 @@ TS;
             }
 
             if (isset($type['anyOf'])) {
-                return implode(' | ', array_unique($type['anyOf']));
+                // Alternatives may be structured (an enum, `in` values, an array of either).
+                $alternatives = [];
+                foreach ($type['anyOf'] as $alternative) {
+                    $alternatives[] = $this->resolveTypeString($alternative, false, $allEnums, $imports, $fromDir, $selfFqcn, $allModels);
+                }
+
+                return implode(' | ', array_unique($alternatives));
             }
         }
 
