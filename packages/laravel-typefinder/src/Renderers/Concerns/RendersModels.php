@@ -190,13 +190,7 @@ trait RendersModels
             $bodies[] = $block['body'];
         }
 
-        $imports = array_values(array_unique($imports));
-        sort($imports);
-
-        $output = self::FILE_HEADER."\n";
-        if ($imports !== []) {
-            $output .= implode("\n", $imports)."\n\n";
-        }
+        $output = self::FILE_HEADER."\n".self::importBlock($imports);
 
         return $output.implode("\n", $bodies);
     }

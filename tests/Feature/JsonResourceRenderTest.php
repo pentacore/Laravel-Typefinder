@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use App\Enums\PostStatus;
+use App\Enums\PostTag;
 use App\Http\Resources\AdminUserResource;
 use App\Http\Resources\PostResource;
 use App\Http\Resources\UserResource;
@@ -48,6 +49,32 @@ final class JsonResourceRenderTest extends TestCase
         $this->assertStringContainsString('  title: string;', $output);
         $this->assertStringContainsString('  author: UserResource;', $output);
         $this->assertStringContainsString('  published_at: string | null;', $output);
+    }
+
+    public function test_merges_imports_from_one_module_into_one_line(): void
+    {
+        // https://github.com/pentacore/Laravel-Typefinder/issues/214
+        $resource = [
+            'name' => 'PostResource',
+            'fqcn' => PostResource::class,
+            'shape' => [
+                'kind' => 'shape',
+                'fields' => [
+                    'tag' => PostTag::class,
+                    'status' => PostStatus::class,
+                ],
+            ],
+        ];
+
+        $output = (new TypeScriptRenderer)->renderResource(
+            $resource,
+            [],
+            [['name' => 'PostStatus', 'fqcn' => PostStatus::class], ['name' => 'PostTag', 'fqcn' => PostTag::class]],
+            [],
+        );
+
+        $this->assertStringContainsString("import type { PostStatus, PostTag } from '../enums';", $output);
+        $this->assertSame(1, substr_count($output, "from '../enums';"));
     }
 
     public function test_renders_tier_2_model_extension_with_omit_and_extend(): void

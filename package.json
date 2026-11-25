@@ -6,6 +6,7 @@
     "scripts": {
         "build": "npm -w packages/vite-plugin-laravel-typefinder run build",
         "lint": "npm -w packages/vite-plugin-laravel-typefinder run lint",
+        "lint:output": "eslint -c workbench/eslint.typefinder.config.mjs --max-warnings 0 workbench/resources/js",
         "bundle": "npm run build && rm -rf packages/laravel-typefinder/dist && cp -r packages/vite-plugin-laravel-typefinder/dist packages/laravel-typefinder/dist"
     },
     "devDependencies": {

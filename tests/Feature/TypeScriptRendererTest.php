@@ -27,6 +27,46 @@ final class TypeScriptRendererTest extends TestCase
         $this->typeScriptRenderer = new TypeScriptRenderer;
     }
 
+    public function test_append_nullable_leaves_unknown_and_any_alone(): void
+    {
+        $this->assertSame('unknown', TypeScriptRenderer::appendNullable('unknown', true));
+        $this->assertSame('any', TypeScriptRenderer::appendNullable('any', true));
+    }
+
+    public function test_import_block_merges_names_per_module(): void
+    {
+        $block = TypeScriptRenderer::importBlock([
+            "import type { PostTag } from '../enums';",
+            "import type { User } from '../models';",
+            "import type { PostStatus } from '../enums';",
+            "import type { PostTag } from '../enums';",
+        ]);
+
+        $this->assertSame(
+            "import type { PostStatus, PostTag } from '../enums';\nimport type { User } from '../models';\n\n",
+            $block,
+        );
+    }
+
+    public function test_import_block_keeps_other_lines_once(): void
+    {
+        $block = TypeScriptRenderer::importBlock([
+            "import { route } from 'ziggy-js';",
+            "import type { User } from '../models';",
+            "import { route } from 'ziggy-js';",
+        ]);
+
+        $this->assertSame(
+            "import type { User } from '../models';\nimport { route } from 'ziggy-js';\n\n",
+            $block,
+        );
+    }
+
+    public function test_import_block_is_empty_without_imports(): void
+    {
+        $this->assertSame('', TypeScriptRenderer::importBlock([]));
+    }
+
     public function test_append_nullable_skips_existing_top_level_null(): void
     {
         // Bare scalar — adds | null when nullable.

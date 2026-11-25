@@ -234,6 +234,8 @@ jobs:
         run: vendor/bin/phpunit --filter GenerateReferenceOutputTest
       - name: Type-check generated .d.ts (skipLibCheck off)
         run: npx --no-install tsc -p workbench/tsconfig.typefinder.json
+      - name: Lint generated output
+        run: npm run lint:output
       - name: Lint
         working-directory: packages/vite-plugin-laravel-typefinder
         run: npm run lint
