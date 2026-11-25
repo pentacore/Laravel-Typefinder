@@ -54,6 +54,7 @@ use Tests\Fixtures\Resources\PhpDoc\TraitAliasToArrayResource;
 use Tests\Fixtures\Resources\PhpDoc\TraitImportResource;
 use Tests\Fixtures\Resources\PhpDoc\TraitToArrayResource;
 use Tests\Fixtures\Resources\PhpDoc\TwoShapesResource;
+use Tests\Fixtures\Resources\PhpDoc\TypefinderReturnResource;
 use Tests\Fixtures\Resources\PhpDoc\UndocumentedTraitToArrayResource;
 use Tests\TestCase;
 
@@ -98,6 +99,11 @@ final class PhpDocShapeResolverTest extends TestCase
             $this->object([$this->field('id', $this->ts('number')), $this->field('name', $this->ts('string'))]),
             $this->resolve(PrecedenceResource::class),
         );
+    }
+
+    public function test_typefinder_return_beats_every_other_return_tag(): void
+    {
+        $this->assertSame($this->object([$this->field('slug', $this->ts('string'))]), $this->resolve(TypefinderReturnResource::class));
     }
 
     public function test_psalm_return_beats_return(): void
