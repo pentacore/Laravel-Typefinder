@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use App\Enums\PostStatus;
+use App\Enums\PostTag;
 use App\Http\Resources\PostResource;
 use App\Http\Resources\UserResource;
 use App\Models\Post;
@@ -22,7 +23,7 @@ final class ClassStringResolutionTest extends TestCase
 
     private array $models = [['name' => 'User', 'fqcn' => User::class], ['name' => 'Post', 'fqcn' => Post::class]];
 
-    private array $enums = [['name' => 'PostStatus', 'fqcn' => PostStatus::class]];
+    private array $enums = [['name' => 'PostStatus', 'fqcn' => PostStatus::class], ['name' => 'PostTag', 'fqcn' => PostTag::class]];
 
     private array $resources = [['name' => 'UserResource', 'fqcn' => UserResource::class], ['name' => 'PostResource', 'fqcn' => PostResource::class]];
 
@@ -46,8 +47,7 @@ final class ClassStringResolutionTest extends TestCase
             ]],
         ], $this->models, $this->enums, $this->resources);
 
-        $this->assertStringContainsString("import type { User } from '../models';", $output);
-        $this->assertStringContainsString("import type { Post } from '../models';", $output);
+        $this->assertStringContainsString("import type { Post, User } from '../models';", $output);
         $this->assertStringContainsString("import type { PostStatus } from '../enums';", $output);
         $this->assertStringContainsString("import type { UserResource } from './UserResource';", $output);
         $this->assertStringNotContainsString("from './models'", $output);
@@ -58,6 +58,21 @@ final class ClassStringResolutionTest extends TestCase
         $this->assertStringContainsString('  editor: UserResource | null;', $output);
         $this->assertStringContainsString('  related: Post[];', $output);
         $this->assertStringContainsString('  self: PostResource;', $output);
+    }
+
+    public function test_names_from_one_module_share_one_import_line(): void
+    {
+        $output = $this->typeScriptRenderer->renderResource([
+            'name' => 'PostResource',
+            'fqcn' => PostResource::class,
+            'shape' => ['kind' => 'shape', 'fields' => [
+                'status' => PostStatus::class,
+                'tag' => PostTag::class,
+            ]],
+        ], $this->models, $this->enums, $this->resources);
+
+        $this->assertStringContainsString("import type { PostStatus, PostTag } from '../enums';", $output);
+        $this->assertSame(1, substr_count($output, "from '../enums'"));
     }
 
     public function test_resource_extend_imports_from_the_parent_directory(): void
@@ -72,7 +87,7 @@ final class ClassStringResolutionTest extends TestCase
         ], $this->models, $this->enums, $this->resources);
 
         $this->assertStringContainsString("import type { PostStatus } from '../enums';", $output);
-        $this->assertStringContainsString("import type { Post } from '../models';", $output);
+        $this->assertStringContainsString("import type { Post, User } from '../models';", $output);
         $this->assertStringContainsString('latest_status: PostStatus; posts: Post[]', $output);
     }
 

@@ -101,6 +101,37 @@ class TypeScriptRenderer
     }
 
     /**
+     * The import lines of a file, one per module: the names imported from
+     * the same module are merged into one `import type { A, B }` line.
+     *
+     * @param  list<string>  $imports  `import type { Name } from 'module';` lines, the only form the renderer builds
+     * @return string the lines and a blank line, or '' when there are none
+     */
+    protected static function importBlock(array $imports): string
+    {
+        $byModule = [];
+
+        foreach ($imports as $import) {
+            preg_match("/^import type \{ (.+) \} from '(.+)';$/", $import, $match);
+            foreach (explode(', ', $match[1]) as $name) {
+                $byModule[$match[2]][$name] = true;
+            }
+        }
+
+        $lines = [];
+
+        foreach ($byModule as $module => $names) {
+            $names = array_map(strval(...), array_keys($names));
+            sort($names);
+            $lines[] = sprintf("import type { %s } from '%s';", implode(', ', $names), $module);
+        }
+
+        sort($lines);
+
+        return $lines === [] ? '' : implode("\n", $lines)."\n\n";
+    }
+
+    /**
      * A single-quoted TS string literal, with quotes, backslashes and line
      * breaks escaped.
      */
@@ -237,13 +268,7 @@ class TypeScriptRenderer
             $entries[] = sprintf('  %s: { ', self::stringLiteral((string) $page['component'])).implode('; ', $propLines).' };';
         }
 
-        $imports = array_values(array_unique($imports));
-        sort($imports);
-
-        $output = self::FILE_HEADER."\n";
-        if ($imports !== []) {
-            $output .= implode("\n", $imports)."\n\n";
-        }
+        $output = self::FILE_HEADER."\n".self::importBlock($imports);
 
         $output .= "export type SharedPageProps = {\n".implode("\n", $sharedLines)."\n};\n\n";
         $output .= "export type PageProps = {\n";
@@ -382,13 +407,7 @@ class TypeScriptRenderer
             $this->renderRequestField($queryField, $queryName, $allEnums, $imports, $queryLines, $extractedTypes, $extractNested);
         }
 
-        $imports = array_values(array_unique($imports));
-        sort($imports);
-
-        $output = self::FILE_HEADER."\n";
-        if ($imports !== []) {
-            $output .= implode("\n", $imports)."\n\n";
-        }
+        $output = self::FILE_HEADER."\n".self::importBlock($imports);
 
         $output .= $this->requestTypeBlock($name, $lines, $bodyTypes);
 
@@ -451,9 +470,7 @@ class TypeScriptRenderer
             }
         }
 
-        $imports = array_values(array_unique($imports));
-        sort($imports);
-        $importBlock = $imports === [] ? '' : implode("\n", $imports)."\n\n";
+        $importBlock = self::importBlock($imports);
 
         return self::FILE_HEADER."\n".$importBlock."export type {$pivot['name']} = {\n".implode("\n", $lines)."\n};\n";
     }

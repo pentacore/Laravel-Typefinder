@@ -31,8 +31,7 @@ final class BroadcastRenderTest extends TestCase
 
         $output = $typeScriptRenderer->renderBroadcasting($events, $allModels, []);
 
-        $this->assertStringContainsString("import type { Post } from './models';", $output);
-        $this->assertStringContainsString("import type { User } from './models';", $output);
+        $this->assertStringContainsString("import type { Post, User } from './models';", $output);
 
         $this->assertStringContainsString('export type BroadcastPublicChannels = {', $output);
         $this->assertStringContainsString("'posts': { 'PostPublished': { post: Post } };", $output);
