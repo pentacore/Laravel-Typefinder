@@ -44,19 +44,23 @@ trait RendersResources
             return $this->assembleResourceFile($imports, "export type {$name} = {\n".implode("\n", $lines)."\n};\n");
         }
 
-        if ($shape['kind'] === 'phpdoc') {
+        // A type tree: documented (`phpdoc`), a collection's items
+        // (`collection`) or read from the literal keys of `toArray()` (`inferred`).
+        if (in_array($shape['kind'], ['phpdoc', 'collection', 'inferred'], true)) {
             return $this->renderPhpdocResource($resource, $allModels, $allEnums, $allResources);
         }
 
-        $modelShort = $this->resolveModelName($shape['model'], $allModels);
-        $imports[] = sprintf("import type { %s } from '../models';", $modelShort);
+        // `unknown` (with a warning) when the model gets no generated type.
+        $modelShort = $this->resolveClassReference(ltrim((string) $shape['model'], '\\'), 'resources', $allModels, $allEnums, $allResources, $imports) ?? 'unknown';
 
         $body = sprintf('export type %s = ', $name);
 
         $omit = $shape['omit'];
         $extend = $shape['extend'];
 
-        if ($omit !== []) {
+        if ($modelShort === 'unknown') {
+            $body .= $extend === [] ? 'unknown' : 'Record<string, unknown>';
+        } elseif ($omit !== []) {
             $omitUnion = implode(' | ', array_map(TypeScriptRenderer::stringLiteral(...), $omit));
             $body .= sprintf('Omit<%s, %s>', $modelShort, $omitUnion);
         } else {
@@ -116,7 +120,8 @@ trait RendersResources
 
     /**
      * Render a type-tree node (see PhpDocTypeMapper) to a TypeScript type string.
-     * Class leaves resolve through `resolveClassReference`, imported relative to `resources/`.
+     * Class leaves resolve through `resolveClassReference`, imported relative to
+     * `$fromDir` (`resources/` unless given; see resolveClassString()).
      *
      * @param  array<string, mixed>  $node
      * @param  list<string>  $imports  Collected import statements (by reference).
@@ -124,11 +129,11 @@ trait RendersResources
      * @param  list<array>  $allEnums
      * @param  list<array>  $allResources
      */
-    protected function renderTypeNode(array $node, array &$imports, string $selfFqcn, array $allModels, array $allEnums, array $allResources): string
+    protected function renderTypeNode(array $node, array &$imports, string $selfFqcn, array $allModels, array $allEnums, array $allResources, string $fromDir = 'resources'): string
     {
         // A closure (not an arrow fn) so `$imports` is captured by reference.
-        $render = function (array $child) use (&$imports, $selfFqcn, $allModels, $allEnums, $allResources): string {
-            return $this->renderTypeNode($child, $imports, $selfFqcn, $allModels, $allEnums, $allResources);
+        $render = function (array $child) use (&$imports, $selfFqcn, $allModels, $allEnums, $allResources, $fromDir): string {
+            return $this->renderTypeNode($child, $imports, $selfFqcn, $allModels, $allEnums, $allResources, $fromDir);
         };
 
         switch ($node['kind']) {
@@ -137,8 +142,10 @@ trait RendersResources
             case 'model':
             case 'enum':
             case 'resource':
-                return $this->resolveClassReference(ltrim((string) $node['fqcn'], '\\'), 'resources', $allModels, $allEnums, $allResources, $imports, $selfFqcn)
+                return $this->resolveClassReference(ltrim((string) $node['fqcn'], '\\'), $fromDir, $allModels, $allEnums, $allResources, $imports, $selfFqcn)
                     ?? 'unknown';
+            case 'property':
+                return $this->modelProperty((string) $node['fqcn'], (string) $node['name'], $imports, $selfFqcn, $allModels, $allEnums, $allResources);
             case 'array':
                 $element = $render($node['of']);
 
@@ -181,6 +188,35 @@ trait RendersResources
             default:
                 return 'unknown';
         }
+    }
+
+    /**
+     * `Model['col']` for a column of a generated model's type; `unknown`
+     * for anything else (a relation, an accessor the type lacks).
+     *
+     * @param  list<string>  $imports
+     * @param  list<array>  $allModels
+     * @param  list<array>  $allEnums
+     * @param  list<array>  $allResources
+     */
+    private function modelProperty(string $model, string $column, array &$imports, string $selfFqcn, array $allModels, array $allEnums, array $allResources): string
+    {
+        foreach ($allModels as $entry) {
+            if (ltrim((string) $entry['fqcn'], '\\') !== ltrim($model, '\\')) {
+                continue;
+            }
+
+            if (! in_array($column, array_map(strval(...), array_column($entry['columns'] ?? [], 'name')), true)) {
+                return 'unknown';
+            }
+
+            $reference = $this->resolveClassReference(ltrim($model, '\\'), 'resources', $allModels, $allEnums, $allResources, $imports, $selfFqcn);
+
+            // The model is in the list, so it resolves; null only if its class vanished.
+            return $reference === null ? 'unknown' : $reference.'['.TypeScriptRenderer::stringLiteral($column).']';
+        }
+
+        return 'unknown';
     }
 
     /**

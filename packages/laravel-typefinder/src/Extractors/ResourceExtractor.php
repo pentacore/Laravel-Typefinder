@@ -5,9 +5,12 @@ declare(strict_types=1);
 namespace Pentacore\Typefinder\Extractors;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Http\Resources\Attributes\Collects;
 use Illuminate\Http\Resources\Json\JsonResource;
+use Illuminate\Http\Resources\Json\ResourceCollection;
 use Pentacore\Typefinder\Attributes\TypefinderIgnore;
 use Pentacore\Typefinder\Attributes\TypefinderResource;
+use Pentacore\Typefinder\Resolvers\LiteralShapeResolver;
 use Pentacore\Typefinder\Resolvers\PhpDocShapeResolver;
 use Pentacore\Typefinder\Support\ClassDiscovery;
 use Pentacore\Typefinder\Support\GeneratedClasses;
@@ -21,6 +24,8 @@ class ResourceExtractor
     private readonly GeneratedClasses $generatedClasses;
 
     private readonly PhpDocShapeResolver $phpDocShapeResolver;
+
+    private readonly LiteralShapeResolver $literalShapeResolver;
 
     /**
      * @param  bool  $inferFromModelName  Fall back to the `UserResource` → `User` name
@@ -41,6 +46,7 @@ class ResourceExtractor
     ) {
         $this->generatedClasses = new GeneratedClasses($modelClasses, $enumClasses, $resourceClasses);
         $this->phpDocShapeResolver = new PhpDocShapeResolver($this->generatedClasses, $onWarn);
+        $this->literalShapeResolver = new LiteralShapeResolver($this->generatedClasses);
     }
 
     /**
@@ -104,6 +110,15 @@ class ResourceExtractor
             ];
         }
 
+        $collected = $this->collectedResource($reflectionClass);
+        if ($collected !== null) {
+            return [
+                'name' => $reflectionClass->getShortName(),
+                'fqcn' => $resourceClass,
+                'shape' => ['kind' => 'collection', 'type' => ['kind' => 'array', 'of' => ['kind' => 'resource', 'fqcn' => $collected]]],
+            ];
+        }
+
         $short = $reflectionClass->getShortName();
         if ($this->inferFromModelName && str_ends_with($short, 'Resource')) {
             $modelShort = substr($short, 0, -strlen('Resource'));
@@ -121,6 +136,16 @@ class ResourceExtractor
                     ],
                 ];
             }
+        }
+
+        // Last: the literal keys its own toArray() returns.
+        $type = $this->literalShapeResolver->resolve($reflectionClass);
+        if ($type !== null) {
+            return [
+                'name' => $short,
+                'fqcn' => $resourceClass,
+                'shape' => ['kind' => 'inferred', 'type' => $type],
+            ];
         }
 
         return null;
@@ -190,6 +215,51 @@ class ResourceExtractor
         }
 
         return $results;
+    }
+
+    /**
+     * The resource a `ResourceCollection` subclass maps its items to, found
+     * the way Laravel's `collects()` does: `#[Collects]`, then `$collects`,
+     * then `XCollection` → `X` or `XResource` in the same namespace. Null when
+     * it is not a collection, overrides `toArray()` or `collects()` (its own
+     * items are then not the collected resource's), or collects no resource.
+     *
+     * @param  ReflectionClass<object>  $class
+     * @return ?class-string
+     */
+    private function collectedResource(ReflectionClass $class): ?string
+    {
+        if (! $class->isSubclassOf(ResourceCollection::class)
+            || $class->getMethod('toArray')->getDeclaringClass()->getName() !== ResourceCollection::class
+            || $class->getMethod('collects')->getDeclaringClass()->isSubclassOf(ResourceCollection::class)) {
+            return null;
+        }
+
+        $candidates = [];
+
+        // Laravel 13's attribute; named by string so Laravel 12 does not need the class.
+        $attribute = $class->getAttributes(Collects::class)[0] ?? null;
+        $collects = $class->getDefaultProperties()['collects'] ?? null;
+
+        if ($attribute !== null) {
+            $arguments = $attribute->getArguments();
+            $candidates[] = (string) ($arguments[0] ?? $arguments['class'] ?? '');
+        } elseif (is_string($collects) && $collects !== '') {
+            $candidates[] = $collects;
+        } elseif (str_ends_with($class->getShortName(), 'Collection')) {
+            $base = substr($class->getName(), 0, -strlen('Collection'));
+            $candidates = [$base, $base.'Resource'];
+        }
+
+        foreach ($candidates as $candidate) {
+            $candidate = ltrim($candidate, '\\');
+
+            if (class_exists($candidate)) {
+                return is_subclass_of($candidate, JsonResource::class) ? $candidate : null;
+            }
+        }
+
+        return null;
     }
 
     protected function getAttribute(ReflectionClass $reflectionClass): ?TypefinderResource

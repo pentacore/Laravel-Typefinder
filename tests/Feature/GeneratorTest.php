@@ -70,6 +70,20 @@ final class GeneratorTest extends TestCase
         $this->assertGreaterThanOrEqual(0, $regenResult->durationMs);
     }
 
+    public function test_reference_to_a_class_with_no_type_is_reported_in_the_result(): void
+    {
+        config(['typefinder.resources.paths' => [__DIR__.'/../Fixtures/Resources/Dangling']]);
+
+        $regenResult = app(Generator::class)->generateFull();
+
+        $this->assertStringContainsString('legacy: unknown;', (string) file_get_contents($this->output.'/resources/LegacyShapeResource.d.ts'));
+        $this->assertContains(
+            'Tests\Fixtures\Resources\Dangling\LegacyShapeResource references App\Models\LegacyModel, which gets no generated type '
+            .'(ignored, outside the configured paths, or skipped): emitted as unknown',
+            $regenResult->warnings,
+        );
+    }
+
     public function test_generate_full_writes_extraction_cache_to_storage(): void
     {
         $cachePath = storage_path('framework/cache/typefinder/extractions.json');

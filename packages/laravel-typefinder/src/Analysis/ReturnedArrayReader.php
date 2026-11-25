@@ -41,7 +41,8 @@ use PhpParser\NodeVisitorAbstract;
  *  - `$this->when*(…)`, `unless()` or `transform()` from the closed list in
  *    {@see self::WHEN_DEFAULT_POSITION} called without its `$default`
  *    argument (positional or named `default:`);
- *  - a static call matching one of the `$conditionalWrappers`;
+ *  - a static call matching one of the `$conditionalWrappers`, or a method
+ *    chain on one (`Inertia::defer(…)->merge()`);
  *  - `X::collection(<conditional>)`, `X::make(<conditional>)` or
  *    `new X(<conditional>)` where X is an existing `JsonResource` subclass.
  *
@@ -360,6 +361,17 @@ final readonly class ReturnedArrayReader
 
     private function isConditional(Expr $value): bool
     {
+        // `Inertia::defer(…)->merge()`, `Inertia::optional(…)->once()`: a
+        // method chain on a wrapper is still the wrapper's prop.
+        $root = $value;
+        while ($root instanceof MethodCall && ! ($root->var instanceof Variable)) {
+            $root = $root->var;
+        }
+
+        if ($root !== $value && $root instanceof StaticCall && $this->isWrapperCall($root)) {
+            return true;
+        }
+
         if ($value instanceof MethodCall && $value->name instanceof Identifier && $value->var instanceof Variable && $value->var->name === 'this') {
             $position = self::WHEN_DEFAULT_POSITION[$value->name->toLowerString()] ?? null;
 
@@ -373,13 +385,28 @@ final readonly class ReturnedArrayReader
                 return $this->isJsonResource($value->class) && $this->firstArgumentIsConditional($value);
             }
 
-            return array_any($this->wrappers[$method] ?? [], fn (string $class): bool => self::refersTo($value->class, $class));
+            return $this->isWrapperCall($value);
         }
 
         return $value instanceof New_
             && $value->class instanceof Name
             && $this->isJsonResource($value->class)
             && $this->firstArgumentIsConditional($value);
+    }
+
+    /** A static call matching one of the configured conditional wrappers. */
+    private function isWrapperCall(StaticCall $call): bool
+    {
+        if (! $call->class instanceof Name || ! $call->name instanceof Identifier) {
+            return false;
+        }
+
+        $class = $call->class;
+
+        return array_any(
+            $this->wrappers[$call->name->toLowerString()] ?? [],
+            fn (string $wrapper): bool => self::refersTo($class, $wrapper),
+        );
     }
 
     /**
