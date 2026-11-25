@@ -7,10 +7,12 @@ namespace Pentacore\Typefinder\Renderers;
 use Closure;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Resources\Json\JsonResource;
+use Pentacore\Typefinder\Analysis\InertiaSharedProps;
 use Pentacore\Typefinder\Renderers\Concerns\RendersBroadcasting;
 use Pentacore\Typefinder\Renderers\Concerns\RendersModels;
 use Pentacore\Typefinder\Renderers\Concerns\RendersResources;
 use Pentacore\Typefinder\Resolvers\PivotResolver;
+use Pentacore\Typefinder\Support\GeneratedClasses;
 
 class TypeScriptRenderer
 {
@@ -197,16 +199,30 @@ class TypeScriptRenderer
     }
 
     /**
-     * Render the consolidated pages.d.ts content.
+     * Render the consolidated pages.d.ts content: `SharedPageProps` (the
+     * props every page gets), `PageProps` and `PageName`.
      *
      * @param  list<array{component: string, props: array<string, string>, optional: list<string>}>  $pages
      * @param  list<array>  $allModels
      * @param  list<array>  $allEnums
+     * @param  ?array<string, mixed>  $sharedProps  an `object` type node; null reads it from the
+     *                                              app's Inertia middleware ({@see InertiaSharedProps::shape()})
      */
-    public function renderPages(array $pages, array $allModels, array $allEnums, array $allResources = []): string
+    public function renderPages(array $pages, array $allModels, array $allEnums, array $allResources = [], ?array $sharedProps = null): string
     {
         $imports = [];
         $entries = [];
+
+        $sharedProps ??= InertiaSharedProps::shape(
+            app_path('Http/Middleware'),
+            $this->onWarn,
+            new GeneratedClasses(array_column($allModels, 'fqcn'), array_column($allEnums, 'fqcn'), array_column($allResources, 'fqcn')),
+        );
+        $sharedLines = [];
+        foreach ($sharedProps['fields'] as $field) {
+            $type = $this->renderTypeNode($field['type'], $imports, '', $allModels, $allEnums, $allResources, '');
+            $sharedLines[] = '  '.$this->renderObjectField($field, $type).';';
+        }
 
         usort($pages, fn (array $a, array $b): int => strcmp((string) $a['component'], (string) $b['component']));
 
@@ -229,6 +245,7 @@ class TypeScriptRenderer
             $output .= implode("\n", $imports)."\n\n";
         }
 
+        $output .= "export type SharedPageProps = {\n".implode("\n", $sharedLines)."\n};\n\n";
         $output .= "export type PageProps = {\n";
         $output .= implode("\n", $entries)."\n";
         $output .= "};\n\n";

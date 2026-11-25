@@ -121,7 +121,8 @@ trait RendersResources
 
     /**
      * Render a type-tree node (see PhpDocTypeMapper) to a TypeScript type string.
-     * Class leaves resolve through `resolveClassReference`, imported relative to `resources/`.
+     * Class leaves resolve through `resolveClassReference`, imported relative to
+     * `$fromDir` (`resources/` unless given; see resolveClassString()).
      *
      * @param  array<string, mixed>  $node
      * @param  list<string>  $imports  Collected import statements (by reference).
@@ -129,11 +130,11 @@ trait RendersResources
      * @param  list<array>  $allEnums
      * @param  list<array>  $allResources
      */
-    protected function renderTypeNode(array $node, array &$imports, string $selfFqcn, array $allModels, array $allEnums, array $allResources): string
+    protected function renderTypeNode(array $node, array &$imports, string $selfFqcn, array $allModels, array $allEnums, array $allResources, string $fromDir = 'resources'): string
     {
         // A closure (not an arrow fn) so `$imports` is captured by reference.
-        $render = function (array $child) use (&$imports, $selfFqcn, $allModels, $allEnums, $allResources): string {
-            return $this->renderTypeNode($child, $imports, $selfFqcn, $allModels, $allEnums, $allResources);
+        $render = function (array $child) use (&$imports, $selfFqcn, $allModels, $allEnums, $allResources, $fromDir): string {
+            return $this->renderTypeNode($child, $imports, $selfFqcn, $allModels, $allEnums, $allResources, $fromDir);
         };
 
         switch ($node['kind']) {
@@ -142,7 +143,7 @@ trait RendersResources
             case 'model':
             case 'enum':
             case 'resource':
-                return $this->resolveClassReference(ltrim((string) $node['fqcn'], '\\'), 'resources', $allModels, $allEnums, $allResources, $imports, $selfFqcn)
+                return $this->resolveClassReference(ltrim((string) $node['fqcn'], '\\'), $fromDir, $allModels, $allEnums, $allResources, $imports, $selfFqcn)
                     ?? 'unknown';
             case 'property':
                 return $this->modelProperty((string) $node['fqcn'], (string) $node['name'], $imports, $selfFqcn, $allModels, $allEnums, $allResources);

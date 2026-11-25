@@ -412,6 +412,25 @@ Several actions can render the same component, for example `create` and `edit` s
 - A prop that only some actions declare, or that any action marks optional, becomes optional (`post?: …`).
 - One prop declared with different types in different actions fails the run, naming each `Class::method` and its type. If the type really varies, declare the union in every action.
 
+`pages.d.ts` also declares `SharedPageProps`, the props every page gets: Inertia's `errors` (`Record<string, string>`) and each key the `share()` method of your Inertia middleware (classes under `app/Http/Middleware` extending `Inertia\Middleware`) returns. Keys are `unknown` unless `share()` documents them:
+
+```php
+/**
+ * @return array{auth: array{user: User|null}, flash: array{message: string|null}}
+ */
+public function share(Request $request): array
+```
+
+`PageProps` entries do not include the shared props. Combine them where you read the props; a page's own prop wins over a shared one of the same name, as in Inertia:
+
+```typescript
+import type { PageName, PageProps, SharedPageProps } from '@/typefinder';
+
+type Props<N extends PageName> = Omit<SharedPageProps, keyof PageProps[N]> & PageProps[N];
+
+const { auth, post } = usePage<Props<'Posts/Show'>>().props;
+```
+
 ### Broadcasting (opt-in, `typefinder.broadcasting.enabled`)
 
 Consolidated `broadcasting.d.ts` with four maps: `BroadcastPublicChannels`, `BroadcastPrivateChannels`, `BroadcastPresenceChannels`, and a flat `BroadcastEvents` keyed by broadcast name. Classes implementing `ShouldBroadcast` are discovered automatically; `#[TypefinderBroadcast(payload: [...], channel: ...)]` overrides reflection for the tricky cases.

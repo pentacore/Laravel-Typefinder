@@ -83,7 +83,7 @@ Every generation run produces a tree under `output_path` (default `resources/js/
 | Form Requests | `requests/{Name}.d.ts` (plus `{Name}Query` for rule keys tagged `@query`, read by `Analysis\QueryRuleKeys` from `rules()` and the methods / other classes it takes rules from) | on | `app/Http/Requests/*` |
 | Pivots | `models/{Name}Pivot.d.ts` (alongside models — derived, not a separate category) | on | derived from `belongsToMany`/`morphToMany` |
 | Resources | `resources/{Name}.d.ts` | on | `app/Http/Resources/*` (`JsonResource` subclasses) |
-| Pages | `pages.d.ts` (single file) | **off** | controller actions tagged `#[TypefinderPage]` |
+| Pages | `pages.d.ts` (single file, plus `SharedPageProps` from `Analysis\InertiaSharedProps::shape()`) | **off** | controller actions tagged `#[TypefinderPage]` |
 | Broadcasting | `broadcasting.d.ts` (single file) | **off** | classes implementing `ShouldBroadcast` |
 | Helpers | `helpers.d.ts` (single file) | always | eleven generic response wrappers (`WrappedResource`, `WrappedResourceCollection`, three resource paginators, `PaginatedModel` + `PaginationFields`, `SimplePaginatedModel`, `CursorPaginatedModel`, `ValidationErrorResponse`, `ErrorResponse`) — see README |
 | Category barrels | `{category}/index.d.ts` | with the category | re-export every type of every file, companions included (`Generator::barrelExports()` leaves out a companion name another file also exports, with a warning) |
