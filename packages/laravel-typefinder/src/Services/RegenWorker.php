@@ -10,6 +10,7 @@ use Pentacore\Typefinder\Protocol\ProtocolCodec;
 use Pentacore\Typefinder\Protocol\ProtocolException;
 use Pentacore\Typefinder\Support\ThrowableMessage;
 use ReflectionClass;
+use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Symfony\Component\Process\Process;
 use Throwable;
 
@@ -53,16 +54,22 @@ final class RegenWorker
      */
     private readonly array $command;
 
+    /** Seconds a worker may take to answer; 0 for no limit. */
+    private readonly float $timeout;
+
     /**
      * @param  resource  $stderr  told why requests are answered in a new process (once), and why a request failed
      * @param  ?list<string>  $command  defaults to the script this process was started with
+     * @param  ?float  $timeout  seconds a worker may take to answer, 0 for no limit; defaults to `typefinder.watch.worker_timeout`
      */
     public function __construct(
         private readonly Generator $generator,
         private $stderr = STDERR,
         ?array $command = null,
+        ?float $timeout = null,
     ) {
         $this->command = $command ?? [php_binary(), $_SERVER['argv'][0] ?? 'artisan', 'typefinder:watch', '--in-process'];
+        $this->timeout = max(0.0, $timeout ?? (float) config('typefinder.watch.worker_timeout', 300));
         $this->loaded = $this->loadedClassFiles();
     }
 
@@ -104,6 +111,7 @@ final class RegenWorker
                 'changed' => $result->changed,
                 'warnings' => $result->warnings,
                 'failed' => $result->failed,
+                'removed' => $result->removed,
             ];
         } catch (Throwable $throwable) {
             $message = ThrowableMessage::describe($throwable);
@@ -153,8 +161,21 @@ final class RegenWorker
 
         // The worker holds the other end; closing it here lets its exit end the read.
         fclose($toWatcher);
-        $answer = (string) stream_get_contents($fromWorker);
+        $answer = $this->readUntilClosed($fromWorker);
         fclose($fromWorker);
+
+        if ($answer === null) {
+            // Hung: stop it, so it does not hold up every later request (#209).
+            if (function_exists('posix_kill')) {
+                posix_kill($pid, SIGKILL);
+            } else {
+                new Process(['kill', '-9', (string) $pid])->run();
+            }
+            pcntl_waitpid($pid, $status);
+
+            return $this->timedOut($id);
+        }
+
         pcntl_waitpid($pid, $status);
 
         return $this->decode($answer)
@@ -168,9 +189,16 @@ final class RegenWorker
     private function spawn(?string $id, array $paths): array
     {
         $process = new Process($this->command);
-        $process->setTimeout(null);
+        $process->setTimeout($this->timeout > 0 ? $this->timeout : null);
         $process->setInput(ProtocolCodec::encode(['type' => 'regen', 'id' => $id, 'paths' => $paths]));
-        $process->run();
+
+        try {
+            $process->run();
+        } catch (ProcessTimedOutException) {
+            fwrite($this->stderr, $process->getErrorOutput());
+
+            return $this->timedOut($id);
+        }
 
         fwrite($this->stderr, $process->getErrorOutput());
 
@@ -183,6 +211,55 @@ final class RegenWorker
         }
 
         return $this->error($id, sprintf('the regen process stopped without an answer (exit code %s)', $process->getExitCode() ?? 'unknown'));
+    }
+
+    /**
+     * Everything the worker writes until it closes its end.
+     *
+     * @param  resource  $stream
+     * @return ?string null when the worker did not finish within the timeout
+     */
+    private function readUntilClosed($stream): ?string
+    {
+        $deadline = $this->timeout > 0 ? microtime(true) + $this->timeout : null;
+        $answer = '';
+
+        while (! feof($stream)) {
+            $wait = $deadline === null ? null : $deadline - microtime(true);
+            if ($wait !== null && $wait <= 0) {
+                return null;
+            }
+
+            $read = [$stream];
+            $write = [];
+            $except = [];
+            $ready = @stream_select($read, $write, $except, $wait === null ? null : (int) $wait, $wait === null ? null : (int) (fmod($wait, 1) * 1_000_000));
+
+            // false: interrupted by a signal; 0: the timeout passed, checked above.
+            if ($ready === false || $ready === 0) {
+                continue;
+            }
+
+            $chunk = fread($stream, 65536);
+            if ($chunk === false) {
+                break;
+            }
+
+            $answer .= $chunk;
+        }
+
+        return $answer;
+    }
+
+    /**
+     * @return array{type: 'regen.error', id: ?string, message: string}
+     */
+    private function timedOut(?string $id): array
+    {
+        $message = sprintf('the regen worker did not answer within %s seconds and was stopped (typefinder.watch.worker_timeout)', rtrim(rtrim(sprintf('%.3F', $this->timeout), '0'), '.'));
+        $this->notice($message);
+
+        return $this->error($id, $message);
     }
 
     /**

@@ -237,6 +237,39 @@ final class ExtractionCacheTest extends TestCase
         $this->assertSame([$this->fixturePath => ['v' => 1]], $reloaded->entriesByCategory('models'));
     }
 
+    public function test_entry_is_not_fresh_when_a_file_it_depends_on_changed(): void
+    {
+        $dependency = sys_get_temp_dir().'/typefinder-parent-'.uniqid('', true).'.php';
+        file_put_contents($dependency, "<?php\n// parent\n");
+
+        try {
+            $extractionCache = new ExtractionCache($this->cachePath, 'sha256:lock', 'sha256:cfg');
+            $extractionCache->put($this->fixturePath, 'resources', ['v' => 1], [$dependency]);
+            $extractionCache->persist();
+
+            $reloaded = ExtractionCache::load($this->cachePath, 'sha256:lock', 'sha256:cfg');
+            $this->assertTrue($reloaded->isFresh($this->fixturePath, 'resources'));
+
+            touch($dependency, Carbon::now()->getTimestamp() + 5);
+            $this->assertFalse($reloaded->isFresh($this->fixturePath, 'resources'));
+
+            unlink($dependency);
+            $this->assertFalse($reloaded->isFresh($this->fixturePath, 'resources'));
+        } finally {
+            @unlink($dependency);
+        }
+    }
+
+    public function test_load_returns_empty_cache_when_schema_hash_differs(): void
+    {
+        $extractionCache = new ExtractionCache($this->cachePath, 'sha256:lock', 'sha256:cfg', 'sha256:schema-a');
+        $extractionCache->put($this->fixturePath, 'models', ['v' => 1]);
+        $extractionCache->persist();
+
+        $this->assertTrue(ExtractionCache::load($this->cachePath, 'sha256:lock', 'sha256:cfg', 'sha256:schema-a')->restored());
+        $this->assertFalse(ExtractionCache::load($this->cachePath, 'sha256:lock', 'sha256:cfg', 'sha256:schema-b')->restored());
+    }
+
     public function test_persist_does_not_corrupt_existing_cache_when_write_fails(): void
     {
         // Write a valid cache, then force persist() to a path we can't write to.

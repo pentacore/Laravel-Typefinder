@@ -85,12 +85,12 @@ final class RequestExtractorTest extends TestCase
         $this->assertFalse($field['required']);
     }
 
-    public function test_accepted_rule_maps_to_boolean(): void
+    public function test_accepted_rule_maps_to_the_values_it_accepts(): void
     {
         $result = $this->requestExtractor->extract(StorePostRequest::class);
         $field = $this->findField($result, 'publish_now');
 
-        $this->assertSame('boolean', $field['type']);
+        $this->assertSame("true | 'yes' | 'on' | 1 | '1' | 'true'", $field['type']);
     }
 
     public function test_in_rule_creates_literal_union(): void
