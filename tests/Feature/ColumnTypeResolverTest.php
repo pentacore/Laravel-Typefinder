@@ -91,4 +91,10 @@ final class ColumnTypeResolverTest extends TestCase
         $this->assertSame('number | null', $this->columnTypeResolver->resolve('integer', true));
         $this->assertSame('boolean | null', $this->columnTypeResolver->resolve('boolean', true));
     }
+
+    public function test_nullable_unknown_stays_unknown(): void
+    {
+        // `unknown` already admits null; `unknown | null` is redundant.
+        $this->assertSame('unknown', $this->columnTypeResolver->resolve('geometry', true));
+    }
 }

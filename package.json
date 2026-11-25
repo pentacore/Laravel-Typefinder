@@ -6,7 +6,8 @@
     ],
     "scripts": {
         "build": "npm -w packages/vite-plugin-laravel-typefinder run build",
-        "lint": "npm -w packages/vite-plugin-laravel-typefinder run lint"
+        "lint": "npm -w packages/vite-plugin-laravel-typefinder run lint",
+        "lint:output": "eslint -c workbench/eslint.typefinder.config.mjs --max-warnings 0 workbench/resources/js"
     },
     "devDependencies": {
         "@semantic-release/changelog": "7.0.0",

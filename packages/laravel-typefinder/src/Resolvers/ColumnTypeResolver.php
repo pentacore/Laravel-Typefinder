@@ -116,7 +116,8 @@ class ColumnTypeResolver
     {
         $tsType = $this->baseType($columnType, $driver, $enumTypes) ?? 'unknown';
 
-        if ($nullable) {
+        // `unknown` already admits null.
+        if ($nullable && $tsType !== 'unknown') {
             return $tsType.' | null';
         }
 

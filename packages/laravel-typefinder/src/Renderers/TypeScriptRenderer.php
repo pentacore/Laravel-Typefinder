@@ -50,8 +50,9 @@ class TypeScriptRenderer
 
     /**
      * Append ` | null` to a TS type string when the column/field is nullable,
-     * unless `null` is already a top-level union member of the type. Prevents
-     * `... | null | null` when an override or cast already wrote the union.
+     * unless `null` is already a top-level union member of the type or the
+     * type is `unknown` / `any`. Prevents `... | null | null` when an override
+     * or cast already wrote the union, and a redundant `unknown | null`.
      *
      * Splits on `|` while respecting bracket depth so generics like
      * `Record<string, null>` aren't mistaken for a top-level null union.
@@ -62,11 +63,54 @@ class TypeScriptRenderer
             return $type;
         }
 
-        if (self::unionContainsNull($type)) {
+        // `unknown` and `any` already admit null.
+        if (in_array(trim($type), ['unknown', 'any'], true) || self::unionContainsNull($type)) {
             return $type;
         }
 
         return $type.' | null';
+    }
+
+    /**
+     * The import lines of a file, followed by a blank line, or '' for none.
+     *
+     * Names imported from the same module are merged into one statement
+     * (`import type { PostStatus, PostTag } from '../enums';`, #214), and
+     * the statements are sorted, so the order does not depend on which
+     * field asked for an import first.
+     *
+     * @param  list<string>  $imports  `import type { Name } from 'module';` lines.
+     */
+    public static function importBlock(array $imports): string
+    {
+        $namesByModule = [];
+        $other = [];
+        foreach ($imports as $import) {
+            if (preg_match("/^import type \\{ (.+) \\} from '([^']+)';$/", $import, $match) !== 1) {
+                $other[] = $import;
+
+                continue;
+            }
+
+            foreach (explode(', ', $match[1]) as $name) {
+                $namesByModule[$match[2]][$name] = true;
+            }
+        }
+
+        $lines = array_values(array_unique($other));
+        foreach ($namesByModule as $module => $names) {
+            $names = array_keys($names);
+            sort($names);
+            $lines[] = sprintf("import type { %s } from '%s';", implode(', ', $names), $module);
+        }
+
+        if ($lines === []) {
+            return '';
+        }
+
+        sort($lines);
+
+        return implode("\n", $lines)."\n\n";
     }
 
     /**
@@ -98,37 +142,6 @@ class TypeScriptRenderer
     public static function member(string $name, string $type, bool $optional = false): string
     {
         return self::propertyKey($name).($optional ? '?' : '').': '.$type;
-    }
-
-    /**
-     * The import lines of a file, one per module: the names imported from
-     * the same module are merged into one `import type { A, B }` line.
-     *
-     * @param  list<string>  $imports  `import type { Name } from 'module';` lines, the only form the renderer builds
-     * @return string the lines and a blank line, or '' when there are none
-     */
-    protected static function importBlock(array $imports): string
-    {
-        $byModule = [];
-
-        foreach ($imports as $import) {
-            preg_match("/^import type \{ (.+) \} from '(.+)';$/", $import, $match);
-            foreach (explode(', ', $match[1]) as $name) {
-                $byModule[$match[2]][$name] = true;
-            }
-        }
-
-        $lines = [];
-
-        foreach ($byModule as $module => $names) {
-            $names = array_map(strval(...), array_keys($names));
-            sort($names);
-            $lines[] = sprintf("import type { %s } from '%s';", implode(', ', $names), $module);
-        }
-
-        sort($lines);
-
-        return $lines === [] ? '' : implode("\n", $lines)."\n\n";
     }
 
     /**
