@@ -1,3 +1,9 @@
+## [8.4.2](https://github.com/pentacore/Laravel-Typefinder/compare/v8.4.1...v8.4.2) (2026-11-25)
+
+### Bug Fixes
+
+* keep narrowed PHPDoc array keys and read a [@typefinder-return](https://github.com/typefinder-return) tag ([#236](https://github.com/pentacore/Laravel-Typefinder/issues/236), [#237](https://github.com/pentacore/Laravel-Typefinder/issues/237)) ([074005b](https://github.com/pentacore/Laravel-Typefinder/commit/074005b91bd3ce90bb891bf1ef9d4493b72ccf51))
+
 ## [8.4.1](https://github.com/pentacore/Laravel-Typefinder/compare/v8.4.0...v8.4.1) (2026-11-25)
 
 ### Bug Fixes

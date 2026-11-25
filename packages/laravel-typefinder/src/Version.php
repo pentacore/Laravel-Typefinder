@@ -6,5 +6,5 @@ namespace Pentacore\Typefinder;
 
 final class Version
 {
-    public const string VERSION = '8.4.1';
+    public const string VERSION = '8.4.2';
 }
