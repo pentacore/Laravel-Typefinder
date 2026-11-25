@@ -39,16 +39,37 @@ jobs:
           persist-credentials: true
           token: ${{ secrets.RELEASE_PAT }}
 
+      # A workflow_run job checks out master's current HEAD, which may be a
+      # newer commit than the one Tests just passed on. semantic-release must
+      # run on the master branch, so instead of checking out the tested sha
+      # (a detached HEAD) we skip when master has moved on: the newer
+      # commit's own Tests run triggers its release.
+      - name: Check master is still the tested commit
+        id: guard
+        if: github.event_name == 'workflow_run'
+        env:
+          TESTED_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          HEAD_SHA="$(git rev-parse HEAD)"
+          if [ "$HEAD_SHA" != "$TESTED_SHA" ]; then
+            echo "::notice::master is at $HEAD_SHA but Tests passed on $TESTED_SHA; skipping, the newer commit releases after its own Tests run."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/setup-node@v7
+        if: steps.guard.outputs.skip != 'true'
         with:
-          node-version: '24'
+          # semantic-release 26 requires Node >= 26.13.
+          node-version: '26'
           cache: 'npm'
           cache-dependency-path: package-lock.json
 
       - name: Install root deps
-        run: npm install --no-audit --no-fund
+        if: steps.guard.outputs.skip != 'true'
+        run: npm ci --no-audit --no-fund
 
       - name: Run semantic-release
+        if: steps.guard.outputs.skip != 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_PAT }}
           GITHUB_REPOSITORY: ${{ github.repository }}

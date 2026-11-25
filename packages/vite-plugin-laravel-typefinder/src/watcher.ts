@@ -8,6 +8,8 @@ export interface WatcherSpawnOptions {
     cwd: string;
     startupTimeoutMs: number;
     killTimeoutMs?: number;
+    /** How long to wait for a regen answer before failing it; 0 disables the timeout. */
+    regenTimeoutMs?: number;
     spawnFn?: (cmd: string, args: string[], opts: { cwd: string; shell: boolean }) => ChildProcess;
 }
 
@@ -15,13 +17,17 @@ export class Watcher extends EventEmitter {
     readonly handshake: Handshake;
     private readonly child: ChildProcess;
     private readonly killTimeoutMs: number;
+    private readonly regenTimeoutMs: number;
     private buffer = '';
     private inflight: {
         id: string;
         resolve: (r: RegenResponse) => void;
         reject: (e: Error) => void;
+        timer: ReturnType<typeof setTimeout> | undefined;
     } | null = null;
+    /** Paths of the queued request; an empty set with `nextFull` means a full regen. */
     private nextBatch: Set<string> | null = null;
+    private nextFull = false;
     private nextResolvers: Array<{
         resolve: (r: RegenResponse) => void;
         reject: (e: Error) => void;
@@ -29,11 +35,17 @@ export class Watcher extends EventEmitter {
     private idCounter = 0;
     private _dead = false;
 
-    private constructor(child: ChildProcess, handshake: Handshake, killTimeoutMs: number) {
+    private constructor(
+        child: ChildProcess,
+        handshake: Handshake,
+        killTimeoutMs: number,
+        regenTimeoutMs: number,
+    ) {
         super();
         this.child = child;
         this.handshake = handshake;
         this.killTimeoutMs = killTimeoutMs;
+        this.regenTimeoutMs = regenTimeoutMs;
 
         child.stdout?.on('data', (chunk: Buffer | string) => {
             this.onStdout(typeof chunk === 'string' ? chunk : chunk.toString('utf8'));
@@ -51,6 +63,7 @@ export class Watcher extends EventEmitter {
             const reason = signal ? `signal ${signal}` : `exit code ${code ?? 'null'}`;
             this.emit('died', reason);
             if (this.inflight) {
+                clearTimeout(this.inflight.timer);
                 this.inflight.reject(new Error(`watcher died (${reason})`));
                 this.inflight = null;
             }
@@ -59,6 +72,7 @@ export class Watcher extends EventEmitter {
             }
             this.nextResolvers = [];
             this.nextBatch = null;
+            this.nextFull = false;
         });
     }
 
@@ -88,7 +102,12 @@ export class Watcher extends EventEmitter {
                     if (parsed.type !== 'ready') {
                         throw new Error('expected ready, got ' + parsed.type);
                     }
-                    const watcher = new Watcher(child, parsed as Handshake, opts.killTimeoutMs ?? 2_000);
+                    const watcher = new Watcher(
+                        child,
+                        parsed as Handshake,
+                        opts.killTimeoutMs ?? 2_000,
+                        opts.regenTimeoutMs ?? 120_000,
+                    );
                     if (buffer.length > 0) {
                         watcher.onStdout(buffer);
                     }
@@ -129,6 +148,11 @@ export class Watcher extends EventEmitter {
         if (!this.nextBatch) {
             this.nextBatch = new Set();
         }
+        // An empty path list asks for a full regen: once one is queued, the
+        // merged request stays full instead of narrowing to the listed paths.
+        if (paths.length === 0) {
+            this.nextFull = true;
+        }
         for (const p of paths) {
             this.nextBatch.add(p);
         }
@@ -144,8 +168,25 @@ export class Watcher extends EventEmitter {
         this.child.stdin?.write(JSON.stringify(req) + '\n');
 
         return new Promise<RegenResponse>((resolve, reject) => {
-            this.inflight = { id, resolve, reject };
+            const timer = this.regenTimeoutMs > 0
+                ? setTimeout(() => this.onRegenTimeout(id), this.regenTimeoutMs)
+                : undefined;
+            this.inflight = { id, resolve, reject, timer };
         });
+    }
+
+    private onRegenTimeout(id: string): void {
+        if (!this.inflight || this.inflight.id !== id) return;
+        const pending = this.inflight;
+        this.inflight = null;
+        // A late answer to this request no longer matches the in-flight id
+        // and is dropped.
+        pending.reject(
+            new Error(
+                `regen timed out after ${this.regenTimeoutMs}ms — the watcher may be stuck; restart the dev server if regens keep failing`,
+            ),
+        );
+        this.drainQueued();
     }
 
     private onStdout(chunk: string): void {
@@ -174,6 +215,7 @@ export class Watcher extends EventEmitter {
             }
             const pending = this.inflight;
             this.inflight = null;
+            clearTimeout(pending.timer);
 
             if (msg.type === 'regen.done') {
                 pending.resolve(msg as RegenResponse);
@@ -188,9 +230,10 @@ export class Watcher extends EventEmitter {
     private drainQueued(): void {
         if (!this.nextBatch || this.nextResolvers.length === 0) return;
 
-        const paths = Array.from(this.nextBatch);
+        const paths = this.nextFull ? [] : Array.from(this.nextBatch);
         const resolvers = [...this.nextResolvers];
         this.nextBatch = null;
+        this.nextFull = false;
         this.nextResolvers = [];
 
         this.dispatch(paths).then(

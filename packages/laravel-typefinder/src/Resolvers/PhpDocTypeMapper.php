@@ -12,6 +12,7 @@ use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Http\Resources\Json\ResourceCollection;
 use Illuminate\Http\Resources\MissingValue;
 use Illuminate\Support\Enumerable;
+use Pentacore\Typefinder\Renderers\TypeScriptRenderer;
 use Pentacore\Typefinder\Support\GeneratedClasses;
 use PHPStan\PhpDocParser\Ast\ConstExpr\ConstExprFloatNode;
 use PHPStan\PhpDocParser\Ast\ConstExpr\ConstExprIntegerNode;
@@ -48,7 +49,11 @@ final class PhpDocTypeMapper
 
     private const array INT_KEYWORDS = [
         'int', 'integer', 'positive-int', 'negative-int', 'non-negative-int', 'non-positive-int', 'non-zero-int',
+        'literal-int',
     ];
+
+    /** Generic types whose value is always an integer. */
+    private const array INT_GENERICS = ['int', 'int-mask', 'int-mask-of'];
 
     private const array ARRAY_KEYWORDS = ['array', 'non-empty-array', 'iterable'];
 
@@ -247,8 +252,12 @@ final class PhpDocTypeMapper
             return $this->mapElements($args, $scope, $fieldPath);
         }
 
-        if ($base === 'int') {
+        if (in_array($base, self::INT_GENERICS, true)) {
             return $this->ts('number');
+        }
+
+        if (($base === 'value-of' || $base === 'key-of') && count($args) === 1) {
+            return $this->mapKeyOrValueOf($base, $args[0], $type, $scope, $fieldPath);
         }
 
         if ($base === 'string' || str_ends_with($base, '-string')) {
@@ -262,6 +271,71 @@ final class PhpDocTypeMapper
         }
 
         return $this->unsupported($type, $scope, $fieldPath);
+    }
+
+    /**
+     * `value-of<BackedEnum>` is the enum; `key-of<array{…}>` and
+     * `value-of<array{…}>` are the union of the shape's keys or value types.
+     * Anything else is unsupported.
+     *
+     * @return array<string, mixed>
+     */
+    private function mapKeyOrValueOf(string $base, TypeNode $arg, GenericTypeNode $type, PhpDocScope $scope, string $fieldPath): array
+    {
+        [$arg, $argScope] = $this->expandAliasOnce($arg, $scope);
+
+        if ($base === 'value-of' && $arg instanceof IdentifierTypeNode && $this->keyword($arg->name) === null) {
+            $fqcn = $this->resolveClass($arg->name, $argScope);
+
+            if ($fqcn !== null && is_a($fqcn, BackedEnum::class, true) && $this->classes->isEnum($fqcn)) {
+                return $this->leaf('enum', $fqcn);
+            }
+        }
+
+        if (! $arg instanceof ArrayShapeNode || $arg->items === []) {
+            return $this->unsupported($type, $scope, $fieldPath);
+        }
+
+        $members = [];
+        $nextIndex = 0;
+
+        foreach ($arg->items as $item) {
+            if ($base === 'value-of') {
+                $members[] = $this->mapType($item->valueType, $argScope, $fieldPath);
+
+                continue;
+            }
+
+            $key = $item->keyName;
+            $members[] = match (true) {
+                $key === null => $this->ts((string) $nextIndex++),
+                $key instanceof ConstExprIntegerNode => $this->ts((string) ($nextIndex = self::intValue($key->value))),
+                default => $this->ts(TypeScriptRenderer::stringLiteral($key instanceof IdentifierTypeNode ? $key->name : $key->value)),
+            };
+
+            if ($key instanceof ConstExprIntegerNode) {
+                $nextIndex++;
+            }
+        }
+
+        return count($members) === 1 ? $members[0] : $this->union($members);
+    }
+
+    /**
+     * An alias name replaced by the type it stands for (one level, which is
+     * all a `key-of`/`value-of` argument needs), with the scope to read it in.
+     *
+     * @return array{TypeNode, PhpDocScope}
+     */
+    private function expandAliasOnce(TypeNode $type, PhpDocScope $scope): array
+    {
+        if (! $type instanceof IdentifierTypeNode) {
+            return [$type, $scope];
+        }
+
+        $alias = $scope->alias($type->name);
+
+        return $alias === null ? [$type, $scope] : [$alias['type'], $alias['scope'] ?? $scope];
     }
 
     /**

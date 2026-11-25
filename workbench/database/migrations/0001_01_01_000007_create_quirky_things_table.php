@@ -8,7 +8,7 @@ return new class extends Migration
 {
     public function up(): void
     {
-        DB::statement('create table quirky_things (id integer primary key autoincrement, shape geometry, name varchar(255))');
+        DB::statement('create table quirky_things (id integer primary key autoincrement, shape cube, name varchar(255))');
     }
 
     public function down(): void

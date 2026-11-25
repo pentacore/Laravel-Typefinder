@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Pentacore\Typefinder\Renderers\Concerns;
 
+use Illuminate\Support\Str;
 use Pentacore\Typefinder\Renderers\TypeScriptRenderer;
 
 /**
@@ -24,8 +25,10 @@ trait RendersModels
      * @param  list<array>  $allEnums
      * @param  list<array>  $allModels
      */
-    public function renderModel(array $model, array $allEnums, array $allModels): string
+    public function renderModel(array $model, array $allEnums, array $allModels, array $allResources = []): string
     {
+        $this->modelResources = $allResources;
+
         return $this->assembleFile([$this->buildModelBlock($model, $allEnums, $allModels)]);
     }
 
@@ -56,8 +59,9 @@ trait RendersModels
      * @param  list<array>  $allModels
      * @param  list<string>  $immutable
      */
-    public function renderModelFile(array $model, array $allEnums, array $allModels, bool $emitWriteShapes, array $immutable): string
+    public function renderModelFile(array $model, array $allEnums, array $allModels, bool $emitWriteShapes, array $immutable, array $allResources = []): string
     {
+        $this->modelResources = $allResources;
         $blocks = [$this->buildModelBlock($model, $allEnums, $allModels)];
 
         if ($emitWriteShapes) {
@@ -78,30 +82,45 @@ trait RendersModels
         $imports = [];
         $lines = [];
 
-        $morphToRel = collect($model['relationships'] ?? [])->firstWhere('type', 'morphTo');
+        $relationships = $model['relationships'] ?? [];
+        $morphToNames = array_column(array_filter($relationships, fn (array $rel): bool => $rel['type'] === 'morphTo'), 'name');
 
-        $genericParam = '';
-        if ($morphToRel && empty($morphToRel['morphTargets'])) {
-            // No model declares the inverse morphMany / morphOne, so nothing
-            // narrows T; still declare it so the morphTo field compiles.
-            $genericParam = '<T = unknown>';
-        } elseif ($morphToRel) {
-            $targetNames = $this->resolveModelNames($morphToRel['morphTargets'], $allModels);
-            $union = implode(' | ', $targetNames);
-            $genericParam = sprintf('<T extends %s = %s>', $union, $union);
+        // One generic per morphTo: `T` when there is one, `TSubject` /
+        // `TCauser` when there are more.
+        $generics = [];
+        foreach ($relationships as $index => $rel) {
+            if ($rel['type'] !== 'morphTo') {
+                continue;
+            }
 
-            foreach ($morphToRel['morphTargets'] as $target) {
+            $generic = count($morphToNames) === 1 ? 'T' : 'T'.Str::studly($rel['name']);
+            $relationships[$index]['generic'] = $generic;
+
+            if (empty($rel['morphTargets'])) {
+                // No model declares the inverse morphMany / morphOne, so nothing
+                // narrows the generic; still declare it so the field compiles.
+                $generics[] = $generic.' = unknown';
+
+                continue;
+            }
+
+            $union = implode(' | ', $this->resolveModelNames($rel['morphTargets'], $allModels));
+            $generics[] = sprintf('%s extends %s = %s', $generic, $union, $union);
+
+            foreach ($rel['morphTargets'] as $target) {
                 $targetName = $this->resolveModelName($target, $allModels);
                 $imports[] = sprintf("import type { %s } from './%s';", $targetName, $targetName);
             }
         }
 
+        $genericParam = $generics === [] ? '' : '<'.implode(', ', $generics).'>';
+
         foreach ($model['columns'] as $column) {
             $typeStr = $this->resolveTypeString($column['type'], $column['nullable'], $allEnums, $imports, 'models', $model['fqcn'] ?? null, $allModels);
-            $lines[] = sprintf('  %s: %s;', $column['name'], TypeScriptRenderer::appendNullable($typeStr, (bool) $column['nullable']));
+            $lines[] = '  '.TypeScriptRenderer::member((string) $column['name'], TypeScriptRenderer::appendNullable($typeStr, (bool) $column['nullable']), ! empty($column['optional'])).';';
         }
 
-        foreach ($model['relationships'] ?? [] as $rel) {
+        foreach ($relationships as $rel) {
             $relLine = $this->renderRelationshipField($rel, $allModels, $imports);
             if ($relLine !== null) {
                 $lines[] = $relLine;
@@ -136,8 +155,8 @@ trait RendersModels
         foreach ($eligible as $column) {
             $typeStr = $this->resolveTypeString($column['type'], $column['nullable'], $allEnums, $imports, 'models', $model['fqcn'] ?? null, $allModels);
             // An insert may leave out what is nullable or has a default.
-            $optional = $column['nullable'] || ! empty($column['has_default']) ? '?' : '';
-            $lines[] = sprintf('  %s%s: %s;', $column['name'], $optional, TypeScriptRenderer::appendNullable($typeStr, (bool) $column['nullable']));
+            $optional = $column['nullable'] || ! empty($column['has_default']);
+            $lines[] = '  '.TypeScriptRenderer::member((string) $column['name'], TypeScriptRenderer::appendNullable($typeStr, (bool) $column['nullable']), $optional).';';
         }
 
         $body = $lines === []
@@ -165,7 +184,7 @@ trait RendersModels
 
         foreach ($eligible as $column) {
             $typeStr = $this->resolveTypeString($column['type'], $column['nullable'], $allEnums, $imports, 'models', $model['fqcn'] ?? null, $allModels);
-            $lines[] = sprintf('  %s?: %s;', $column['name'], TypeScriptRenderer::appendNullable($typeStr, (bool) $column['nullable']));
+            $lines[] = '  '.TypeScriptRenderer::member((string) $column['name'], TypeScriptRenderer::appendNullable($typeStr, (bool) $column['nullable']), true).';';
         }
 
         $body = $lines === []

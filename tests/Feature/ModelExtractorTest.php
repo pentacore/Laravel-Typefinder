@@ -150,6 +150,21 @@ final class ModelExtractorTest extends TestCase
         $this->assertCount(12, $results);
     }
 
+    public function test_include_relationships_false_emits_no_relationship_fields(): void
+    {
+        $this->assertNotSame([], $this->modelExtractor->extract(User::class)['relationships']);
+
+        config(['typefinder.models.include_relationships' => false]);
+
+        $result = $this->modelExtractor->extract(User::class);
+
+        $this->assertSame([], $result['relationships']);
+        $this->assertNotNull($this->findColumn($result, 'id'));
+
+        $rendered = new TypeScriptRenderer()->renderModelFile($result, [], [], true, []);
+        $this->assertStringNotContainsString('posts', $rendered);
+    }
+
     public function test_unknown_column_type_emits_warning_and_falls_back_to_unknown(): void
     {
         $warnings = [];
@@ -158,10 +173,10 @@ final class ModelExtractorTest extends TestCase
         $shapeCol = $this->findColumn($result, 'shape');
         $this->assertSame('unknown', $shapeCol['type']);
 
-        $this->assertCount(1, $warnings, 'expected exactly one warning for the geometry column');
+        $this->assertCount(1, $warnings, 'expected exactly one warning for the cube column');
         $this->assertStringContainsString('QuirkyThing', $warnings[0]);
         $this->assertStringContainsString('shape', $warnings[0]);
-        $this->assertStringContainsString('geometry', $warnings[0]);
+        $this->assertStringContainsString('cube', $warnings[0]);
     }
 
     public function test_unknown_cast_emits_warning(): void
@@ -220,7 +235,7 @@ final class ModelExtractorTest extends TestCase
         $warnings = [];
         $result = $this->warningExtractor($warnings)->extract(ParameterisedCastQuest::class);
 
-        $this->assertSame('number', $this->findColumn($result, 'party_id')['type']);
+        $this->assertSame('string', $this->findColumn($result, 'party_id')['type']);
         $this->assertSame('string', $this->findColumn($result, 'completed_at')['type']);
         $this->assertSame('{ amount: number; currency: string }', $this->findColumn($result, 'rewards')['type']);
         $this->assertSame([], $warnings);
@@ -396,11 +411,11 @@ final class ModelExtractorTest extends TestCase
         $this->assertTrue($initial['nullable']);
     }
 
-    public function test_appended_attribute_without_a_readable_type_is_unknown(): void
+    public function test_attribute_without_a_docblock_reads_the_getter_closure_return_type(): void
     {
         $mystery = $this->findColumn($this->modelExtractor->extract(Badge::class), 'mystery');
 
-        $this->assertSame('unknown', $mystery['type']);
+        $this->assertSame('unknown[] | Record<string, unknown>', $mystery['type']);
         $this->assertFalse($mystery['nullable']);
     }
 
@@ -412,12 +427,12 @@ final class ModelExtractorTest extends TestCase
         $this->assertFalse($raw['nullable']);
     }
 
-    public function test_attribute_generic_that_is_not_a_scalar_is_unknown(): void
+    public function test_attribute_generic_date_is_a_string(): void
     {
         $stamp = $this->findColumn($this->modelExtractor->extract(Badge::class), 'stamp');
 
-        $this->assertSame('unknown', $stamp['type']);
-        $this->assertFalse($stamp['nullable']);
+        $this->assertSame('string', $stamp['type']);
+        $this->assertTrue($stamp['nullable']);
     }
 
     public function test_type_override_applies_to_an_appended_attribute(): void
@@ -479,7 +494,7 @@ final class ModelExtractorTest extends TestCase
 
         $this->assertStringContainsString("  shout: string;\n", $read);
         $this->assertStringContainsString("  subtitle: string | null;\n", $read);
-        $this->assertStringContainsString("  mystery: unknown;\n", $read);
+        $this->assertStringContainsString("  mystery: unknown[] | Record<string, unknown>;\n", $read);
         $this->assertStringContainsString("  name: string;\n", $write);
         $this->assertStringNotContainsString('shout', $write);
     }

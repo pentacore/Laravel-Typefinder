@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { compileMatcher } from '../src/matcher';
+import { compileMatcher, normalisePath } from '../src/matcher';
 
 describe('compileMatcher', () => {
     it('returns true for files under a watched directory', () => {
@@ -36,5 +36,42 @@ describe('compileMatcher', () => {
     it('normalises Windows-style separators in the input file', () => {
         const match = compileMatcher(['/app/Models']);
         expect(match('\\app\\Models\\User.php')).toBe(true);
+    });
+
+    it.each([
+        '/home/u/My Project (old)',
+        '/home/u/a{b,c}',
+        '/home/u/x+(y)',
+        '/home/u/[brackets]',
+        '/home/u/star*dir',
+    ])('matches files under a directory with glob characters: %s', (dir) => {
+        const match = compileMatcher([`${dir}/app/Models`]);
+        expect(match(`${dir}/app/Models/User.php`)).toBe(true);
+        expect(match(`${dir}/app/Other/User.php`)).toBe(false);
+    });
+
+    it('does not match a sibling directory sharing the prefix', () => {
+        const match = compileMatcher(['/app/Models']);
+        expect(match('/app/ModelsExtra/User.php')).toBe(false);
+    });
+
+    it('accepts watched directories with a trailing slash', () => {
+        const match = compileMatcher(['/app/Models/']);
+        expect(match('/app/Models/User.php')).toBe(true);
+    });
+});
+
+describe('normalisePath', () => {
+    it('turns backslashes forward and trims trailing slashes', () => {
+        expect(normalisePath('C:\\app\\Models\\\\')).toBe('C:/app/Models');
+        expect(normalisePath('/app/Models///')).toBe('/app/Models');
+        expect(normalisePath('///')).toBe('');
+    });
+
+    it('stays linear on long runs of slashes', () => {
+        const path = `${'/'.repeat(100_000)}x`;
+        const start = performance.now();
+        expect(normalisePath(path)).toBe(path);
+        expect(performance.now() - start).toBeLessThan(100);
     });
 });

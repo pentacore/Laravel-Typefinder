@@ -19,7 +19,6 @@ A Vite plugin that keeps your TypeScript type definitions in sync with your Lara
 - [Usage](#usage)
 - [Configuration](#configuration)
 - [Behavior](#behavior)
-- [Alternative install (from vendor)](#alternative-install-from-vendor)
 - [License](#license)
 
 ## Requirements
@@ -27,7 +26,7 @@ A Vite plugin that keeps your TypeScript type definitions in sync with your Lara
 - The Composer package `pentacore/laravel-typefinder` installed and auto-discovered in your Laravel app.
 - Vite 6+
 - Node 18+
-- ESM-only — the package exposes only `dist/index.mjs`. Consumers must `import` (not `require`) it. Any modern Vite/Laravel app already meets this.
+- ESM-only — the package exposes only `dist/index.js`. Consumers must `import` (not `require`) it. Any modern Vite/Laravel app already meets this.
 
 ## Installation
 
@@ -78,6 +77,20 @@ typefinder({
 
     // Grace period between SIGTERM and SIGKILL when shutting down.
     killTimeoutMs: 2_000,
+
+    // How long to wait for one regeneration before reporting it failed
+    // (e.g. a model accessor that blocks on a network call). 0 disables it.
+    regenTimeoutMs: 120_000,
+
+    // Maps a path prefix as the watcher sees it to the same directory on
+    // the host Vite runs on. Needed when PHP runs in a container (Sail,
+    // Docker): see "Sail and Docker" below.
+    pathMap: undefined,
+
+    // Directories whose files change the database schema. A change there
+    // triggers a full regeneration. Defaults to `database/migrations` under
+    // the Vite root; `false` turns it off.
+    migrations: undefined,
 });
 ```
 
@@ -94,15 +107,35 @@ typefinder({ command: 'herd php artisan typefinder:watch' })
 typefinder({ command: 'docker compose exec app php artisan typefinder:watch' })
 ```
 
+### Sail and Docker
+
+When PHP runs in a container, the watcher reports its directories as the container sees them (`/var/www/html/app/Models`), while Vite on the host reports changed files under the host path (`/Users/you/project/app/Models/User.php`). Without help the two never match and no regeneration runs. Tell the plugin where the container's project directory lives on the host with `pathMap`:
+
+```ts
+typefinder({
+    command: './vendor/bin/sail artisan typefinder:watch',
+    buildCommand: './vendor/bin/sail artisan typefinder:generate --json',
+    pathMap: { '/var/www/html': process.cwd() },
+})
+```
+
+The mapping is applied both ways: the watcher's directories are translated to host paths to match the files Vite reports, and every changed file is translated back to the container path before it is sent to the watcher. An explicit `watch` array takes host paths. Use the volume mount of your `docker-compose.yml` (`.:/var/www/html` for Sail) as the key and value. With several mounts, add one entry per mount; the longest matching prefix wins.
+
+Symlinked project directories need no mapping: the plugin resolves symlinks on both sides, as PHP does.
+
 ## Behavior
 
-**Development (`vite dev`):** The plugin spawns `typefinder:watch` — a persistent Laravel process that boots once and accepts incremental regeneration requests over NDJSON. When a `.php` file matching the watched paths changes via HMR, the plugin sends the changed file paths to the watcher, which re-extracts only those files and rewrites only the affected `.d.ts` outputs. Multiple rapid edits within the debounce window are coalesced into a single request.
+**Development (`vite dev`):** The plugin spawns `typefinder:watch` — a persistent Laravel process that boots once and accepts incremental regeneration requests over NDJSON. When a `.php` file matching the watched paths is created, changed, deleted or renamed, the plugin sends the changed file paths to the watcher, which re-extracts only those files and rewrites only the affected `.d.ts` outputs. Multiple rapid edits within the debounce window are coalesced into a single request.
 
 A PHP process cannot reload a class it has loaded, so the watcher answers each request in a forked worker that reads the edited classes from the files as they are now. Forking needs PHP's `pcntl` extension. Without it (Windows, some Docker images), or once a class the application loads while booting (a service provider, for example) has been edited, each request starts a new PHP process instead: the same output, but a Laravel boot slower per change. The watcher says so once on stderr; in the second case, restarting the dev server makes it fast again.
 
 The watched paths are read from the watcher's startup handshake, which mirrors your `config/typefinder.php`. If you enable Inertia pages or broadcasting in the config, the plugin automatically watches those directories too — no manual `watch` array needed.
 
-**Production (`vite build`):** No watcher. The plugin runs `typefinder:generate --json` once in `buildStart` and fails the build on non-zero exit. Set `buildCommand: false` to skip generation entirely (e.g. for pre-built containers without a PHP runtime).
+Creating, editing or deleting a migration triggers a full regeneration. The schema itself changes only when the migration runs, and the watcher notices that on the next regeneration: after `php artisan migrate`, save any watched file (or send the `typefinder:full-regen` event) to pick up the new columns.
+
+Warnings and per-file failures of every regeneration, the initial one included, are written to stderr. A regeneration that gets no answer within `regenTimeoutMs` is reported as failed and the next one is sent.
+
+**Production (`vite build`):** No watcher. The plugin runs `typefinder:generate --json` once in `buildStart`, prints its warnings, and fails the build on non-zero exit with the generator's error. Set `buildCommand: false` to skip generation entirely (e.g. for pre-built containers without a PHP runtime).
 
 **Shutdown:** The watcher is killed on `closeBundle` and on process exit. A PHP fatal error or out-of-memory while regenerating ends only the worker of that request: the plugin logs the error and the watcher keeps running. If the watcher itself dies mid-session, the plugin logs the error and stops regenerating — restart the dev server to recover.
 
@@ -111,16 +144,6 @@ The watched paths are read from the watcher's startup handshake, which mirrors y
 - `command` default changed from `typefinder:generate` to `typefinder:watch`. If you explicitly set `command`, update it — dev mode requires the long-lived watcher.
 - `watch` default changed from a hardcoded path list to `undefined`, meaning "use whatever the watcher reports". Existing explicit `watch: [...]` configurations keep working unchanged.
 - Regenerations now run against a persistent Laravel boot via NDJSON. Typical edit latency drops from ~300-500ms to ~20-60ms.
-
-## Alternative install (from vendor)
-
-If you prefer not to add an npm dependency, the Composer package bundles the built plugin in its `dist/` directory:
-
-```ts
-import typefinder from '../../vendor/pentacore/laravel-typefinder/dist/index.mjs';
-```
-
-Adjust the relative path to match your project structure. This approach means the plugin version is tied to your Composer lock file — which is often desirable.
 
 ## License
 

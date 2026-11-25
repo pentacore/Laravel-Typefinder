@@ -16,7 +16,7 @@ export default defineConfig({
             fileName: 'index',
         },
         rolldownOptions: {
-            external: ['node:child_process', 'node:events', 'node:path', 'node:stream', 'node:util', 'vite', 'rollup', 'picomatch'],
+            external: ['node:child_process', 'node:events', 'node:fs', 'node:path', 'node:stream', 'node:util', 'vite', 'rollup'],
         },
     },
     test: {

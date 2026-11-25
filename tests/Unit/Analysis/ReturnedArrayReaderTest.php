@@ -567,6 +567,23 @@ final class ReturnedArrayReaderTest extends TestCase
         );
     }
 
+    public function test_a_method_chain_on_a_wrapper_stays_conditional(): void
+    {
+        $wrappers = ['Inertia\Inertia::optional', 'Inertia\Inertia::defer'];
+        $header = "namespace App\\Http\\Controllers;\nuse Inertia\\Inertia;\n";
+        $body = <<<'PHP'
+        return [
+            'a' => Inertia::defer(fn () => 1)->merge(),
+            'b' => Inertia::optional(fn () => 1)->once()->until(60),
+            'c' => Inertia::always(fn () => 1)->merge(),
+            'd' => $this->helper()->merge(),
+            'e' => $class::optional(fn () => 1)->once(),
+        ];
+        PHP;
+
+        $this->assertSame(['a?', 'b?', 'c', 'd', 'e'], $this->keyList($this->single($body, $wrappers, $header)));
+    }
+
     public function test_wrapper_class_matches_its_fqcn_or_the_global_alias_only(): void
     {
         $wrappers = ['Inertia\Inertia::optional'];

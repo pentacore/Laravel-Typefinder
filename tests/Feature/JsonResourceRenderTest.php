@@ -156,13 +156,16 @@ final class JsonResourceRenderTest extends TestCase
         $this->assertStringContainsString('export type AdminUserResource = User & { roles: string[] };', $output);
     }
 
-    private function renderPhpdoc(array $type, array $models = [], array $enums = [], array $resources = [], string $fqcn = PostResource::class): string
+    /**
+     * The lists default to the generated classes the tests name.
+     */
+    private function renderPhpdoc(array $type, ?array $models = null, ?array $enums = null, ?array $resources = null, string $fqcn = PostResource::class): string
     {
         return (new TypeScriptRenderer)->renderResource(
             ['name' => 'PostResource', 'fqcn' => $fqcn, 'shape' => ['kind' => 'phpdoc', 'type' => $type]],
-            $models,
-            $enums,
-            $resources,
+            $models ?? [['name' => 'User', 'fqcn' => User::class]],
+            $enums ?? [['name' => 'PostStatus', 'fqcn' => PostStatus::class]],
+            $resources ?? [['name' => 'UserResource', 'fqcn' => UserResource::class], ['name' => 'PostResource', 'fqcn' => PostResource::class]],
         );
     }
 

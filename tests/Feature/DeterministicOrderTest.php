@@ -80,9 +80,9 @@ final class DeterministicOrderTest extends TestCase
 
     public function test_morph_targets_are_sorted_regardless_of_model_order(): void
     {
-        $comment = ['fqcn' => 'App\Fake\Comment', 'relationships' => [['type' => 'morphTo', 'name' => 'commentable']]];
-        $video = ['fqcn' => 'App\Fake\Video', 'relationships' => [['type' => 'morphMany', 'relationType' => MorphMany::class, 'related' => 'App\Fake\Comment']]];
-        $article = ['fqcn' => 'App\Fake\Article', 'relationships' => [['type' => 'morphMany', 'relationType' => MorphMany::class, 'related' => 'App\Fake\Comment']]];
+        $comment = ['fqcn' => 'App\Fake\Comment', 'relationships' => [['type' => 'morphTo', 'name' => 'commentable', 'morphType' => 'commentable_type']]];
+        $video = ['fqcn' => 'App\Fake\Video', 'relationships' => [['type' => 'morphMany', 'relationType' => MorphMany::class, 'related' => 'App\Fake\Comment', 'morphType' => 'commentable_type']]];
+        $article = ['fqcn' => 'App\Fake\Article', 'relationships' => [['type' => 'morphMany', 'relationType' => MorphMany::class, 'related' => 'App\Fake\Comment', 'morphType' => 'commentable_type']]];
 
         $morphToResolver = new MorphToResolver;
         $targets = fn (array $models): array => collect($morphToResolver->resolve($models))

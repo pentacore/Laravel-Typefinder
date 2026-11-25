@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace Pentacore\Typefinder\Extractors;
 
+use BackedEnum;
+use Closure;
+use DateTimeInterface;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -13,23 +17,30 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\HasOneThrough;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\Relations\MorphOne;
+use Illuminate\Database\Eloquent\Relations\MorphOneOrMany;
 use Illuminate\Database\Eloquent\Relations\MorphPivot;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Database\Eloquent\Relations\MorphToMany;
 use Illuminate\Database\Eloquent\Relations\Pivot;
 use Illuminate\Database\Eloquent\Relations\Relation;
-use Illuminate\Support\Facades\Schema;
+use Illuminate\Database\Schema\Builder;
 use Illuminate\Support\Str;
 use Pentacore\Typefinder\Attributes\TypefinderIgnore;
 use Pentacore\Typefinder\Attributes\TypefinderOverrides;
 use Pentacore\Typefinder\Attributes\TypefinderWriteShape;
 use Pentacore\Typefinder\Resolvers\CastTypeResolver;
 use Pentacore\Typefinder\Resolvers\ColumnTypeResolver;
+use Pentacore\Typefinder\Resolvers\ModelPropertyDocReader;
 use Pentacore\Typefinder\Support\ClassDiscovery;
+use Pentacore\Typefinder\Support\ThrowableMessage;
 use ReflectionAttribute;
 use ReflectionClass;
+use ReflectionFunction;
 use ReflectionMethod;
 use ReflectionNamedType;
+use ReflectionType;
+use ReflectionUnionType;
+use Throwable;
 
 class ModelExtractor
 {
@@ -42,6 +53,22 @@ class ModelExtractor
         'true' => 'true',
         'false' => 'false',
     ];
+
+    /** The model methods that build a relation, as `artisan model:show` lists them. */
+    private const array RELATION_BUILDERS = [
+        'hasMany', 'hasManyThrough', 'hasOneThrough', 'belongsToMany', 'hasOne', 'belongsTo',
+        'morphOne', 'morphTo', 'morphMany', 'morphToMany', 'morphedByMany',
+    ];
+
+    /** What the array, collection, object and JSON casts resolve to. */
+    private const array LOOSE_CAST_TYPES = [
+        'unknown', 'unknown[]', 'Record<string, unknown>', 'unknown[] | Record<string, unknown>',
+    ];
+
+    /** @var array<string, list<string>> */
+    private array $enumTypesByConnection = [];
+
+    private ?ModelPropertyDocReader $propertyDocReader = null;
 
     public function __construct(
         protected ColumnTypeResolver $columnTypeResolver,
@@ -63,12 +90,20 @@ class ModelExtractor
         $table = $model->getTable();
 
         $columns = $this->extractColumns($model, $table, $modelClass);
-        $relationships = $this->extractRelationships($model, $reflectionClass);
+        $relationships = config('typefinder.models.include_relationships', true)
+            ? $this->extractRelationships($model, $reflectionClass)
+            : [];
+
+        // `$hidden` / `$visible` only shape serialisation: a hidden column
+        // stays writable, so only the read type leaves it out.
+        $readColumns = array_values(array_filter($columns, fn (array $column): bool => $this->isSerialised($model, $column['name'])));
+        $readColumns = [...$readColumns, ...$this->extractAppends($model, $reflectionClass, $readColumns)];
+        [$readColumns, $relationships] = $this->addOverriddenFields($model, $readColumns, $relationships);
 
         return [
             'name' => $reflectionClass->getShortName(),
             'fqcn' => $modelClass,
-            'columns' => [...$columns, ...$this->extractAppends($model, $reflectionClass, $columns)],
+            'columns' => $readColumns,
             'relationships' => $relationships,
             // Appended attributes are read-only: computed before they join the columns.
             'assignable_columns' => $this->filterAssignable($model, $columns),
@@ -100,37 +135,50 @@ class ModelExtractor
     }
 
     /**
-     * Extract column information from the model's database table.
-     *
-     * Respects $visible/$hidden on the model: hidden columns are excluded;
-     * if $visible is set, only those columns pass through.
+     * Extract column information from the model's database table: every
+     * column that is serialised or mass assignable.
      *
      * @param  class-string<Model>|null  $modelClass
      * @return list<array{name: string, type: mixed, nullable: bool, is_primary: bool, is_server_filled: bool, has_default: bool}>
      */
     protected function extractColumns(Model $model, string $table, ?string $modelClass = null): array
     {
-        $schemaColumns = Schema::getColumns($table);
+        // The model's own connection: a model on a non-default `$connection`
+        // has its table there.
+        $connection = $model->getConnection();
+        $schemaBuilder = $connection->getSchemaBuilder();
+        $driver = $connection->getDriverName();
+        $schemaColumns = $schemaBuilder->getColumns($table);
+
+        if ($schemaColumns === [] && ! $schemaBuilder->hasTable($table)) {
+            $this->warn(sprintf(
+                '%s: table "%s" not found on connection "%s" — the model type has no columns. Run the migrations before generating.',
+                $modelClass ?? $model::class,
+                $table,
+                $connection->getName(),
+            ));
+        }
+
+        $enumTypes = $this->enumTypes($schemaBuilder, $driver);
         $casts = $model->getCasts();
         $overrides = $this->getTypeOverrides($model);
-        $hidden = $model->getHidden();
-        $visible = $model->getVisible();
+        $assignable = array_column($this->filterAssignable($model, array_map(
+            fn (array $schemaColumn): array => ['name' => $schemaColumn['name']],
+            $schemaColumns,
+        )), 'name');
 
         $contractServerFilled = $this->getContractServerFilled($model);
         // What a new model starts with: the defaults in its `$attributes`.
         $modelDefaults = $model->getAttributes();
+        $propertyDocs = ($this->propertyDocReader ??= new ModelPropertyDocReader)->read(new ReflectionClass($model));
         $columns = [];
 
         foreach ($schemaColumns as $schemaColumn) {
             $name = $schemaColumn['name'];
             $nullable = $schemaColumn['nullable'];
 
-            // Visibility filtering
-            if (in_array($name, $hidden, true)) {
-                continue;
-            }
-
-            if (! empty($visible) && ! in_array($name, $visible, true)) {
+            // A column in neither the read type nor a write shape.
+            if (! $this->isSerialised($model, $name) && ! in_array($name, $assignable, true)) {
                 continue;
             }
 
@@ -172,14 +220,20 @@ class ModelExtractor
                     }
                 }
 
+                // A cast that only says "array" or "JSON" defers to the
+                // column's class-level `@property` type.
+                if (is_string($castType) && in_array($castType, self::LOOSE_CAST_TYPES, true) && isset($propertyDocs[$name])) {
+                    $castType = ['phpdoc' => $propertyDocs[$name]];
+                }
+
                 $columns[] = ['type' => $castType] + $base;
 
                 continue;
             }
 
             // Priority 3: DB column type
-            $resolved = $this->columnTypeResolver->resolve($schemaColumn['type_name'], false);
-            if ($resolved === 'unknown' && $this->onWarn !== null) {
+            $resolved = $this->columnTypeResolver->resolve($schemaColumn['type_name'], false, $driver, $enumTypes);
+            if (! $this->columnTypeResolver->recognises($schemaColumn['type_name'], $driver, $enumTypes) && $this->onWarn !== null) {
                 ($this->onWarn)(sprintf(
                     "%s.%s: column type '%s' not recognised — emitted as `unknown`. Add a #[TypefinderOverrides] entry or open an issue if this is a common DB type.",
                     $modelClass ?? $model::class,
@@ -192,6 +246,119 @@ class ModelExtractor
         }
 
         return $columns;
+    }
+
+    /**
+     * `#[TypefinderOverrides]` keys that are neither a column nor an appended
+     * attribute: a relation's key replaces the relation's type (still
+     * optional, as a relation is only there when loaded); any other key
+     * adds a read-only field (a `withCount()` attribute, say).
+     *
+     * @param  list<array<string, mixed>>  $columns
+     * @param  list<array<string, mixed>>  $relationships
+     * @return array{list<array<string, mixed>>, list<array<string, mixed>>}
+     */
+    protected function addOverriddenFields(Model $model, array $columns, array $relationships): array
+    {
+        $taken = array_column($columns, 'name');
+
+        foreach ($this->getTypeOverrides($model) as $name => $type) {
+            // A relation's override may name its method or its serialised key.
+            $name = self::serialisedRelationKey(['relationships' => $relationships], (string) $name);
+            if (in_array($name, $taken, true) || ! $this->isSerialised($model, $name)) {
+                continue;
+            }
+
+            $relationNames = array_column($relationships, 'name');
+            $isRelation = in_array($name, $relationNames, true);
+            if ($isRelation) {
+                $relationships = array_values(array_filter($relationships, fn (array $rel): bool => $rel['name'] !== $name));
+            }
+
+            $taken[] = $name;
+            $columns[] = [
+                'type' => $type,
+                'name' => $name,
+                'nullable' => false,
+                'is_primary' => false,
+                'is_server_filled' => true,
+                'is_appended' => true,
+                'optional' => $isRelation,
+            ];
+        }
+
+        return [$columns, $relationships];
+    }
+
+    /**
+     * The key `toArray()` serialises a relation under: snake-cased while the
+     * model's `$snakeAttributes` is on (the default), else the method name.
+     */
+    protected function relationKey(Model $model, string $method): string
+    {
+        return $model::$snakeAttributes ? Str::snake($method) : $method;
+    }
+
+    /**
+     * The serialised key of the relation an `omit` / override key names: a
+     * relation's method name or its snake-cased form maps to the key it is
+     * emitted under; any other key is returned as is.
+     *
+     * @param  array{relationships?: list<array<string, mixed>>}  $model  a model extraction
+     */
+    public static function serialisedRelationKey(array $model, string $key): string
+    {
+        foreach ($model['relationships'] ?? [] as $relationship) {
+            $method = (string) ($relationship['method'] ?? $relationship['name']);
+            if ($key === $method || $key === Str::snake($method)) {
+                return (string) $relationship['name'];
+            }
+        }
+
+        return $key;
+    }
+
+    /**
+     * Whether `toArray()` includes the attribute or relation: not in
+     * `$hidden`, and in `$visible` when that is set.
+     */
+    protected function isSerialised(Model $model, string $name): bool
+    {
+        if (in_array($name, $model->getHidden(), true)) {
+            return false;
+        }
+
+        $visible = $model->getVisible();
+
+        return $visible === [] || in_array($name, $visible, true);
+    }
+
+    protected function warn(string $message): void
+    {
+        if ($this->onWarn !== null) {
+            ($this->onWarn)($message);
+        }
+    }
+
+    /**
+     * The user-defined enum types of a PostgreSQL database, which a column
+     * names by its own type name. Read once per connection.
+     *
+     * @return list<string>
+     */
+    protected function enumTypes(Builder $schemaBuilder, string $driver): array
+    {
+        if ($driver !== 'pgsql') {
+            return [];
+        }
+
+        $connectionName = (string) $schemaBuilder->getConnection()->getName();
+        $this->enumTypesByConnection[$connectionName] ??= array_values(array_map(
+            fn (array $type): string => (string) $type['name'],
+            array_filter($schemaBuilder->getTypes(), fn (array $type): bool => ($type['type'] ?? null) === 'enum'),
+        ));
+
+        return $this->enumTypesByConnection[$connectionName];
     }
 
     /**
@@ -222,7 +389,7 @@ class ModelExtractor
             $taken[] = $name;
             [$type, $nullable] = isset($overrides[$name])
                 ? [$overrides[$name], false]
-                : $this->accessorType($reflectionClass, $name);
+                : $this->accessorType($model, $reflectionClass, $name);
 
             $appends[] = [
                 'type' => $type,
@@ -238,47 +405,138 @@ class ModelExtractor
     }
 
     /**
-     * The TypeScript type of an accessor, read from `getFooAttribute()`'s
-     * return type or from the `Attribute<TGet, TSet>` generic documented on
-     * `foo()`. Anything else is `unknown`.
+     * The TypeScript type of an accessor: `getFooAttribute()`'s return type,
+     * or for `foo(): Attribute` the `Attribute<TGet, TSet>` generic in its
+     * PHPDoc, else the return type of the getter closure it builds. Anything
+     * else is `unknown`.
      *
      * @return array{string, bool} type and nullability
      */
-    protected function accessorType(ReflectionClass $reflectionClass, string $name): array
+    protected function accessorType(Model $model, ReflectionClass $reflectionClass, string $name): array
     {
         $legacy = 'get'.Str::studly($name).'Attribute';
         if ($reflectionClass->hasMethod($legacy)) {
-            $returnType = $reflectionClass->getMethod($legacy)->getReturnType();
-            if ($returnType instanceof ReflectionNamedType) {
-                return [
-                    self::SCALAR_TYPES[$returnType->getName()] ?? 'unknown',
-                    $returnType->allowsNull() && $returnType->getName() !== 'mixed',
-                ];
-            }
-
-            return ['unknown', false];
+            return $this->reflectedType($reflectionClass->getMethod($legacy)->getReturnType()) ?? ['unknown', false];
         }
 
         $modern = Str::camel($name);
-        $doc = $reflectionClass->hasMethod($modern) ? $reflectionClass->getMethod($modern)->getDocComment() : false;
-        if ($doc === false || preg_match('/@return\s+[\w\\\\]*Attribute<([^,<>]+),/', $doc, $match) !== 1) {
+        if (! $reflectionClass->hasMethod($modern)) {
             return ['unknown', false];
         }
 
-        $members = array_map(trim(...), explode('|', ltrim(trim($match[1]), '?')));
-        $nullable = str_starts_with(trim($match[1]), '?') || in_array('null', $members, true);
-        $members = array_values(array_filter($members, fn (string $member): bool => $member !== 'null'));
-
-        $types = [];
-        foreach ($members as $member) {
-            if (! isset(self::SCALAR_TYPES[$member])) {
-                return ['unknown', false];
+        $method = $reflectionClass->getMethod($modern);
+        $doc = $method->getDocComment();
+        if ($doc !== false && preg_match('/@return\s+[\w\\\\]*Attribute<([^,<>]+),/', $doc, $match) === 1) {
+            $documented = $this->unionType(explode('|', ltrim(trim($match[1]), '?')), str_starts_with(trim($match[1]), '?'));
+            if ($documented !== null) {
+                return $documented;
             }
-
-            $types[] = self::SCALAR_TYPES[$member];
         }
 
-        return $types === [] ? ['unknown', false] : [implode(' | ', array_unique($types)), $nullable];
+        if ($method->getNumberOfRequiredParameters() > 0) {
+            return ['unknown', false];
+        }
+
+        try {
+            $attribute = $method->invoke($model);
+        } catch (Throwable) {
+            return ['unknown', false];
+        }
+
+        if (! $attribute instanceof Attribute || ! $attribute->get instanceof Closure) {
+            return ['unknown', false];
+        }
+
+        return $this->reflectedType(new ReflectionFunction($attribute->get)->getReturnType()) ?? ['unknown', false];
+    }
+
+    /**
+     * A declared PHP return type as TypeScript; null when a part of it has
+     * no TypeScript form.
+     *
+     * @return array{string, bool}|null type and nullability
+     */
+    protected function reflectedType(?ReflectionType $type): ?array
+    {
+        if ($type instanceof ReflectionNamedType) {
+            if ($type->getName() === 'mixed') {
+                return null;
+            }
+
+            return $this->unionType([$type->getName()], $type->allowsNull());
+        }
+
+        if ($type instanceof ReflectionUnionType) {
+            $names = array_map(
+                fn (ReflectionType $member): string => $member instanceof ReflectionNamedType ? $member->getName() : 'mixed',
+                $type->getTypes(),
+            );
+
+            return $this->unionType($names, false);
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  list<string>  $members  PHP type names; `null` makes it nullable
+     * @return array{string, bool}|null
+     */
+    protected function unionType(array $members, bool $nullable): ?array
+    {
+        $types = [];
+        foreach (array_map(trim(...), $members) as $member) {
+            if (strtolower($member) === 'null') {
+                $nullable = true;
+
+                continue;
+            }
+
+            $tsType = $this->phpTypeToTs($member);
+            if ($tsType === null) {
+                return null;
+            }
+
+            $types[] = $tsType;
+        }
+
+        return $types === [] ? null : [implode(' | ', array_unique($types)), $nullable];
+    }
+
+    /**
+     * One PHP type as TypeScript, as `toArray()` serialises it. Models and
+     * backed enums stay class-strings, which the renderer resolves to their
+     * generated types.
+     */
+    protected function phpTypeToTs(string $type): ?string
+    {
+        $type = ltrim($type, '\\');
+        $lower = strtolower($type);
+
+        if (isset(self::SCALAR_TYPES[$lower])) {
+            return self::SCALAR_TYPES[$lower];
+        }
+
+        if ($lower === 'array') {
+            return 'unknown[] | Record<string, unknown>';
+        }
+
+        if (is_subclass_of($type, BackedEnum::class) || is_subclass_of($type, Model::class)) {
+            return $type;
+        }
+
+        if (enum_exists($type)) {
+            // A pure enum: the union of its case names.
+            $cases = $this->castTypeResolver->resolveOrNull($type);
+
+            return is_string($cases) ? $cases : null;
+        }
+
+        if (is_a($type, DateTimeInterface::class, true)) {
+            return 'string';
+        }
+
+        return null;
     }
 
     /**
@@ -344,9 +602,16 @@ class ModelExtractor
     }
 
     /**
-     * Extract relationship information from the model.
+     * Extract relationship information from the model: every public method
+     * without parameters that returns a Relation. A method with no return
+     * type is probed when its body builds a relation (`$this->hasMany(…)`),
+     * as `artisan model:show` does. Relations `toArray()` leaves out
+     * (`$hidden`, `$visible`) are left out.
      *
-     * @return list<array{name: string, type: string, related: class-string, relationType: string, pivot?: array}>
+     * `name` is the key `toArray()` serialises the relation under, `method`
+     * the method that builds it.
+     *
+     * @return list<array{name: string, method: string, type: string, related: class-string, relationType: string, pivot?: array}>
      */
     protected function extractRelationships(Model $model, ReflectionClass $reflectionClass): array
     {
@@ -359,26 +624,19 @@ class ModelExtractor
                 continue;
             }
 
-            if ($reflectionMethod->getNumberOfParameters() > 0) {
+            if ($reflectionMethod->getNumberOfParameters() > 0 || $reflectionMethod->isStatic()) {
                 continue;
             }
 
-            $returnType = $reflectionMethod->getReturnType();
-
-            if ($returnType === null) {
+            if (! $this->mayReturnRelation($reflectionMethod)) {
                 continue;
             }
 
-            $returnTypeName = $returnType instanceof ReflectionNamedType ? $returnType->getName() : null;
-            if ($returnTypeName === null) {
+            if (! $this->isSerialised($model, $reflectionMethod->getName())) {
                 continue;
             }
 
-            if (! is_subclass_of($returnTypeName, Relation::class)) {
-                continue;
-            }
-
-            $relationship = $this->extractRelationship($model, $reflectionMethod, $returnTypeName);
+            $relationship = $this->extractRelationship($model, $reflectionMethod);
 
             if ($relationship !== null) {
                 $relationships[] = $relationship;
@@ -389,13 +647,56 @@ class ModelExtractor
     }
 
     /**
+     * Whether a method is a relation to call: its return type names a
+     * Relation (alone or in a union), or it has no return type and its body
+     * calls one of the model's relation builders. Untyped methods in vendor
+     * code are not probed.
+     */
+    protected function mayReturnRelation(ReflectionMethod $reflectionMethod): bool
+    {
+        $returnType = $reflectionMethod->getReturnType();
+
+        if ($returnType instanceof ReflectionNamedType || $returnType instanceof ReflectionUnionType) {
+            $types = $returnType instanceof ReflectionUnionType ? $returnType->getTypes() : [$returnType];
+
+            return array_any($types, fn (\ReflectionNamedType|\ReflectionIntersectionType $type): bool => $type instanceof ReflectionNamedType && is_a($type->getName(), Relation::class, true));
+        }
+
+        if ($returnType instanceof ReflectionType) {
+            return false;
+        }
+
+        $file = $reflectionMethod->getFileName();
+        if ($file === false || str_contains($file, DIRECTORY_SEPARATOR.'vendor'.DIRECTORY_SEPARATOR)) {
+            return false;
+        }
+
+        $lines = file($file) ?: [];
+
+        $body = implode('', array_slice(
+            $lines,
+            (int) $reflectionMethod->getStartLine() - 1,
+            (int) $reflectionMethod->getEndLine() - (int) $reflectionMethod->getStartLine() + 1,
+        ));
+
+        return preg_match('/\$this->(?:'.implode('|', self::RELATION_BUILDERS).')\s*\(/i', $body) === 1;
+    }
+
+    /**
      * Extract a single relationship's information.
      */
-    protected function extractRelationship(Model $model, ReflectionMethod $reflectionMethod, string $returnTypeName): ?array
+    protected function extractRelationship(Model $model, ReflectionMethod $reflectionMethod): ?array
     {
         try {
             $relation = $reflectionMethod->invoke($model);
-        } catch (\Throwable) {
+        } catch (Throwable $throwable) {
+            $this->warn(sprintf(
+                '%s::%s(): building the relation threw %s — left out of the type.',
+                $model::class,
+                $reflectionMethod->getName(),
+                ThrowableMessage::describe($throwable),
+            ));
+
             return null;
         }
 
@@ -407,9 +708,10 @@ class ModelExtractor
         $methodName = $reflectionMethod->getName();
 
         $result = [
-            'name' => $methodName,
+            'name' => $this->relationKey($model, $methodName),
+            'method' => $methodName,
             'related' => $relatedClass,
-            'relationType' => $returnTypeName,
+            'relationType' => $relation::class,
         ];
 
         // Determine cardinality
@@ -421,6 +723,12 @@ class ModelExtractor
             $relation instanceof BelongsToMany, $relation instanceof MorphToMany => 'manyWithPivot',
             default => 'unknown',
         };
+
+        // The morph type column pairs a morphTo with the morphOne / morphMany
+        // relations that invert it: `subject_type` on both sides.
+        if ($relation instanceof MorphTo || $relation instanceof MorphOneOrMany) {
+            $result['morphType'] = $relation->getMorphType();
+        }
 
         // Extract pivot information for belongsToMany and morphToMany
         if ($result['type'] === 'manyWithPivot') {
@@ -457,7 +765,59 @@ class ModelExtractor
             $pivot['using'] = $using;
         }
 
+        $accessor = $relation->getPivotAccessor();
+        if ($accessor !== 'pivot') {
+            $pivot['accessor'] = $accessor;
+        }
+
+        $pivot['columns'] = $this->pivotColumns($relation, $pivot);
+
         return $pivot;
+    }
+
+    /**
+     * The pivot's columns typed from the pivot table, with the `using`
+     * class's casts first. A column the table does not have (it is not
+     * migrated yet) keeps the old default: keys are numbers, the rest
+     * nullable strings.
+     *
+     * @param  array{table: string, foreignKey: string, relatedKey: string, withPivot: list<string>, morphType?: string, using?: class-string}  $pivot
+     * @return list<array{name: string, type: mixed, nullable: bool}>
+     */
+    protected function pivotColumns(BelongsToMany|MorphToMany $relation, array $pivot): array
+    {
+        // The relation queries the related model's connection, joining the pivot table there.
+        $connection = $relation->getRelated()->getConnection();
+        $driver = $connection->getDriverName();
+
+        $schemaColumns = array_column($connection->getSchemaBuilder()->getColumns($pivot['table']), null, 'name');
+        $casts = isset($pivot['using']) ? new $pivot['using']()->getCasts() : [];
+
+        $names = [$pivot['foreignKey'], $pivot['relatedKey']];
+        if (isset($pivot['morphType'])) {
+            $names[] = $pivot['morphType'];
+        }
+
+        $keys = $names;
+        $columns = [];
+        foreach (array_values(array_unique([...$names, ...$pivot['withPivot']])) as $name) {
+            $schemaColumn = $schemaColumns[$name] ?? null;
+            $isKey = in_array($name, $keys, true);
+            $fallback = $name === ($pivot['morphType'] ?? null) ? 'string' : ($isKey ? 'number' : 'string');
+
+            $type = isset($casts[$name]) ? $this->castTypeResolver->resolveOrNull($casts[$name]) : null;
+            if ($type === null && $schemaColumn !== null) {
+                $type = $this->columnTypeResolver->resolve($schemaColumn['type_name'], false, $driver);
+            }
+
+            $columns[] = [
+                'name' => $name,
+                'type' => $type ?? $fallback,
+                'nullable' => $schemaColumn !== null ? (bool) $schemaColumn['nullable'] : ! $isKey,
+            ];
+        }
+
+        return $columns;
     }
 
     /**

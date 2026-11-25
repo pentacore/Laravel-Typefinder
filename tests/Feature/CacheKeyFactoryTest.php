@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use Illuminate\Support\Facades\Schema;
 use Pentacore\Typefinder\Cache\CacheKeyFactory;
 use Tests\TestCase;
 
@@ -65,5 +66,29 @@ final class CacheKeyFactoryTest extends TestCase
         $b = $cacheKeyFactory->configHash(['y' => 2, 'x' => 1]);
 
         $this->assertSame($a, $b);
+    }
+
+    public function test_schema_hash_changes_when_a_migration_runs(): void
+    {
+        $cacheKeyFactory = new CacheKeyFactory(base_path());
+        $before = $cacheKeyFactory->schemaHash();
+        $this->assertSame($before, $cacheKeyFactory->schemaHash());
+
+        $dir = sys_get_temp_dir().'/typefinder-migrations-'.uniqid();
+        mkdir($dir);
+        file_put_contents($dir.'/2030_01_01_000000_create_scratch_table.php', '<?php
+return new class extends Illuminate\Database\Migrations\Migration {
+    public function up(): void { '.Schema::class.'::create(\'scratch\', fn ($table) => $table->id()); }
+};
+');
+
+        try {
+            $this->artisan('migrate', ['--path' => $dir, '--realpath' => true])->assertSuccessful();
+
+            $this->assertNotSame($before, $cacheKeyFactory->schemaHash());
+        } finally {
+            @unlink($dir.'/2030_01_01_000000_create_scratch_table.php');
+            @rmdir($dir);
+        }
     }
 }

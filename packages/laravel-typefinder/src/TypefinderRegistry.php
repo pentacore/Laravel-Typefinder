@@ -15,13 +15,17 @@ use Pentacore\Typefinder\Resolvers\CastTypeResolver;
  * Bound as a singleton in {@see TypefinderServiceProvider::register()} and
  * exposed through the {@see Typefinder} facade.
  *
- * Priority within {@see CastTypeResolver}:
+ * Priority within {@see CastTypeResolver::resolve()}:
  *   1. Runtime registry (this class)
  *   2. Config overrides (`typefinder.casts.type_map`)
  *   3. `#[TypefinderCast]` attribute on the cast class
- *   4. Built-in name / class map
- *   5. `BackedEnum` detection
- *   6. `'unknown'` fallback
+ *   4. Built-in name map (e.g. `'datetime'`)
+ *   5. Built-in class map (e.g. `AsCollection::class`)
+ *   6. `BackedEnum` detection
+ *   7. `AsEnumCollection` / `AsEnumArrayObject` with an enum argument
+ *   8. Parameterised casts (`'decimal:2'`, `MyCast::class.':arg'`): steps
+ *      1-6 retried with the part before the first `:`
+ *   9. `'unknown'` fallback
  *
  * Typical usage — register casts from a service provider's `boot()`:
  * <pre>
@@ -50,8 +54,9 @@ class TypefinderRegistry
      *
      * The `$type` argument may be:
      *   - a literal TS type string (e.g. `'Media[]'`), or
-     *   - a `Closure` returning a string — invoked once per generation run,
-     *     useful when the emitted shape depends on runtime config.
+     *   - a `Closure` returning a string — invoked on every lookup (once per
+     *     column cast to that class), useful when the emitted shape depends
+     *     on runtime config. Keep it cheap and free of side effects.
      *
      * Later registrations for the same class overwrite earlier ones; there's
      * no deduplication or merging.

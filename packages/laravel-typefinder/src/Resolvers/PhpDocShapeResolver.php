@@ -5,9 +5,7 @@ declare(strict_types=1);
 namespace Pentacore\Typefinder\Resolvers;
 
 use Closure;
-use Illuminate\Contracts\Support\Arrayable;
 use Illuminate\Http\Resources\Json\JsonResource;
-use JsonSerializable;
 use Pentacore\Typefinder\Analysis\ReturnedArray;
 use Pentacore\Typefinder\Analysis\ReturnedArrayReader;
 use Pentacore\Typefinder\Analysis\ReturnedPart;
@@ -20,24 +18,11 @@ use PhpParser\Node\Expr\Variable;
 use PhpParser\Node\Identifier;
 use PhpParser\Node\Name;
 use PhpParser\Node\Stmt\ClassMethod;
-use PHPStan\PhpDocParser\Ast\PhpDoc\InvalidTagValueNode;
 use PHPStan\PhpDocParser\Ast\PhpDoc\PhpDocNode;
-use PHPStan\PhpDocParser\Ast\PhpDoc\TypeAliasImportTagValueNode;
-use PHPStan\PhpDocParser\Ast\Type\ArrayShapeNode;
-use PHPStan\PhpDocParser\Ast\Type\IdentifierTypeNode;
-use PHPStan\PhpDocParser\Ast\Type\ObjectShapeNode;
 use PHPStan\PhpDocParser\Ast\Type\TypeNode;
-use PHPStan\PhpDocParser\Ast\Type\UnionTypeNode;
-use PHPStan\PhpDocParser\Lexer\Lexer;
-use PHPStan\PhpDocParser\Parser\ConstExprParser;
-use PHPStan\PhpDocParser\Parser\PhpDocParser;
-use PHPStan\PhpDocParser\Parser\TokenIterator;
-use PHPStan\PhpDocParser\Parser\TypeParser;
-use PHPStan\PhpDocParser\ParserConfig;
 use ReflectionClass;
 use ReflectionException;
 use ReflectionMethod;
-use Throwable;
 
 /**
  * Reads the PHPDoc return shape of a resource's `toArray()` from disk and
@@ -56,13 +41,6 @@ use Throwable;
  */
 final class PhpDocShapeResolver
 {
-    /** In precedence order (PHPStan's own). */
-    private const array RETURN_TAGS = ['@phpstan-return', '@psalm-return', '@return'];
-
-    private const array ALIAS_TAGS = ['@phpstan-type', '@psalm-type'];
-
-    private const array IMPORT_TAGS = ['@phpstan-import-type', '@psalm-import-type'];
-
     /** Delegations followed from `toArray()` (helper calls and `parent::toArray()`). */
     private const int MAX_DELEGATION_DEPTH = 3;
 
@@ -78,9 +56,7 @@ final class PhpDocShapeResolver
 
     private readonly ?Closure $onWarn;
 
-    private readonly Lexer $lexer;
-
-    private readonly PhpDocParser $phpDocParser;
+    private readonly PhpDocReader $docs;
 
     private readonly ShapeComposer $shapeComposer;
 
@@ -103,11 +79,7 @@ final class PhpDocShapeResolver
         $this->phpDocTypeMapper = new PhpDocTypeMapper($classes, $this->warn(...));
         $this->shapeComposer = new ShapeComposer;
         $this->returnedArrayReader = new ReturnedArrayReader;
-
-        $parserConfig = new ParserConfig([]);
-        $constExprParser = new ConstExprParser($parserConfig);
-        $this->lexer = new Lexer($parserConfig);
-        $this->phpDocParser = new PhpDocParser($parserConfig, new TypeParser($parserConfig, $constExprParser), $constExprParser);
+        $this->docs = new PhpDocReader($this->warn(...));
     }
 
     /**
@@ -160,7 +132,7 @@ final class PhpDocShapeResolver
     private function tierFour(ReflectionClass $class, string $resource, int $depth, array $visiting, array &$scopes): ?array
     {
         $own = $this->ownMethodSource($class, 'toArray');
-        $ownHasReturnTag = $own !== null && $this->hasReturnTag($this->parseDoc($own[1]->methodDoc($own[0], 'toArray')));
+        $ownHasReturnTag = $own !== null && $this->docs->hasReturnTag($this->docs->parseDoc($own[1]->methodDoc($own[0], 'toArray')));
 
         if ($own === null || $ownHasReturnTag) {
             $documented = $this->documentedShape($class, $resource, $scopes);
@@ -199,8 +171,8 @@ final class PhpDocShapeResolver
         }
 
         [$type, $declaring] = $found;
-        $scope = $this->scopeFor($declaring, $resource, $scopes);
-        $shape = $scope instanceof PhpDocScope ? $this->shapeOf($type, $scope) : null;
+        $scope = $this->docs->scopeFor($declaring, $resource, $scopes);
+        $shape = $scope instanceof PhpDocScope ? $this->docs->shapeOf($type, $scope) : null;
 
         return $shape === null ? null : $this->phpDocTypeMapper->map($shape[0], $shape[1], '');
     }
@@ -334,9 +306,9 @@ final class PhpDocShapeResolver
 
         ['context' => $context, 'owner' => $owner, 'node' => $node] = $located;
 
-        $type = $this->returnType($this->parseDoc($node->getDocComment()?->getText()));
-        $scope = $type instanceof TypeNode ? $this->scopeFor($owner, $resource, $scopes) : null;
-        $shape = $type instanceof TypeNode && $scope instanceof PhpDocScope ? $this->shapeOf($type, $scope) : null;
+        $type = $this->docs->returnType($this->docs->parseDoc($node->getDocComment()?->getText()));
+        $scope = $type instanceof TypeNode ? $this->docs->scopeFor($owner, $resource, $scopes) : null;
+        $shape = $type instanceof TypeNode && $scope instanceof PhpDocScope ? $this->docs->shapeOf($type, $scope) : null;
 
         if ($shape !== null) {
             return $this->phpDocTypeMapper->map($shape[0], $shape[1], '', $node->name->toString());
@@ -505,9 +477,9 @@ final class PhpDocShapeResolver
             }
 
             [$ownerName, $source] = $owner;
-            $doc = $this->parseDoc($source->methodDoc($ownerName, 'toArray'));
+            $doc = $this->docs->parseDoc($source->methodDoc($ownerName, 'toArray'));
 
-            if (! $doc instanceof PhpDocNode || ! $this->hasReturnTag($doc)) {
+            if (! $doc instanceof PhpDocNode || ! $this->docs->hasReturnTag($doc)) {
                 $parent = $class->getParentClass();
 
                 if ($parent === false) {
@@ -519,18 +491,18 @@ final class PhpDocShapeResolver
                 continue;
             }
 
-            foreach (self::RETURN_TAGS as $rank => $tag) {
+            foreach (PhpDocReader::RETURN_TAGS as $rank => $tag) {
                 $values = $doc->getReturnTagValues($tag);
 
                 if ($values !== []) {
                     // A broken higher-precedence tag still deserves its warning.
-                    $this->warnUnparsable($doc, $resource, array_slice(self::RETURN_TAGS, 0, $rank));
+                    $this->docs->warnUnparsable($doc, $resource, array_slice(PhpDocReader::RETURN_TAGS, 0, $rank));
 
                     return [$values[0]->type, $ownerName];
                 }
             }
 
-            $this->warnUnparsable($doc, $resource, self::RETURN_TAGS);
+            $this->docs->warnUnparsable($doc, $resource, PhpDocReader::RETURN_TAGS);
 
             return null;
         }
@@ -549,35 +521,6 @@ final class PhpDocShapeResolver
         $declaring = $this->locateMethod($class, 'toArray')['context'] ?? null;
 
         return $declaring === null ? null : new ReflectionClass($declaring);
-    }
-
-    /**
-     * Whether the doc has any return tag (valid or not); without one, the
-     * doc says nothing about the return type (none, or only inheritDoc).
-     */
-    private function hasReturnTag(?PhpDocNode $doc): bool
-    {
-        return $doc instanceof PhpDocNode && array_any(
-            self::RETURN_TAGS,
-            static fn (string $tag): bool => $doc->getTagsByName($tag) !== [],
-        );
-    }
-
-    /**
-     * The type of the winning return tag (first valid one in precedence
-     * order).
-     */
-    private function returnType(?PhpDocNode $doc): ?TypeNode
-    {
-        foreach (self::RETURN_TAGS as $tag) {
-            $values = $doc?->getReturnTagValues($tag) ?? [];
-
-            if ($values !== []) {
-                return $values[0]->type;
-            }
-        }
-
-        return null;
     }
 
     /**
@@ -616,207 +559,6 @@ final class PhpDocShapeResolver
         return null;
     }
 
-    /**
-     * Warn once when one of $tags failed to parse and its text clearly meant
-     * a shape.
-     *
-     * @param  list<string>  $tags
-     */
-    private function warnUnparsable(PhpDocNode $doc, string $resource, array $tags): void
-    {
-        foreach ($tags as $tag) {
-            foreach ($doc->getTagsByName($tag) as $node) {
-                if ($node->value instanceof InvalidTagValueNode && str_contains($node->value->value, 'array{')) {
-                    $this->warn(sprintf(
-                        'Could not parse %s on %s::toArray(): %s',
-                        $tag,
-                        $resource,
-                        $node->value->exception?->getMessage() ?? $node->value->value,
-                    ));
-
-                    return;
-                }
-            }
-        }
-    }
-
-    /**
-     * Apply "does it count as a shape" to the (alias-expanded) return type:
-     * a keyed `array{…}` / `object{…}`, alone or in a union with only
-     * `array`, `Arrayable` and `JsonSerializable`.
-     *
-     * @return ?array{TypeNode, PhpDocScope}
-     */
-    private function shapeOf(TypeNode $type, PhpDocScope $scope): ?array
-    {
-        [$type, $scope] = $this->expandAlias($type, $scope);
-
-        if (! $type instanceof UnionTypeNode) {
-            return $this->isObjectShape($type) ? [$type, $scope] : null;
-        }
-
-        $shape = null;
-
-        foreach ($type->types as $member) {
-            [$member, $memberScope] = $this->expandAlias($member, $scope);
-
-            if ($member instanceof ArrayShapeNode || $member instanceof ObjectShapeNode) {
-                if ($shape !== null) {
-                    return null;
-                }
-
-                $shape = [$member, $memberScope];
-            } elseif (! $this->isLaravelReturnMember($member, $memberScope)) {
-                return null;
-            }
-        }
-
-        return $shape !== null && $this->isObjectShape($shape[0]) ? $shape : null;
-    }
-
-    /**
-     * @return array{TypeNode, PhpDocScope}
-     */
-    private function expandAlias(TypeNode $type, PhpDocScope $scope): array
-    {
-        $seen = [];
-
-        while ($type instanceof IdentifierTypeNode && ($alias = $scope->alias($type->name)) !== null) {
-            if (isset($seen[spl_object_id($alias['type'])])) {
-                break;
-            }
-
-            $seen[spl_object_id($alias['type'])] = true;
-            $type = $alias['type'];
-            $scope = $alias['scope'] ?? $scope;
-        }
-
-        return [$type, $scope];
-    }
-
-    private function isLaravelReturnMember(TypeNode $type, PhpDocScope $scope): bool
-    {
-        if (! $type instanceof IdentifierTypeNode) {
-            return false;
-        }
-
-        if (strtolower($type->name) === 'array') {
-            return true;
-        }
-
-        $fqcn = $scope->resolveName($type->name);
-
-        return $fqcn === Arrayable::class || $fqcn === JsonSerializable::class;
-    }
-
-    /**
-     * Scope for a doc declared in $class: its file's names and its class-level
-     * aliases. Imported aliases are looked up on demand, one at a time, and
-     * memoised, so classes that import from each other cost one lookup per
-     * alias used rather than every scope they could reach.
-     *
-     * @param  array<string, ?PhpDocScope>  $scopes  scopes built during this resolve(), by class; one
-     *                                               scope (and one parse of its doc) per class keeps alias
-     *                                               type nodes stable for the mapper's recursion guard
-     */
-    private function scopeFor(string $class, string $resource, array &$scopes): ?PhpDocScope
-    {
-        if (array_key_exists($class, $scopes)) {
-            return $scopes[$class];
-        }
-
-        $file = new ReflectionClass($class)->getFileName();
-        $source = $file === false ? null : ParsedSource::forFile($file);
-
-        if (! $source instanceof ParsedSource) {
-            return $scopes[$class] = null;
-        }
-
-        $nameResolver = static fn (string $name): string => $source->resolveName($class, $name);
-        $doc = $this->parseDoc($source->classDoc($class));
-        $aliases = [];
-        $imports = [];
-
-        if ($doc instanceof PhpDocNode) {
-            foreach (self::IMPORT_TAGS as $tag) {
-                foreach ($doc->getTypeAliasImportTagValues($tag) as $import) {
-                    $imports[$import->importedAs ?? $import->importedAlias] = $import;
-                }
-            }
-
-            foreach (self::ALIAS_TAGS as $tag) {
-                foreach ($doc->getTypeAliasTagValues($tag) as $alias) {
-                    $aliases[$alias->alias] = ['type' => $alias->type, 'scope' => null];
-                }
-            }
-        }
-
-        $names = new PhpDocScope($resource, $resource, $nameResolver);
-        $resolved = [];
-        $importedAlias = function (string $name) use ($imports, $names, $resource, &$scopes, &$resolved): ?array {
-            if (! isset($imports[$name])) {
-                return null;
-            }
-
-            if (array_key_exists($name, $resolved)) {
-                return $resolved[$name];
-            }
-
-            // Null while in progress: an import chain that leads back to this
-            // (class, alias) pair is a cycle and resolves to nothing.
-            $resolved[$name] = null;
-
-            return $resolved[$name] = $this->importAlias($imports[$name], $names, $resource, $scopes);
-        };
-
-        return $scopes[$class] = new PhpDocScope($resource, $resource, $nameResolver, $aliases, $importedAlias);
-    }
-
-    /**
-     * Resolve one imported alias in the class, interface or trait it is
-     * imported from. A missing class or alias yields null: the local name
-     * then fails to resolve in the mapper and becomes `unknown` with a
-     * warning.
-     *
-     * @param  PhpDocScope  $names  the importing file's names
-     * @param  array<string, ?PhpDocScope>  $scopes
-     * @return ?array{type: TypeNode, scope: PhpDocScope}
-     */
-    private function importAlias(TypeAliasImportTagValueNode $import, PhpDocScope $names, string $resource, array &$scopes): ?array
-    {
-        if (! $import->importedFrom instanceof IdentifierTypeNode) {
-            return null;
-        }
-
-        $from = $names->resolveName($import->importedFrom->name);
-
-        try {
-            if ($from === null || (! class_exists($from) && ! interface_exists($from) && ! trait_exists($from))) {
-                return null;
-            }
-        } catch (Throwable) {
-            return null;
-        }
-
-        $source = $this->scopeFor($from, $resource, $scopes);
-        $alias = $source?->alias($import->importedAlias);
-
-        return $alias === null ? null : ['type' => $alias['type'], 'scope' => $alias['scope'] ?? $source];
-    }
-
-    private function parseDoc(?string $doc): ?PhpDocNode
-    {
-        if ($doc === null) {
-            return null;
-        }
-
-        try {
-            return $this->phpDocParser->parse(new TokenIterator($this->lexer->tokenize($doc)));
-        } catch (Throwable) {
-            return null;
-        }
-    }
-
     private function warn(string $message): void
     {
         if ($this->heldWarnings !== []) {
@@ -828,11 +570,5 @@ final class PhpDocShapeResolver
         if ($this->onWarn instanceof Closure) {
             ($this->onWarn)($message);
         }
-    }
-
-    private function isObjectShape(TypeNode $type): bool
-    {
-        return $type instanceof ObjectShapeNode
-            || ($type instanceof ArrayShapeNode && ! PhpDocTypeMapper::isListShape($type));
     }
 }

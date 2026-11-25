@@ -2,7 +2,6 @@
 
 namespace App\Events;
 
-use App\Models\Post;
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 
@@ -23,8 +22,8 @@ class OrderShipped implements ShouldBroadcast
     public function broadcastWith(): array
     {
         return [
-            'order' => Post::class,
-            'trackingNumber' => 'string',
+            'orderId' => $this->orderId,
+            'trackingNumber' => $this->trackingNumber,
         ];
     }
 }

@@ -1,9 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import { EventEmitter } from 'node:events';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { typefinder } from '../src/vite-plugin-typefinder';
 import { Watcher } from '../src/watcher';
 import type { Handshake, RegenResponse } from '../src/types';
-import type { Plugin, ResolvedConfig, ViteDevServer, HmrContext } from 'vite';
+import type { Plugin, ResolvedConfig, ViteDevServer } from 'vite';
 
 /* ------------------------------------------------------------------ */
 /*  Shared helpers                                                     */
@@ -33,12 +36,21 @@ const REGEN_RESPONSE: RegenResponse = {
     failed: [],
 };
 
+let lastServer: (ViteDevServer & { watcher: EventEmitter }) | null = null;
+
 function fakeServer() {
     const httpServer = new EventEmitter();
-    return {
+    lastServer = {
         ws: { on: vi.fn() },
+        watcher: new EventEmitter(),
         httpServer,
-    } as unknown as ViteDevServer;
+    } as unknown as ViteDevServer & { watcher: EventEmitter };
+    return lastServer;
+}
+
+/** Fires a file watcher event on the last fake dev server. */
+function fileEvent(file: string, event: 'add' | 'change' | 'unlink' = 'change') {
+    lastServer!.watcher.emit(event, file);
 }
 
 function resolvedConfig(overrides: Partial<ResolvedConfig> = {}): ResolvedConfig {
@@ -50,7 +62,6 @@ function hooks(plugin: Plugin) {
         configResolved: (config: ResolvedConfig) => void;
         configureServer: (server: ViteDevServer) => Promise<void>;
         buildStart: () => Promise<void>;
-        handleHotUpdate: (ctx: HmrContext) => void;
         closeBundle: () => Promise<void>;
     };
 }
@@ -117,13 +128,13 @@ describe('typefinder vite plugin – serve mode', () => {
         expect(stderrSpy).not.toHaveBeenCalledWith(expect.stringContaining('initial regen'));
     });
 
-    it('handleHotUpdate queues matching files for regen', async () => {
+    it('file events queues matching files for regen', async () => {
         vi.useFakeTimers();
         const plugin = hooks(typefinder());
         plugin.configResolved(resolvedConfig());
         await plugin.configureServer(fakeServer());
 
-        plugin.handleHotUpdate({ file: '/app/Models/User.php' } as HmrContext);
+        fileEvent('/app/Models/User.php');
         await vi.advanceTimersByTimeAsync(200);
 
         expect(fakeWatcher.regen).toHaveBeenCalledWith(
@@ -133,14 +144,14 @@ describe('typefinder vite plugin – serve mode', () => {
         vi.useRealTimers();
     });
 
-    it('handleHotUpdate ignores non-matching files', async () => {
+    it('file events ignores non-matching files', async () => {
         vi.useFakeTimers();
         const plugin = hooks(typefinder());
         plugin.configResolved(resolvedConfig());
         await plugin.configureServer(fakeServer());
         (fakeWatcher.regen as ReturnType<typeof vi.fn>).mockClear();
 
-        plugin.handleHotUpdate({ file: '/app/Http/Controllers/Foo.php' } as HmrContext);
+        fileEvent('/app/Http/Controllers/Foo.php');
         await vi.advanceTimersByTimeAsync(200);
 
         expect(fakeWatcher.regen).not.toHaveBeenCalled();
@@ -156,7 +167,7 @@ describe('typefinder vite plugin – serve mode', () => {
         await plugin.configureServer(fakeServer());
         (fakeWatcher.regen as ReturnType<typeof vi.fn>).mockClear();
 
-        plugin.handleHotUpdate({ file: '/custom/dir/deep/File.php' } as HmrContext);
+        fileEvent('/custom/dir/deep/File.php');
         await vi.advanceTimersByTimeAsync(200);
         expect(fakeWatcher.regen).toHaveBeenCalledWith(['/custom/dir/deep/File.php']);
 
@@ -170,9 +181,9 @@ describe('typefinder vite plugin – serve mode', () => {
         await plugin.configureServer(fakeServer());
         (fakeWatcher.regen as ReturnType<typeof vi.fn>).mockClear();
 
-        plugin.handleHotUpdate({ file: '/app/Models/A.php' } as HmrContext);
-        plugin.handleHotUpdate({ file: '/app/Models/B.php' } as HmrContext);
-        plugin.handleHotUpdate({ file: '/app/Models/C.php' } as HmrContext);
+        fileEvent('/app/Models/A.php');
+        fileEvent('/app/Models/B.php');
+        fileEvent('/app/Models/C.php');
 
         await vi.advanceTimersByTimeAsync(100);
 
@@ -198,7 +209,7 @@ describe('typefinder vite plugin – serve mode', () => {
             failed: [{ path: '/app/Models/Bad.php', message: 'boom' }],
         });
 
-        plugin.handleHotUpdate({ file: '/app/Models/User.php' } as HmrContext);
+        fileEvent('/app/Models/User.php');
         await vi.advanceTimersByTimeAsync(200);
 
         expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('field unknown'));
@@ -215,7 +226,7 @@ describe('typefinder vite plugin – serve mode', () => {
         await plugin.configureServer(fakeServer());
         (fakeWatcher.regen as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('regen exploded'));
 
-        plugin.handleHotUpdate({ file: '/app/Models/User.php' } as HmrContext);
+        fileEvent('/app/Models/User.php');
         await vi.advanceTimersByTimeAsync(200);
 
         expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('regen failed'));
@@ -231,6 +242,38 @@ describe('typefinder vite plugin – serve mode', () => {
         await plugin.configureServer(server);
 
         expect(server.ws.on).toHaveBeenCalledWith('typefinder:full-regen', expect.any(Function));
+    });
+
+    it('a migration change triggers a full regen', async () => {
+        vi.useFakeTimers();
+        const plugin = hooks(typefinder());
+        plugin.configResolved(resolvedConfig());
+        await plugin.configureServer(fakeServer());
+        (fakeWatcher.regen as ReturnType<typeof vi.fn>).mockClear();
+
+        fileEvent('/app/Models/User.php');
+        fileEvent('/project/database/migrations/2026_01_01_000000_add_nickname.php', 'add');
+        await vi.advanceTimersByTimeAsync(200);
+
+        expect(fakeWatcher.regen).toHaveBeenCalledTimes(1);
+        expect(fakeWatcher.regen).toHaveBeenCalledWith([]);
+
+        vi.useRealTimers();
+    });
+
+    it('migrations: false ignores migration changes', async () => {
+        vi.useFakeTimers();
+        const plugin = hooks(typefinder({ migrations: false }));
+        plugin.configResolved(resolvedConfig());
+        await plugin.configureServer(fakeServer());
+        (fakeWatcher.regen as ReturnType<typeof vi.fn>).mockClear();
+
+        fileEvent('/project/database/migrations/2026_01_01_000000_add_nickname.php');
+        await vi.advanceTimersByTimeAsync(200);
+
+        expect(fakeWatcher.regen).not.toHaveBeenCalled();
+
+        vi.useRealTimers();
     });
 
     it('full-regen websocket handler triggers regen([])', async () => {
@@ -281,7 +324,7 @@ describe('typefinder vite plugin – serve mode', () => {
         expect(fakeWatcher.kill).not.toHaveBeenCalled();
     });
 
-    it('handleHotUpdate does nothing when watcher is dead', async () => {
+    it('file events does nothing when watcher is dead', async () => {
         vi.useFakeTimers();
         const plugin = hooks(typefinder());
         plugin.configResolved(resolvedConfig());
@@ -290,12 +333,128 @@ describe('typefinder vite plugin – serve mode', () => {
 
         Object.defineProperty(fakeWatcher, 'dead', { value: true });
 
-        plugin.handleHotUpdate({ file: '/app/Models/User.php' } as HmrContext);
+        fileEvent('/app/Models/User.php');
         await vi.advanceTimersByTimeAsync(200);
 
         expect(fakeWatcher.regen).not.toHaveBeenCalled();
 
         vi.useRealTimers();
+    });
+
+    it.each(['add', 'unlink'] as const)('regens on a file %s event', async (event) => {
+        vi.useFakeTimers();
+        const plugin = hooks(typefinder());
+        plugin.configResolved(resolvedConfig());
+        await plugin.configureServer(fakeServer());
+        (fakeWatcher.regen as ReturnType<typeof vi.fn>).mockClear();
+
+        fileEvent('/app/Models/Widget.php', event);
+        await vi.advanceTimersByTimeAsync(200);
+
+        expect(fakeWatcher.regen).toHaveBeenCalledWith(['/app/Models/Widget.php']);
+
+        vi.useRealTimers();
+    });
+
+    it('logs initial regen warnings and failures', async () => {
+        (fakeWatcher.regen as ReturnType<typeof vi.fn>).mockResolvedValue({
+            ...REGEN_RESPONSE,
+            changed: [],
+            warnings: ['initial warning'],
+            failed: [{ path: '/app/Models/Bad.php', message: 'initial boom' }],
+        });
+
+        const plugin = hooks(typefinder());
+        plugin.configResolved(resolvedConfig());
+        await plugin.configureServer(fakeServer());
+        await plugin.buildStart();
+
+        expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('initial warning'));
+        expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('initial boom'));
+    });
+
+    it('passes regenTimeoutMs to the watcher', async () => {
+        const plugin = hooks(typefinder({ regenTimeoutMs: 5_000 }));
+        plugin.configResolved(resolvedConfig());
+        await plugin.configureServer(fakeServer());
+
+        expect(spawnSpy).toHaveBeenCalledWith(expect.objectContaining({ regenTimeoutMs: 5_000 }));
+    });
+
+    it('maps watcher paths to host paths and back with pathMap', async () => {
+        vi.useFakeTimers();
+        Object.defineProperty(fakeWatcher, 'handshake', {
+            value: {
+                ...HANDSHAKE,
+                categories: {
+                    ...HANDSHAKE.categories,
+                    models: { enabled: true, paths: ['/var/www/html/app/Models'] },
+                    enums: { enabled: false, paths: [] },
+                },
+            },
+        });
+
+        const plugin = hooks(typefinder({ pathMap: { '/var/www/html': '/host/project' } }));
+        plugin.configResolved(resolvedConfig());
+        await plugin.configureServer(fakeServer());
+        (fakeWatcher.regen as ReturnType<typeof vi.fn>).mockClear();
+
+        fileEvent('/host/project/app/Models/User.php');
+        await vi.advanceTimersByTimeAsync(200);
+
+        expect(fakeWatcher.regen).toHaveBeenCalledWith(['/var/www/html/app/Models/User.php']);
+
+        vi.useRealTimers();
+    });
+
+    it('maps explicit watch paths to the watcher side with pathMap', async () => {
+        vi.useFakeTimers();
+        const plugin = hooks(typefinder({
+            watch: ['/host/project/app/Models'],
+            pathMap: { '/var/www/html': '/host/project' },
+        }));
+        plugin.configResolved(resolvedConfig());
+        await plugin.configureServer(fakeServer());
+        (fakeWatcher.regen as ReturnType<typeof vi.fn>).mockClear();
+
+        fileEvent('/host/project/app/Models/User.php', 'unlink');
+        await vi.advanceTimersByTimeAsync(200);
+
+        expect(fakeWatcher.regen).toHaveBeenCalledWith(['/var/www/html/app/Models/User.php']);
+
+        vi.useRealTimers();
+    });
+
+    it('matches and sends real paths when the project is reached through a symlink', async () => {
+        const base = realpathSync(mkdtempSync(join(tmpdir(), 'typefinder-')));
+        try {
+            mkdirSync(join(base, 'real/app/Models'), { recursive: true });
+            symlinkSync(join(base, 'real'), join(base, 'link'));
+            Object.defineProperty(fakeWatcher, 'handshake', {
+                value: {
+                    ...HANDSHAKE,
+                    categories: {
+                        ...HANDSHAKE.categories,
+                        models: { enabled: true, paths: [join(base, 'real/app/Models')] },
+                        enums: { enabled: false, paths: [] },
+                    },
+                },
+            });
+
+            vi.useFakeTimers();
+            const plugin = hooks(typefinder());
+            plugin.configResolved(resolvedConfig());
+            await plugin.configureServer(fakeServer());
+            (fakeWatcher.regen as ReturnType<typeof vi.fn>).mockClear();
+
+            fileEvent(join(base, 'link/app/Models/User.php'), 'add');
+            await vi.advanceTimersByTimeAsync(200);
+
+            expect(fakeWatcher.regen).toHaveBeenCalledWith([join(base, 'real/app/Models/User.php')]);
+        } finally {
+            vi.useRealTimers();
+            rmSync(base, { recursive: true, force: true });
+        }
     });
 });
 
@@ -398,6 +557,40 @@ describe('typefinder vite plugin – build mode', () => {
         await expect(plugin.buildStart()).rejects.toThrow('build-time generation failed');
     });
 
+    it('fails the build with the errors from the JSON on stdout', async () => {
+        mockExec.mockImplementation(
+            (_cmd: string, _opts: unknown, cb: (err: Error | null, stdout: string, stderr: string) => void) => {
+                const stdout = JSON.stringify({
+                    success: false,
+                    warnings: ['build warning'],
+                    errors: ['mkdir(): Not a directory'],
+                }) + '\n';
+                cb(Object.assign(new Error('Command failed: php artisan typefinder:generate --json'), { stdout }), stdout, '');
+            },
+        );
+
+        const plugin = hooks(typefinder());
+        plugin.configResolved(resolvedConfig({ command: 'build' } as Partial<ResolvedConfig>));
+
+        await expect(plugin.buildStart()).rejects.toThrow('mkdir(): Not a directory');
+        expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('build warning'));
+    });
+
+    it('logs build-time warnings from the JSON on stdout', async () => {
+        mockExec.mockImplementation(
+            (_cmd: string, _opts: unknown, cb: (err: Error | null, stdout: string, stderr: string) => void) => {
+                cb(null, JSON.stringify({ success: true, warnings: ['cast unknown'], errors: [] }) + '\n', '');
+            },
+        );
+
+        const plugin = hooks(typefinder());
+        plugin.configResolved(resolvedConfig({ command: 'build' } as Partial<ResolvedConfig>));
+
+        await plugin.buildStart();
+
+        expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('cast unknown'));
+    });
+
     it('does not spawn watcher in build mode', async () => {
         const spawnSpy = vi.spyOn(Watcher, 'spawn');
 
@@ -409,15 +602,14 @@ describe('typefinder vite plugin – build mode', () => {
         expect(spawnSpy).not.toHaveBeenCalled();
     });
 
-    it('handleHotUpdate is no-op in build mode', async () => {
-        const spawnSpy = vi.spyOn(Watcher, 'spawn');
-
+    it('does not listen to file events in build mode', async () => {
         const plugin = hooks(typefinder());
         plugin.configResolved(resolvedConfig({ command: 'build' } as Partial<ResolvedConfig>));
 
-        plugin.handleHotUpdate({ file: '/app/Models/User.php' } as HmrContext);
+        const server = fakeServer();
+        await plugin.configureServer(server);
 
-        expect(spawnSpy).not.toHaveBeenCalled();
+        expect(server.watcher.listenerCount('change')).toBe(0);
     });
 });
 
@@ -448,11 +640,11 @@ describe('flattenCategoryPaths', () => {
         (fw.regen as ReturnType<typeof vi.fn>).mockClear();
 
         // Models enabled → should match
-        plugin.handleHotUpdate({ file: '/app/Models/Foo.php' } as HmrContext);
+        fileEvent('/app/Models/Foo.php');
         // Enums enabled → should match
-        plugin.handleHotUpdate({ file: '/app/Enums/Bar.php' } as HmrContext);
+        fileEvent('/app/Enums/Bar.php');
         // Resources disabled → should not match
-        plugin.handleHotUpdate({ file: '/app/Http/Resources/Baz.php' } as HmrContext);
+        fileEvent('/app/Http/Resources/Baz.php');
 
         await vi.advanceTimersByTimeAsync(200);
 

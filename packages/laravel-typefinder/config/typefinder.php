@@ -38,6 +38,8 @@ return [
     'models' => [
         'enabled' => true,
         'paths' => [app_path('Models')],
+        // When false, models emit no relationship fields, and no pivot
+        // types are derived from belongsToMany / morphToMany relations.
         'include_relationships' => true,
 
         // When enabled, each model emits {Model}Create and {Model}Update
@@ -45,11 +47,12 @@ return [
         'emit_write_shapes' => true,
 
         // Respect $fillable/$guarded when building write shapes.
-        // Override per-model via typefinderRespectMassAssignment().
+        // Override per model with
+        // #[TypefinderWriteShape(respectMassAssignment: true|false)].
         'respect_mass_assignment' => true,
 
         // Columns excluded from the Update shape. Merged with each model's
-        // typefinderImmutableOnUpdate() list.
+        // #[TypefinderWriteShape(immutableOnUpdate: [...])] list.
         'immutable_on_update' => ['id', 'created_at', 'updated_at', 'deleted_at'],
     ],
 
@@ -84,6 +87,12 @@ return [
     |--------------------------------------------------------------------------
     |
     | Configuration for form request type generation.
+    |
+    | A string key on a path is a type-name prefix for the requests under it,
+    | so requests with the same short name in different directories can both
+    | be emitted: ['Api' => app_path('Http/Requests/Api'), 'Web' => ...]
+    | emits ApiStoreUserRequest and WebStoreUserRequest. List entries keep
+    | the short name; keyed and list entries can be mixed.
     |
     */
     'requests' => [
@@ -155,5 +164,20 @@ return [
     'broadcasting' => [
         'enabled' => false,
         'paths' => [app_path('Events')],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Watch
+    |--------------------------------------------------------------------------
+    |
+    | `typefinder:watch` (the Vite plugin) answers each regeneration in a
+    | worker process. A worker that has not answered after this many seconds
+    | (say, a model that blocks on a network call while it is extracted) is
+    | stopped and the regeneration reported as failed. 0 waits forever.
+    |
+    */
+    'watch' => [
+        'worker_timeout' => 300,
     ],
 ];
