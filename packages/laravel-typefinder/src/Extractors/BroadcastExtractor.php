@@ -385,7 +385,7 @@ class BroadcastExtractor
                 continue;
             }
 
-            $type = $this->typeToTsHint($reflectionProperty->getType(), $reflectionProperty->getDeclaringClass()->getName());
+            $type = $this->typeToTsHint($reflectionProperty->getType());
             if ($type === null) {
                 $this->warnUnknown($reflectionClass->getName(), $name, sprintf('property $%s is typed %s, which has no TypeScript type', $name, (string) $reflectionProperty->getType()));
                 $type = 'unknown';
@@ -455,12 +455,8 @@ class BroadcastExtractor
 
     private function methodNode(ReflectionMethod $reflectionMethod): ?ClassMethod
     {
-        $file = $reflectionMethod->getFileName();
-        if ($file === false) {
-            return null;
-        }
-
-        return ParsedSource::forFile($file)?->methodNode($reflectionMethod->getDeclaringClass()->getName(), $reflectionMethod->getName());
+        // An internal method has no file: forFile('') gives null.
+        return ParsedSource::forFile((string) $reflectionMethod->getFileName())?->methodNode($reflectionMethod->getDeclaringClass()->getName(), $reflectionMethod->getName());
     }
 
     private function warnUnknown(string $eventClass, string $key, string $reason): void
@@ -551,7 +547,7 @@ class BroadcastExtractor
      * The TypeScript type of a public property as it goes over the wire;
      * null when a type it names has no TypeScript equivalent.
      */
-    protected function typeToTsHint(?ReflectionType $reflectionType, string $declaringClass): ?string
+    protected function typeToTsHint(?ReflectionType $reflectionType): ?string
     {
         if (! $reflectionType instanceof ReflectionType) {
             return 'unknown';
@@ -560,7 +556,7 @@ class BroadcastExtractor
         if ($reflectionType instanceof ReflectionUnionType) {
             $members = [];
             foreach ($reflectionType->getTypes() as $member) {
-                $type = $this->typeToTsHint($member, $declaringClass);
+                $type = $this->typeToTsHint($member);
                 if ($type === null || $type === 'unknown') {
                     return $type;
                 }
@@ -584,7 +580,6 @@ class BroadcastExtractor
             'true', 'false', 'null' => $name,
             'array', 'iterable' => 'unknown[]',
             'mixed', 'object' => 'unknown',
-            'self', 'static' => $this->classType($declaringClass),
             default => $reflectionType->isBuiltin() ? null : $this->classType($name),
         };
 

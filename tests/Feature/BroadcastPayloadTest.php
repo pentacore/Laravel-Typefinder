@@ -17,9 +17,11 @@ use Tests\Fixtures\AbstractRequests\BaseRequest;
 use Tests\Fixtures\AbstractResources\BaseResource;
 use Tests\Fixtures\Broadcasting\BaseEvent;
 use Tests\Fixtures\Broadcasting\ConstructorPayloadEvent;
+use Tests\Fixtures\Broadcasting\EdgeTypedPropertiesEvent;
 use Tests\Fixtures\Broadcasting\LiteralPayloadEvent;
 use Tests\Fixtures\Broadcasting\NumericChannelEvent;
 use Tests\Fixtures\Broadcasting\OpaquePayloadEvent;
+use Tests\Fixtures\Broadcasting\ScalarPayloadEvent;
 use Tests\Fixtures\Broadcasting\ThingCreated;
 use Tests\Fixtures\Broadcasting\TypedPropertiesEvent;
 use Tests\TestCase;
@@ -107,6 +109,31 @@ final class BroadcastPayloadTest extends TestCase
 
         $this->assertCount(1, $this->warnings);
         $this->assertStringContainsString('$other', $this->warnings[0]);
+    }
+
+    public function test_literal_self_intersection_and_mixed_union_property_types(): void
+    {
+        $event = $this->broadcastExtractor->extract(EdgeTypedPropertiesEvent::class);
+
+        $this->assertSame([['type' => 'public', 'name' => 'edge']], $event['channels']);
+        $this->assertSame([
+            'yes' => 'true',
+            'no' => 'false | null',
+            'previous' => 'unknown',
+            'both' => 'unknown',
+            'mixed' => 'unknown',
+            'either' => 'string | number | null',
+        ], $event['payload']);
+        $this->assertCount(3, $this->warnings);
+    }
+
+    public function test_broadcast_with_returning_a_non_array_skips_the_event(): void
+    {
+        $failures = [];
+        $this->assertNull($this->broadcastExtractor->tryExtract(ScalarPayloadEvent::class, function (string $class, \Throwable $throwable) use (&$failures): void {
+            $failures[] = $throwable->getMessage();
+        }));
+        $this->assertStringContainsString('does not return an array', $failures[0]);
     }
 
     public function test_broadcast_as_returning_a_backed_enum_gives_its_value(): void
