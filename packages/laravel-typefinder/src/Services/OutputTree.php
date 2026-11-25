@@ -8,12 +8,15 @@ use Illuminate\Support\Facades\File;
 
 /**
  * The generated files under the output path. Writes only what differs from
- * disk and records which paths a run changed.
+ * disk and records which paths a run changed: written and removed alike.
  */
 final class OutputTree
 {
     /** @var list<string> */
     private array $changed = [];
+
+    /** @var list<string> */
+    private array $removed = [];
 
     public function __construct(private readonly string $root) {}
 
@@ -41,6 +44,7 @@ final class OutputTree
 
         File::delete($path);
         $this->changed[] = $relativePath;
+        $this->removed[] = $relativePath;
     }
 
     /**
@@ -59,7 +63,7 @@ final class OutputTree
 
         foreach (File::files($dir) as $file) {
             if (! isset($kept[$file->getFilename()])) {
-                File::delete($file->getPathname());
+                $this->remove($directory.'/'.$file->getFilename());
             }
         }
     }
@@ -74,10 +78,18 @@ final class OutputTree
     }
 
     /**
-     * @return list<string> paths relative to the output path
+     * @return list<string> paths relative to the output path, written or removed
      */
     public function changed(): array
     {
         return array_values(array_unique($this->changed));
+    }
+
+    /**
+     * @return list<string> paths relative to the output path that were removed
+     */
+    public function removed(): array
+    {
+        return array_values(array_unique($this->removed));
     }
 }

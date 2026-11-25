@@ -5,12 +5,24 @@ declare(strict_types=1);
 namespace Pentacore\Typefinder\Extractors;
 
 use BackedEnum;
+use Illuminate\Contracts\Validation\ParameterizedRule;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\ConditionalRules;
+use Illuminate\Validation\NestedRules;
 use Illuminate\Validation\Rules\AnyOf;
 use Illuminate\Validation\Rules\ArrayRule;
+use Illuminate\Validation\Rules\Date;
+use Illuminate\Validation\Rules\Dimensions;
+use Illuminate\Validation\Rules\Email;
 use Illuminate\Validation\Rules\Enum;
+use Illuminate\Validation\Rules\File;
 use Illuminate\Validation\Rules\In;
+use Illuminate\Validation\Rules\IpAddress;
+use Illuminate\Validation\Rules\Numeric;
+use Illuminate\Validation\Rules\Password;
+use Illuminate\Validation\Rules\StringRule;
 use Pentacore\Typefinder\Analysis\QueryRuleKeys;
+use Pentacore\Typefinder\Analysis\RequestStateBranches;
 use Pentacore\Typefinder\Attributes\TypefinderIgnore;
 use Pentacore\Typefinder\Attributes\TypefinderOverrides;
 use Pentacore\Typefinder\Renderers\TypeScriptRenderer;
@@ -18,16 +30,37 @@ use Pentacore\Typefinder\Support\ClassDiscovery;
 use Pentacore\Typefinder\Support\NullSafeProxy;
 use ReflectionAttribute;
 use ReflectionClass;
+use ReflectionProperty;
+use UnitEnum;
+
+use function Illuminate\Support\enum_value;
 
 class RequestExtractor
 {
     /**
-     * Rule name → TypeScript type mapping.
+     * Rules that state the field's type. One of these decides the type,
+     * wherever it sits in the list.
      *
      * @var array<string, string>
      */
-    protected const RULE_TYPE_MAP = [
+    protected const PRIMITIVE_RULES = [
         'string' => 'string',
+        'integer' => 'number',
+        'numeric' => 'number',
+        'boolean' => 'boolean',
+        'file' => 'File',
+        'image' => 'File',
+        'array' => self::ARRAY_TYPE,
+        'list' => self::LIST_TYPE,
+    ];
+
+    /**
+     * Rules that check a format and so imply a type, used only when no
+     * primitive rule states one (`digits:4` with `string` is a string).
+     *
+     * @var array<string, string>
+     */
+    protected const FORMAT_RULES = [
         'alpha' => 'string',
         'alpha_num' => 'string',
         'alpha_dash' => 'string',
@@ -53,22 +86,47 @@ class RequestExtractor
         'lowercase' => 'string',
         'uppercase' => 'string',
         'regex' => 'string',
-        'integer' => 'number',
-        'numeric' => 'number',
         'decimal' => 'number',
         'digits' => 'number',
+        'digits_between' => 'number',
         'max_digits' => 'number',
         'min_digits' => 'number',
-        'boolean' => 'boolean',
-        'accepted' => 'boolean',
         'accepted_if' => 'boolean',
-        'declined' => 'boolean',
         'declined_if' => 'boolean',
-        'file' => 'File',
-        'image' => 'File',
-        'array' => self::ARRAY_TYPE,
-        'list' => self::LIST_TYPE,
+        'mimes' => 'File',
+        'mimetypes' => 'File',
+        'extensions' => 'File',
+        'dimensions' => 'File',
     ];
+
+    /**
+     * `accepted` and `declined` take only these values (as sent on the wire),
+     * and must be present.
+     *
+     * @var array<string, string>
+     */
+    protected const ACCEPTANCE_RULES = [
+        'accepted' => "true | 'yes' | 'on' | 1 | '1' | 'true'",
+        'declined' => "false | 'no' | 'off' | 0 | '0' | 'false'",
+    ];
+
+    /**
+     * Rules that let no value through: the key must be missing (or empty).
+     * The conditional `prohibited_if` / `missing_with` keep their other
+     * rules' type.
+     */
+    protected const NEVER_RULES = ['prohibited', 'missing'];
+
+    /**
+     * Rule objects that are a `|`-separated string of rules.
+     */
+    protected const STRINGABLE_RULES = [ArrayRule::class, Date::class, Numeric::class, StringRule::class, IpAddress::class];
+
+    /**
+     * At most this many variants of a field's rules (each `Rule::when()`
+     * doubles them) are typed; more than that and the field is `unknown`.
+     */
+    protected const MAX_VARIANTS = 64;
 
     /**
      * An `array` rule accepts both lists and keyed arrays.
@@ -78,23 +136,25 @@ class RequestExtractor
     protected const LIST_TYPE = 'unknown[]';
 
     /**
-     * Rules that make a field optional (conditional required).
-     */
-    protected const CONDITIONAL_RULES = [
-        'required_if',
-        'required_unless',
-        'required_with',
-        'required_with_all',
-        'required_without',
-        'required_without_all',
-    ];
-
-    /**
      * What the rules of the request being extracted could not express.
      *
      * @var list<string>
      */
     protected array $warnings = [];
+
+    /**
+     * The rule keys of the request being extracted, in order.
+     *
+     * @var list<string>
+     */
+    protected array $ruleKeys = [];
+
+    /**
+     * The confirmation key of each rule key with a `confirmed` rule.
+     *
+     * @var array<string, string>
+     */
+    protected array $confirmations = [];
 
     /**
      * Extract type information from a single FormRequest class.
@@ -109,11 +169,11 @@ class RequestExtractor
         $formRequest = $this->createRequestInstance($requestClass);
 
         try {
-            $rules = $formRequest->rules();
+            $rules = $this->callRules($formRequest);
         } catch (\Throwable) {
             $this->applyNullSafeResolvers($formRequest);
             try {
-                $rules = $formRequest->rules();
+                $rules = $this->callRules($formRequest);
             } catch (\Throwable $e2) {
                 $fallback = $this->synthesizeFieldsFromOverrides($reflectionClass);
                 if ($fallback === null) {
@@ -128,17 +188,15 @@ class RequestExtractor
             }
         }
 
-        $fields = $this->parseRules($rules);
-
-        $overrides = $this->getTypeOverrides($reflectionClass);
-        if ($overrides !== []) {
-            $fields = array_map(
-                fn (array $field): array => isset($overrides[$field['name']])
-                    ? ['type' => $overrides[$field['name']]] + $field
-                    : $field,
-                $fields,
+        $branchReads = RequestStateBranches::in($reflectionClass);
+        if ($branchReads !== []) {
+            $this->warnings[] = sprintf(
+                'rules() branches on request state (%s), so the type follows the branch taken with no route, user or input bound; declare the fields with #[TypefinderOverrides] if that is not the branch to type',
+                implode(', ', $branchReads),
             );
         }
+
+        $fields = $this->parseRules($rules, $this->getTypeOverrides($reflectionClass));
 
         [$fields, $queryFields] = $this->separateQueryFields($fields, $reflectionClass);
 
@@ -164,15 +222,36 @@ class RequestExtractor
     }
 
     /**
+     * The request's rules, as Laravel gets them: `rules()` called through the
+     * container (so its parameters are injected), and none without one.
+     *
+     * @return array<array-key, mixed>
+     */
+    protected function callRules(FormRequest $formRequest): array
+    {
+        if (! method_exists($formRequest, 'rules')) {
+            return [];
+        }
+
+        return (array) app()->call([$formRequest, 'rules']);
+    }
+
+    /**
      * Whether a class gets a request type of its own: a form request, not
-     * `#[TypefinderIgnore]`d.
+     * abstract, not `#[TypefinderIgnore]`d.
      *
      * @param  class-string  $requestClass
      */
     public function isEmittable(string $requestClass): bool
     {
-        return is_subclass_of($requestClass, FormRequest::class)
-            && new ReflectionClass($requestClass)->getAttributes(TypefinderIgnore::class, ReflectionAttribute::IS_INSTANCEOF) === [];
+        if (! is_subclass_of($requestClass, FormRequest::class)) {
+            return false;
+        }
+
+        $reflectionClass = new ReflectionClass($requestClass);
+
+        return ! $reflectionClass->isAbstract()
+            && $reflectionClass->getAttributes(TypefinderIgnore::class, ReflectionAttribute::IS_INSTANCEOF) === [];
     }
 
     /**
@@ -227,28 +306,52 @@ class RequestExtractor
      *
      * The dotted rule names are folded into a tree first, so a rule at any
      * depth lands below its own parent: `a.b.*.c` is `a` → `b` → `*` → `c`.
+     * The confirmation keys of `confirmed` rules and the keys of
+     * `#[TypefinderOverrides]` are added to the tree the same way.
      *
      * @param  array<array-key, mixed>  $rules
+     * @param  array<string, string>  $overrides  type by dotted key
      * @return list<array>
      */
-    protected function parseRules(array $rules): array
+    protected function parseRules(array $rules, array $overrides = []): array
     {
         $root = ['rules' => null, 'children' => []];
+        $this->ruleKeys = [];
+        $this->confirmations = [];
 
-        foreach ($rules as $fieldName => $fieldRules) {
-            $node = &$root;
+        while ($rules !== []) {
+            $fieldName = array_key_first($rules);
+            $fieldRules = $rules[$fieldName];
+            unset($rules[$fieldName]);
 
-            foreach ($this->splitFieldName((string) $fieldName) as $segment) {
-                $node['children'][$segment] ??= ['rules' => null, 'children' => []];
-                $node = &$node['children'][$segment];
+            // `Rule::forEach()` returning keyed rules: rules for the keys below.
+            if ($fieldRules instanceof NestedRules) {
+                $fieldRules = $this->compileNestedRules($fieldRules, (string) $fieldName);
+
+                if (is_array($fieldRules) && ! array_is_list($fieldRules)) {
+                    foreach ($fieldRules as $key => $rule) {
+                        $rules[$fieldName.'.'.$key] = $rule;
+                    }
+
+                    continue;
+                }
             }
 
+            $this->ruleKeys[] = (string) $fieldName;
+            $node = &$this->treeNode($root, (string) $fieldName);
             $node['rules'] = $this->normalizeRules($fieldRules);
             unset($node);
         }
 
+        $this->addConfirmations($root);
+
+        foreach ($overrides as $key => $type) {
+            $node = &$this->treeNode($root, (string) $key);
+            $node['override'] = $type;
+            unset($node);
+        }
+
         $fields = [];
-        $confirmedFields = [];
 
         foreach ($root['children'] as $segment => $node) {
             $segment = (string) $segment;
@@ -266,26 +369,58 @@ class RequestExtractor
             }
 
             $fields[] = $this->buildField($segment, $node, $segment);
-
-            if ($node['rules'] !== null && $this->hasRule($node['rules'], 'confirmed')) {
-                $confirmedFields[$this->segmentName($segment).'_confirmation'] = $this->resolveType($node['rules']);
-            }
-        }
-
-        // Add auto-generated confirmation fields
-        foreach ($confirmedFields as $confirmFieldName => $confirmType) {
-            // Only add if not explicitly defined
-            if (! isset($root['children'][$confirmFieldName])) {
-                $fields[] = [
-                    'name' => $confirmFieldName,
-                    'type' => $confirmType,
-                    'required' => false,
-                    'nullable' => false,
-                ];
-            }
         }
 
         return $fields;
+    }
+
+    /**
+     * The node of the rule tree at a dotted key, created (with its parents)
+     * when missing.
+     *
+     * @param  array{rules: ?list<mixed>, children: array<array-key, array>}  $root
+     * @return array{rules: ?list<mixed>, children: array<array-key, array>, override?: string}
+     */
+    protected function &treeNode(array &$root, string $key): array
+    {
+        $node = &$root;
+
+        foreach ($this->splitFieldName($key) as $segment) {
+            $node['children'][$segment] ??= ['rules' => null, 'children' => []];
+            $node = &$node['children'][$segment];
+        }
+
+        return $node;
+    }
+
+    /**
+     * Add the key each `confirmed` rule compares with: `{key}_confirmation`
+     * beside the key, or the key it names (`confirmed:pin_repeat`). It must
+     * hold the same value, so it takes the key's other rules: the same type,
+     * required and nullable as the key is. A key with rules of its own keeps them.
+     *
+     * @param  array{rules: ?list<mixed>, children: array<array-key, array>}  $root
+     */
+    protected function addConfirmations(array &$root): void
+    {
+        $isConfirmed = static fn (mixed $rule): bool => $rule === 'confirmed' || (is_string($rule) && str_starts_with($rule, 'confirmed:'));
+
+        foreach ($this->ruleKeys as $key) {
+            $rules = $this->treeNode($root, $key)['rules'] ?? [];
+            $confirmed = array_values(array_filter($rules, $isConfirmed));
+
+            if ($confirmed === []) {
+                continue;
+            }
+
+            $named = substr((string) $confirmed[0], strlen('confirmed:'));
+            $confirmationKey = $named !== '' ? $named : $key.'_confirmation';
+            $this->confirmations[$key] = $confirmationKey;
+
+            $node = &$this->treeNode($root, $confirmationKey);
+            $node['rules'] ??= array_values(array_filter($rules, static fn (mixed $rule): bool => ! $isConfirmed($rule)));
+            unset($node);
+        }
     }
 
     /**
@@ -308,10 +443,20 @@ class RequestExtractor
             );
         }
 
-        $queryNames = array_map(
+        // The confirmation key of a tagged key is sent with it.
+        $keys = $tagged['keys'];
+        foreach ($tagged['keys'] as $key) {
+            if (isset($this->confirmations[$key])) {
+                $keys[] = $this->confirmations[$key];
+            }
+        }
+
+        $queryNames = array_values(array_unique(array_map(
             fn (string $key): string => $this->segmentName($this->splitFieldName($key)[0]),
-            $tagged['keys'],
-        );
+            $keys,
+        )));
+
+        $this->warnAboutUntaggedQueryKeys($keys, $queryNames);
 
         $isQuery = fn (array $field): bool => in_array($field['name'], $queryNames, true);
 
@@ -319,6 +464,33 @@ class RequestExtractor
             array_values(array_filter($fields, fn (array $field): bool => ! $isQuery($field))),
             array_values(array_filter($fields, $isQuery)),
         ];
+    }
+
+    /**
+     * A query parameter is a whole top-level key, so tagging `filter.page`
+     * takes an untagged `filter.status` to the query type too: say so.
+     *
+     * @param  list<string>  $tagged  the tagged keys and their confirmation keys
+     * @param  list<string>  $queryNames  the top-level names they put in the query type
+     */
+    protected function warnAboutUntaggedQueryKeys(array $tagged, array $queryNames): void
+    {
+        foreach ($this->ruleKeys as $key) {
+            $top = $this->segmentName($this->splitFieldName($key)[0]);
+
+            // A parent of a tagged key goes with it, and so do the keys below a tagged one.
+            if (! in_array($top, $queryNames, true)
+                || in_array($key, $tagged, true)
+                || array_any($tagged, static fn (string $taggedKey): bool => str_starts_with($taggedKey, $key.'.') || str_starts_with($key, $taggedKey.'.'))) {
+                continue;
+            }
+
+            $this->warnings[] = sprintf(
+                "'%s' is not tagged @query, but is in the query type: a query parameter is typed as its whole top-level key '%s'",
+                $key,
+                $top,
+            );
+        }
     }
 
     /**
@@ -356,12 +528,22 @@ class RequestExtractor
         $field = [
             'name' => $this->segmentName($segment),
             'type' => $shape['type'],
-            // A parent without a rule of its own must be present when one of its keys must.
-            'required' => $node['rules'] === null
-                ? $shape['type'] === 'object' && array_any($shape['children'], fn (array $child): bool => $child['required'])
-                : $this->isRequired($rules),
+            'required' => match (true) {
+                $node['rules'] !== null => $this->isRequired($rules),
+                // A key only `#[TypefinderOverrides]` adds.
+                $node['children'] === [] => true,
+                // A parent without a rule of its own must be present when one of its keys must.
+                default => $this->anyKeyRequired($node),
+            },
             'nullable' => $this->isNullable($rules),
         ];
+
+        // `#[TypefinderOverrides]` replaces the type, nested shape included.
+        if (isset($node['override'])) {
+            $field['type'] = $node['override'];
+
+            return $field;
+        }
 
         if (isset($shape['children'])) {
             $field['children'] = $shape['children'];
@@ -371,7 +553,49 @@ class RequestExtractor
             $field['arrayDepth'] = $shape['arrayDepth'];
         }
 
+        if (in_array(true, $shape['nullableItems'] ?? [], true)) {
+            $field['nullableItems'] = $shape['nullableItems'];
+        }
+
         return $field;
+    }
+
+    /**
+     * Whether a node without rules of its own has a named key that must be
+     * sent (a list of items has none).
+     *
+     * @param  array{rules: ?list<mixed>, children: array<array-key, array>}  $node
+     */
+    protected function anyKeyRequired(array $node): bool
+    {
+        if (isset($node['children']['*'])) {
+            return false;
+        }
+
+        return array_any($node['children'], fn (array $child): bool => match (true) {
+            $child['rules'] !== null => $this->isRequired($child['rules']),
+            $child['children'] === [] => true,
+            default => $this->anyKeyRequired($child),
+        });
+    }
+
+    /**
+     * The keys an `array:a,b` rule allows, or null without one.
+     *
+     * @param  list<mixed>  $rules
+     * @return ?list<string>
+     */
+    protected function allowedKeys(array $rules): ?array
+    {
+        foreach ($rules as $rule) {
+            if (is_string($rule) && str_starts_with($rule, 'array:')) {
+                $keys = array_values(array_filter(array_map(trim(...), explode(',', substr($rule, 6))), static fn (string $key): bool => $key !== ''));
+
+                return $keys === [] ? null : $keys;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -386,6 +610,10 @@ class RequestExtractor
      */
     protected function resolveShape(array $node, string $path): array
     {
+        if (isset($node['override'])) {
+            return ['type' => $node['override']];
+        }
+
         $rules = $node['rules'] ?? [];
         $ownType = $this->resolveType($rules);
 
@@ -398,11 +626,41 @@ class RequestExtractor
         $named = $node['children'];
         $wildcard = $named['*'] ?? null;
         unset($named['*']);
+        $allowedKeys = $this->allowedKeys($rules);
 
         if ($wildcard === null) {
             $children = [];
             foreach ($named as $segment => $child) {
                 $children[] = $this->buildField((string) $segment, $child, $path.'.'.$segment);
+            }
+
+            // `array:a,b` also allows the listed keys that have no rule.
+            foreach ($allowedKeys ?? [] as $key) {
+                if (! isset($named[$key])) {
+                    $children[] = ['name' => $key, 'type' => 'unknown', 'required' => false, 'nullable' => false];
+                }
+            }
+
+            return ['type' => 'object', 'children' => $children];
+        }
+
+        // `array:a,b` with `.*` rules: an object of those keys, each typed by the `.*` rules.
+        if ($allowedKeys !== null) {
+            $children = [];
+            foreach ($allowedKeys as $key) {
+                if (! isset($named[$key])) {
+                    $children[] = ['required' => false] + $this->buildField($key, $wildcard, $path.'.'.$key);
+
+                    continue;
+                }
+
+                // A key's own rules win; the `.*` rules below it still apply.
+                $child = $named[$key];
+                if ($child['children'] === []) {
+                    $child['children'] = $wildcard['children'];
+                }
+
+                $children[] = $this->buildField($key, $child, $path.'.'.$key);
             }
 
             return ['type' => 'object', 'children' => $children];
@@ -420,13 +678,22 @@ class RequestExtractor
         }
 
         $item = $this->resolveShape($wildcard, $path.'.*');
+        $itemNullable = $wildcard['rules'] !== null && $this->isNullable($wildcard['rules']);
 
         if (isset($item['children'])) {
+            $depth = ($item['arrayDepth'] ?? 0) + 1;
+
             return [
                 'type' => 'object-array',
                 'children' => $item['children'],
-                'arrayDepth' => ($item['arrayDepth'] ?? 0) + 1,
+                'arrayDepth' => $depth,
+                // Whether the items are nullable, from the outer array in.
+                'nullableItems' => [$itemNullable, ...($item['nullableItems'] ?? array_fill(0, $depth - 1, false))],
             ];
+        }
+
+        if ($itemNullable) {
+            $item['type'] = is_string($item['type']) ? $item['type'].' | null' : ['anyOf' => [$item['type'], 'null']];
         }
 
         return ['type' => $this->arrayOf($item['type'])];
@@ -482,17 +749,43 @@ class RequestExtractor
      * Resolve the TypeScript type from a set of rules.
      *
      * Laravel applies every rule of a field, so `Rule::enum()`, `Rule::in()`
-     * and `in:` narrow the type wherever they sit in the list.
+     * and `in:` narrow the type wherever they sit in the list. Rules with a
+     * `Rule::when()` are typed as the union of its branches.
      *
-     * @param  list<mixed>  $rules
+     * @param  list<mixed>  $rules  normalized ({@see self::normalizeRules()})
      */
     protected function resolveType(array $rules): mixed
     {
-        // `prohibited` lets the key through only when it is missing or empty,
-        // so no value can be typed for it. The conditional `prohibited_if` /
-        // `prohibited_unless` keep their other rules' type.
-        if (in_array('prohibited', $rules, true)) {
-            return 'never';
+        $types = [];
+
+        foreach ($this->variants($rules) as $variant) {
+            $type = $this->resolveVariantType($variant);
+            $types[serialize($type)] = $type;
+        }
+
+        // A branch that states no type (the empty default of `Rule::when()`) adds nothing.
+        if (count($types) > 1) {
+            unset($types[serialize('unknown')]);
+        }
+
+        $types = array_values($types);
+
+        return count($types) === 1 ? $types[0] : ['anyOf' => $types];
+    }
+
+    /**
+     * The type of one variant of a field's rules: a rule list without
+     * `Rule::when()`.
+     *
+     * @param  list<mixed>  $rules
+     */
+    protected function resolveVariantType(array $rules): mixed
+    {
+        // No value gets past `prohibited` or `missing`.
+        foreach (self::NEVER_RULES as $never) {
+            if (in_array($never, $rules, true)) {
+                return 'never';
+            }
         }
 
         foreach ($rules as $rule) {
@@ -510,37 +803,88 @@ class RequestExtractor
 
         // On an array, `in` checks every item.
         if ($this->isArrayRule($rules)) {
-            return ['arrayOf' => ['in' => $values]];
+            $itemType = $this->inType($values, 'unknown');
+
+            return $itemType === null ? $declared : ['arrayOf' => $itemType];
         }
 
-        if ($declared === 'unknown' || $declared === 'string') {
-            return ['in' => $values];
-        }
-
-        if ($declared === 'number' && array_all($values, static fn (string $value): bool => is_numeric($value))) {
-            return ['in' => array_map(static fn (string $value): int|float => $value + 0, $values)];
-        }
-
-        // The values cannot be written in the declared type (`boolean` with `in:1`).
-        return $declared;
+        // Null when the values cannot be written in the declared type (`boolean` with `in:1`).
+        return $this->inType($values, $declared) ?? $declared;
     }
 
     /**
-     * The values the first `Rule::in()` or `in:` rule accepts, or null when
-     * the rules have none.
+     * The type of the values an `in` rule accepts, on a field of the declared
+     * type; null when they cannot be written in it.
+     *
+     * @param  list<mixed>  $values
+     */
+    protected function inType(array $values, mixed $declared): mixed
+    {
+        // The cases of one backed enum: that enum, narrowed to them.
+        $first = $values[0] ?? null;
+        if ($first instanceof BackedEnum && array_all($values, static fn (mixed $value): bool => $value instanceof $first)) {
+            return ['enum' => $first::class, 'only' => array_map(static fn (BackedEnum $case): int|string => $case->value, $values)];
+        }
+
+        // What Laravel compares: an enum case by its value (a pure one by its name).
+        $values = array_values(array_filter(
+            array_map(static fn (mixed $value): mixed => $value instanceof UnitEnum ? enum_value($value) : $value, $values),
+            is_scalar(...),
+        ));
+
+        if ($declared === 'string') {
+            return ['in' => array_values(array_unique(array_map(
+                static fn (bool|int|float|string $value): string => is_bool($value) ? ($value ? '1' : '') : (string) $value,
+                $values,
+            )))];
+        }
+
+        if ($declared === 'number') {
+            if (! array_all($values, static fn (mixed $value): bool => ! is_bool($value) && is_numeric($value))) {
+                return null;
+            }
+
+            return ['in' => array_map(static fn (int|float|string $value): int|float => is_string($value) ? $value + 0 : $value, $values)];
+        }
+
+        if ($declared !== 'unknown') {
+            return null;
+        }
+
+        // With no declared type the values keep their own: `Rule::in([1, 2])` is `1 | 2`.
+        $bools = array_values(array_filter($values, is_bool(...)));
+        $others = array_values(array_filter($values, static fn (mixed $value): bool => ! is_bool($value)));
+
+        $boolType = match (true) {
+            $bools === [] => null,
+            in_array(true, $bools, true) && in_array(false, $bools, true) => 'boolean',
+            default => $bools[0] ? 'true' : 'false',
+        };
+
+        if ($boolType === null) {
+            return ['in' => $others];
+        }
+
+        return $others === [] ? $boolType : ['anyOf' => [['in' => $others], $boolType]];
+    }
+
+    /**
+     * The values the first `Rule::in()` or `in:` rule accepts, with their
+     * own types, or null when the rules have none.
      *
      * @param  list<mixed>  $rules
-     * @return ?list<string>
+     * @return ?list<mixed>
      */
     protected function inValues(array $rules): ?array
     {
         foreach ($rules as $rule) {
             if ($rule instanceof In) {
-                return $this->extractInValues($rule);
+                return array_values((array) new ReflectionProperty($rule, 'values')->getValue($rule));
             }
 
+            // Parsed as Laravel parses rule parameters.
             if (is_string($rule) && str_starts_with($rule, 'in:')) {
-                return explode(',', substr($rule, 3));
+                return str_getcsv(substr($rule, 3), ',', '"', '\\');
             }
         }
 
@@ -548,45 +892,53 @@ class RequestExtractor
     }
 
     /**
-     * The type of the first rule that declares one (`string`, `integer`,
-     * `array:keys`, `Rule::anyOf()`, …), or `unknown`.
+     * The type the rules declare, or `unknown`: `accepted` / `declined`,
+     * else the first primitive rule (`string`, `integer`, `array:keys`,
+     * `Rule::anyOf()`, …), else the first format rule (`digits`, `email`, …).
      *
      * @param  list<mixed>  $rules
      */
     protected function declaredType(array $rules): mixed
     {
         foreach ($rules as $rule) {
-            // Handle Rule::anyOf([...]) — Laravel 13+ only. Guard for older versions.
+            if (is_string($rule) && isset(self::ACCEPTANCE_RULES[$rule])) {
+                return self::ACCEPTANCE_RULES[$rule];
+            }
+        }
+
+        $format = null;
+
+        foreach ($rules as $rule) {
+            // Rule::anyOf([...]) is Laravel 13+ only.
             if (class_exists(AnyOf::class) && $rule instanceof AnyOf) {
                 $types = $this->resolveAnyOfTypes($rule);
 
                 if ($types !== []) {
                     return count($types) === 1 ? $types[0] : ['anyOf' => $types];
                 }
+
+                continue;
             }
 
-            // Handle Rule::array() / Rule::array([...keys])
-            if ($rule instanceof ArrayRule) {
-                $rule = explode('|', (string) $rule)[0];
+            if (! is_string($rule)) {
+                continue;
             }
 
-            // Handle string rules
-            if (is_string($rule)) {
-                // Handle 'array:name,email' — only the listed keys are allowed
-                if (str_starts_with($rule, 'array:')) {
-                    return $this->keyedArrayType(explode(',', substr($rule, 6)));
-                }
-
-                // Handle rules with parameters like 'digits:4'
-                $ruleName = explode(':', $rule)[0];
-
-                if (isset(self::RULE_TYPE_MAP[$ruleName])) {
-                    return self::RULE_TYPE_MAP[$ruleName];
-                }
+            // 'array:name,email' — only the listed keys are allowed
+            if (str_starts_with($rule, 'array:')) {
+                return $this->keyedArrayType(explode(',', substr($rule, 6)));
             }
+
+            $ruleName = explode(':', $rule)[0];
+
+            if (isset(self::PRIMITIVE_RULES[$ruleName])) {
+                return self::PRIMITIVE_RULES[$ruleName];
+            }
+
+            $format ??= self::FORMAT_RULES[$ruleName] ?? null;
         }
 
-        return 'unknown';
+        return $format ?? 'unknown';
     }
 
     /**
@@ -597,17 +949,13 @@ class RequestExtractor
      */
     protected function isArrayRule(array $rules): bool
     {
-        foreach ($rules as $rule) {
-            if ($rule instanceof ArrayRule) {
-                return true;
-            }
-
-            if (is_string($rule) && in_array(explode(':', $rule)[0], ['array', 'list'], true)) {
-                return true;
-            }
-        }
-
-        return false;
+        return array_any(
+            $this->variants($rules),
+            static fn (array $variant): bool => array_any(
+                $variant,
+                static fn (mixed $rule): bool => is_string($rule) && in_array(explode(':', $rule)[0], ['array', 'list'], true),
+            ),
+        );
     }
 
     /**
@@ -652,125 +1000,211 @@ class RequestExtractor
     }
 
     /**
-     * Check if the field is required.
+     * Check if the field is required: in every branch of its rules.
      *
      * @param  list<mixed>  $rules
      */
     protected function isRequired(array $rules): bool
     {
-        // `sometimes` runs the other rules only when the key was sent.
-        if (in_array('sometimes', $rules, true)) {
-            return false;
-        }
-
-        foreach ($rules as $rule) {
-            // `present` allows an empty value, but the key itself must be sent.
-            if ($rule === 'required' || $rule === 'present') {
-                return true;
+        return array_all($this->variants($rules), static function (array $variant): bool {
+            // `sometimes` runs the other rules only when the key was sent.
+            if (in_array('sometimes', $variant, true)) {
+                return false;
             }
 
-            // Conditional required rules make the field optional
-            if (is_string($rule)) {
-                $ruleName = explode(':', $rule)[0];
-                if (in_array($ruleName, self::CONDITIONAL_RULES, true)) {
-                    return false;
-                }
-            }
-        }
-
-        return false;
+            // `present` allows an empty value, but the key itself must be sent;
+            // `accepted` and `declined` require the key as `required` does.
+            return array_any($variant, static fn (mixed $rule): bool => in_array($rule, ['required', 'present', 'accepted', 'declined'], true));
+        });
     }
 
     /**
-     * Check if the field is nullable.
+     * Check if the field is nullable: in any branch of its rules.
      *
      * @param  list<mixed>  $rules
      */
     protected function isNullable(array $rules): bool
     {
-        return in_array('nullable', $rules, true);
+        return array_any($this->variants($rules), static fn (array $variant): bool => in_array('nullable', $variant, true));
     }
 
     /**
-     * Check if a specific rule exists.
-     *
-     * @param  list<mixed>  $rules
-     */
-    protected function hasRule(array $rules, string $ruleName): bool
-    {
-        foreach ($rules as $rule) {
-            if ($rule === $ruleName) {
-                return true;
-            }
-
-            if (is_string($rule) && str_starts_with($rule, $ruleName.':')) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    /**
-     * Normalize rules to an array format.
+     * Normalize a field's rules once, so the resolvers only see rule strings
+     * (`|`-separated ones split) and the rule objects they read (`In`,
+     * `Enum`, `AnyOf`), plus a `['when' => [rules, defaultRules]]` entry
+     * for each `Rule::when()`.
      *
      * @return list<mixed>
      */
     protected function normalizeRules(mixed $rules): array
     {
+        if ($rules === null) {
+            return [];
+        }
+
         if (is_string($rules)) {
             return explode('|', $rules);
         }
 
-        if (is_array($rules)) {
-            return $rules;
+        $normalized = [];
+
+        foreach (is_array($rules) ? $rules : [$rules] as $rule) {
+            array_push($normalized, ...$this->normalizeRule($rule));
         }
 
-        return [$rules];
+        return $normalized;
     }
 
     /**
-     * Resolve types from a Rule::anyOf() instance.
+     * One rule of a list, normalized ({@see self::normalizeRules()}).
      *
-     * Each inner rule set is resolved independently, then deduplicated.
-     *
-     * @return list<string>
+     * @return list<mixed>
      */
-    protected function resolveAnyOfTypes(AnyOf $anyOf): array
+    protected function normalizeRule(mixed $rule): array
     {
-        $reflectionClass = new ReflectionClass($anyOf);
-        $reflectionProperty = $reflectionClass->getProperty('rules');
-        $ruleSets = $reflectionProperty->getValue($anyOf);
-
-        $types = [];
-
-        foreach ($ruleSets as $ruleSet) {
-            $normalized = $this->normalizeRules($ruleSet);
-            $type = $this->resolveType($normalized);
-
-            if (is_string($type) && ! in_array($type, $types, true)) {
-                $types[] = $type;
+        // Rule::date(), Rule::numeric(), Rule::string(), Rule::array(), …
+        foreach (self::STRINGABLE_RULES as $class) {
+            if ($rule instanceof $class) {
+                return explode('|', (string) $rule);
             }
         }
 
-        return $types;
+        // Rule::url(), Rule::uuid(), Rule::confirmed(), Rule::requiredIf…: [name, ...parameters]
+        if (interface_exists(ParameterizedRule::class) && $rule instanceof ParameterizedRule) {
+            return [$this->ruleString($rule->toArray())];
+        }
+
+        // The ['max', 10] form.
+        if (is_array($rule) && array_is_list($rule) && is_string($rule[0] ?? null)) {
+            return [$this->ruleString($rule)];
+        }
+
+        if ($rule instanceof ConditionalRules) {
+            return [['when' => [$this->conditionalBranch($rule, true), $this->conditionalBranch($rule, false)]]];
+        }
+
+        if ($rule instanceof NestedRules) {
+            $compiled = $this->compileNestedRules($rule, '');
+
+            return is_array($compiled) && ! array_is_list($compiled) ? [] : $this->normalizeRules($compiled);
+        }
+
+        return match (true) {
+            $rule instanceof File => ['file'],
+            $rule instanceof Password => ['string'],
+            $rule instanceof Email => ['email'],
+            $rule instanceof Dimensions => ['dimensions'],
+            default => [$rule],
+        };
     }
 
     /**
-     * Extract values from a Rule::in() instance.
+     * A rule string from a rule name and its parameters.
      *
-     * @return list<string>
+     * @param  list<mixed>  $parts
      */
-    protected function extractInValues(In $in): array
+    protected function ruleString(array $parts): string
     {
-        // The In rule's __toString method returns 'in:"val1","val2",...'
-        $string = (string) $in;
-        $valuesString = substr($string, 3); // Remove 'in:'
-
-        return array_map(
-            fn (string $v): string => trim($v, '"'),
-            explode(',', $valuesString)
+        $name = (string) array_shift($parts);
+        $parameters = array_map(
+            static fn (mixed $parameter): string => is_scalar($parameter) || $parameter instanceof UnitEnum
+                ? (string) ($parameter instanceof UnitEnum ? enum_value($parameter) : $parameter)
+                : '',
+            $parts,
         );
+
+        return $parameters === [] ? $name : $name.':'.implode(',', $parameters);
+    }
+
+    /**
+     * The normalized rules of one branch of a `Rule::when()`.
+     *
+     * @return list<mixed>
+     */
+    protected function conditionalBranch(ConditionalRules $rules, bool $passes): array
+    {
+        try {
+            return $this->normalizeRules($passes ? $rules->rules() : $rules->defaultRules());
+        } catch (\Throwable $throwable) {
+            $this->warnings[] = sprintf('a Rule::when() branch could not be read (%s); it was left out', $throwable->getMessage());
+
+            return [];
+        }
+    }
+
+    /**
+     * The rules a `Rule::forEach()` callback returns for one item, called with
+     * no item value; null (with a warning) when it cannot be called so.
+     */
+    protected function compileNestedRules(NestedRules $rules, string $attribute): mixed
+    {
+        try {
+            $callback = new ReflectionProperty($rules, 'callback')->getValue($rules);
+
+            return $callback(null, $attribute, [], []);
+        } catch (\Throwable $throwable) {
+            $this->warnings[] = sprintf(
+                "the Rule::forEach() rules of '%s' could not be read (%s); its type is unknown",
+                $attribute,
+                $throwable->getMessage(),
+            );
+
+            return null;
+        }
+    }
+
+    /**
+     * The rule lists a field can end up with: its rules, or one list per
+     * combination of `Rule::when()` branches.
+     *
+     * @param  list<mixed>  $rules  normalized
+     * @return non-empty-list<list<mixed>>
+     */
+    protected function variants(array $rules): array
+    {
+        $variants = [[]];
+
+        foreach ($rules as $rule) {
+            if (! is_array($rule) || ! array_key_exists('when', $rule)) {
+                $variants = array_map(static fn (array $variant): array => [...$variant, $rule], $variants);
+
+                continue;
+            }
+
+            $next = [];
+            foreach ($rule['when'] as $branch) {
+                foreach ($this->variants($branch) as $branchVariant) {
+                    foreach ($variants as $variant) {
+                        $next[] = [...$variant, ...$branchVariant];
+                    }
+                }
+            }
+
+            // Too many combinations to type: the condition is left out.
+            if (count($next) <= self::MAX_VARIANTS) {
+                $variants = $next;
+            }
+        }
+
+        return $variants;
+    }
+
+    /**
+     * Resolve the types of a Rule::anyOf() instance: each inner rule set is
+     * resolved independently, then deduplicated.
+     *
+     * @return list<mixed>
+     */
+    protected function resolveAnyOfTypes(AnyOf $anyOf): array
+    {
+        $types = [];
+
+        foreach ((array) new ReflectionProperty($anyOf, 'rules')->getValue($anyOf) as $ruleSet) {
+            $type = $this->resolveType($this->normalizeRules($ruleSet));
+            $types[serialize($type)] = $type;
+        }
+
+        return array_values($types);
     }
 
     /**
@@ -808,26 +1242,15 @@ class RequestExtractor
      * #[TypefinderOverrides(...)] attribute as the full field set.
      * Returns null if the attribute is absent.
      *
-     * @return ?list<array{name: string, type: string, required: bool, nullable: bool}>
+     * Dotted keys nest, as they do next to rules.
+     *
+     * @return ?list<array>
      */
     protected function synthesizeFieldsFromOverrides(ReflectionClass $reflectionClass): ?array
     {
         $overrides = $this->getTypeOverrides($reflectionClass);
-        if ($overrides === []) {
-            return null;
-        }
 
-        $fields = [];
-        foreach ($overrides as $name => $type) {
-            $fields[] = [
-                'name' => $name,
-                'type' => $type,
-                'required' => true,
-                'nullable' => false,
-            ];
-        }
-
-        return $fields;
+        return $overrides === [] ? null : $this->parseRules([], $overrides);
     }
 
     /**

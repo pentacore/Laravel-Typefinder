@@ -427,6 +427,7 @@ class TypeScriptRenderer
     {
         $lines = [];
         $seen = [];
+        $imports = [];
 
         foreach ($pivot['columns'] as $column) {
             if (isset($seen[$column['name']])) {
@@ -435,7 +436,9 @@ class TypeScriptRenderer
 
             $seen[$column['name']] = true;
             $nullable = (bool) ($column['nullable'] ?? false);
-            $lines[] = '  '.self::member((string) $column['name'], self::appendNullable($column['type'], $nullable)).';';
+            // A `using` pivot class's cast may name an enum.
+            $type = $this->resolveTypeString($column['type'], $nullable, [], $imports, 'models');
+            $lines[] = '  '.self::member((string) $column['name'], self::appendNullable($type, $nullable)).';';
         }
 
         // Laravel's withTimestamps() already lists the timestamp columns among
@@ -448,7 +451,11 @@ class TypeScriptRenderer
             }
         }
 
-        return self::FILE_HEADER."\nexport type {$pivot['name']} = {\n".implode("\n", $lines)."\n};\n";
+        $imports = array_values(array_unique($imports));
+        sort($imports);
+        $importBlock = $imports === [] ? '' : implode("\n", $imports)."\n\n";
+
+        return self::FILE_HEADER."\n".$importBlock."export type {$pivot['name']} = {\n".implode("\n", $lines)."\n};\n";
     }
 
     /**
@@ -657,6 +664,10 @@ TS;
                 return $this->narrowEnum($enumName, $type);
             }
 
+            if (isset($type['phpdoc'])) {
+                return $this->renderModelPhpDocType($type['phpdoc'], $imports, (string) $selfFqcn, $allModels, $allEnums);
+            }
+
             if (isset($type['enumCollection'])) {
                 $enumName = $this->resolveEnumName($type['enumCollection'], $allEnums);
                 $imports[] = sprintf("import type { %s } from '../enums';", $enumName);
@@ -678,7 +689,13 @@ TS;
             }
 
             if (isset($type['anyOf'])) {
-                return implode(' | ', array_unique($type['anyOf']));
+                // Alternatives may be structured (an enum, `in` values, an array of either).
+                $alternatives = [];
+                foreach ($type['anyOf'] as $alternative) {
+                    $alternatives[] = $this->resolveTypeString($alternative, false, $allEnums, $imports, $fromDir, $selfFqcn, $allModels);
+                }
+
+                return implode(' | ', array_unique($alternatives));
             }
         }
 
@@ -713,6 +730,40 @@ TS;
     }
 
     /**
+     * A model column typed by its class-level `@property` PHPDoc: the
+     * resource type tree, with the imports a resource file would use moved
+     * to the model directory.
+     *
+     * @param  array<string, mixed>  $node
+     * @param  list<string>  $imports
+     */
+    /**
+     * The generated resources, for resource references in a model's
+     * `@property` types; set by renderModel() / renderModelFile().
+     *
+     * @var list<array>
+     */
+    private array $modelResources = [];
+
+    protected function renderModelPhpDocType(array $node, array &$imports, string $selfFqcn, array $allModels, array $allEnums): string
+    {
+        $nodeImports = [];
+        $rendered = $this->renderTypeNode($node, $nodeImports, $selfFqcn, $allModels, $allEnums, $this->modelResources);
+
+        foreach ($nodeImports as $import) {
+            $imports[] = (string) preg_replace_callback(
+                "/^import type \\{ (\\w+) \\} from '(\\.\\.\\/models|\\.\\/\\w+)';$/",
+                fn (array $match): string => $match[2] === '../models'
+                    ? sprintf("import type { %s } from './%s';", $match[1], $match[1])
+                    : sprintf("import type { %s } from '../resources';", $match[1]),
+                $import,
+            );
+        }
+
+        return $rendered;
+    }
+
+    /**
      * Render a relationship as a type field line.
      */
     protected function renderRelationshipField(array $rel, array $allModels, array &$imports, ?string $selfFqcn = null): ?string
@@ -736,10 +787,10 @@ TS;
                 $pivotName = $this->generatePivotName($rel['pivot']['table'] ?? $name);
                 $imports[] = sprintf("import type { %s } from './%s';", $pivotName, $pivotName);
 
-                return sprintf('  %s?: (%s & { pivot: %s })[];', $name, $relatedName, $pivotName);
+                return sprintf('  %s?: (%s & { %s: %s })[];', $name, $relatedName, self::propertyKey((string) ($rel['pivot']['accessor'] ?? 'pivot')), $pivotName);
 
             case 'morphTo':
-                return sprintf('  %s?: T | null;', $name);
+                return sprintf('  %s?: %s | null;', $name, $rel['generic'] ?? 'T');
 
             default:
                 return null;
@@ -828,8 +879,15 @@ TS;
             return;
         }
 
-        // `items.*.*.name` is an array of arrays of objects.
-        $arraySuffix = $isObjectArray ? str_repeat('[]', max(1, (int) ($field['arrayDepth'] ?? 1))) : '';
+        // `items.*.*.name` is an array of arrays of objects; `nullableItems`
+        // says, from the outer array in, which may hold null: `({ … } | null)[]`.
+        $depth = $isObjectArray ? max(1, (int) ($field['arrayDepth'] ?? 1)) : 0;
+        $nullableItems = $field['nullableItems'] ?? array_fill(0, $depth, false);
+        $arrayPrefix = str_repeat('(', count(array_filter($nullableItems)));
+        $arraySuffix = '';
+        foreach (array_reverse($nullableItems) as $nullableItem) {
+            $arraySuffix .= ($nullableItem ? ' | null)' : '').'[]';
+        }
 
         if ($extractNested) {
             $nestedName = $this->nestedTypeName($typeName, (string) $field['name'], $extractedTypes);
@@ -842,12 +900,12 @@ TS;
             }
 
             $extractedTypes[$nestedName] = "export type {$nestedName} = {\n".implode("\n", $nestedLines)."\n};";
-            $lines[] = sprintf('%s%s%s: %s;', $prefix, $key, $optional, self::appendNullable($nestedName.$arraySuffix, $nullable));
+            $lines[] = sprintf('%s%s%s: %s;', $prefix, $key, $optional, self::appendNullable($arrayPrefix.$nestedName.$arraySuffix, $nullable));
 
             return;
         }
 
-        $lines[] = sprintf('%s%s%s: {', $prefix, $key, $optional);
+        $lines[] = sprintf('%s%s%s: %s{', $prefix, $key, $optional, $arrayPrefix);
         foreach ($field['children'] as $child) {
             $this->renderRequestField($child, $typeName, $allEnums, $imports, $lines, $extractedTypes, false, $indent + 1);
         }

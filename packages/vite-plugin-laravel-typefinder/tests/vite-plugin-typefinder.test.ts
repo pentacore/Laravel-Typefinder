@@ -244,6 +244,38 @@ describe('typefinder vite plugin – serve mode', () => {
         expect(server.ws.on).toHaveBeenCalledWith('typefinder:full-regen', expect.any(Function));
     });
 
+    it('a migration change triggers a full regen', async () => {
+        vi.useFakeTimers();
+        const plugin = hooks(typefinder());
+        plugin.configResolved(resolvedConfig());
+        await plugin.configureServer(fakeServer());
+        (fakeWatcher.regen as ReturnType<typeof vi.fn>).mockClear();
+
+        fileEvent('/app/Models/User.php');
+        fileEvent('/project/database/migrations/2026_01_01_000000_add_nickname.php', 'add');
+        await vi.advanceTimersByTimeAsync(200);
+
+        expect(fakeWatcher.regen).toHaveBeenCalledTimes(1);
+        expect(fakeWatcher.regen).toHaveBeenCalledWith([]);
+
+        vi.useRealTimers();
+    });
+
+    it('migrations: false ignores migration changes', async () => {
+        vi.useFakeTimers();
+        const plugin = hooks(typefinder({ migrations: false }));
+        plugin.configResolved(resolvedConfig());
+        await plugin.configureServer(fakeServer());
+        (fakeWatcher.regen as ReturnType<typeof vi.fn>).mockClear();
+
+        fileEvent('/project/database/migrations/2026_01_01_000000_add_nickname.php');
+        await vi.advanceTimersByTimeAsync(200);
+
+        expect(fakeWatcher.regen).not.toHaveBeenCalled();
+
+        vi.useRealTimers();
+    });
+
     it('full-regen websocket handler triggers regen([])', async () => {
         const plugin = hooks(typefinder());
         plugin.configResolved(resolvedConfig());

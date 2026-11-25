@@ -406,7 +406,8 @@ final class NestedRequestRulesTest extends TestCase
         Artisan::call('typefinder:generate', ['--json' => true]);
         $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
-        $this->assertCount(3, $payload['warnings']);
+        // Three unexpressible shapes, an untagged key in a query type and a rules() that branches on the user.
+        $this->assertCount(5, $payload['warnings']);
     }
 
     public function test_incremental_run_reports_the_warnings_too(): void

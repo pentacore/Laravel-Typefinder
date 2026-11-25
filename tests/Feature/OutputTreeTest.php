@@ -81,6 +81,23 @@ final class OutputTreeTest extends TestCase
         $this->assertFileExists($this->root.'/models/Other.d.ts');
     }
 
+    public function test_prune_and_remove_directory_record_what_they_delete(): void
+    {
+        $outputTree = new OutputTree($this->root);
+        $outputTree->write('enums/Kept.d.ts', 'a');
+        $outputTree->write('enums/Stale.d.ts', 'b');
+        $outputTree->write('resources/Gone.d.ts', 'c');
+        $outputTree->write('pages.d.ts', 'd');
+
+        $outputTree = new OutputTree($this->root);
+        $outputTree->prune('enums', ['Kept.d.ts']);
+        $outputTree->removeDirectory('resources');
+        $outputTree->remove('pages.d.ts');
+
+        $this->assertSame(['enums/Stale.d.ts', 'resources/Gone.d.ts', 'pages.d.ts'], $outputTree->removed());
+        $this->assertSame(['enums/Stale.d.ts', 'resources/Gone.d.ts', 'pages.d.ts'], $outputTree->changed());
+    }
+
     public function test_remove_directory_deletes_its_files_and_the_directory(): void
     {
         $outputTree = new OutputTree($this->root);

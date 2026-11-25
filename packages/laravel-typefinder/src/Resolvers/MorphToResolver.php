@@ -4,59 +4,31 @@ declare(strict_types=1);
 
 namespace Pentacore\Typefinder\Resolvers;
 
-use Illuminate\Database\Eloquent\Relations\MorphMany;
-use Illuminate\Database\Eloquent\Relations\MorphOne;
-use Illuminate\Database\Eloquent\Relations\Relation;
-
 class MorphToResolver
 {
     /**
      * Resolve morphTo targets across all extracted models.
      *
-     * Scans all models for morphMany/morphOne relationships, then annotates
-     * the corresponding morphTo relationships with the list of possible target classes.
+     * Every morphOne / morphMany relation names the model it points at and
+     * the morph type column it fills (`subject_type`). A morphTo's targets
+     * are the models whose relations point at the morphTo's model with the
+     * morphTo's own type column, so two morphTo relations on one model
+     * (`subject`, `causer`) each get their own targets.
      *
      * @param  list<array>  $allModels
      * @return list<array>
      */
     public function resolve(array $allModels): array
     {
-        // Build a map: morphTo model FQCN + morph name → list of source model FQCNs
         $morphTargetMap = $this->buildMorphTargetMap($allModels);
 
-        // Also check Relation::morphMap()
-        $morphMap = Relation::morphMap();
-
-        // Annotate morphTo relationships with their resolved targets
         foreach ($allModels as &$model) {
             foreach ($model['relationships'] as &$relationship) {
                 if ($relationship['type'] !== 'morphTo') {
                     continue;
                 }
 
-                $morphName = $relationship['name'];
-                $modelFqcn = $model['fqcn'];
-
-                $key = $modelFqcn.'.'.$morphName;
-                $targets = $morphTargetMap[$key] ?? [];
-
-                // Also check the morph map for any registered aliases
-                foreach ($morphMap as $class) {
-                    if (! in_array($class, $targets, true)) {
-                        foreach ($allModels as $allModel) {
-                            if ($allModel['fqcn'] !== $class) {
-                                continue;
-                            }
-
-                            foreach ($allModel['relationships'] as $otherRel) {
-                                if ($this->isMorphRelationPointingTo($otherRel, $model['fqcn'])) {
-                                    $targets[] = $class;
-                                }
-                            }
-                        }
-                    }
-                }
-
+                $targets = $morphTargetMap[$this->key($model['fqcn'], $relationship['morphType'] ?? '')] ?? [];
                 $targets = array_values(array_unique($targets));
                 sort($targets, SORT_STRING);
                 $relationship['morphTargets'] = $targets;
@@ -71,7 +43,8 @@ class MorphToResolver
     }
 
     /**
-     * Build a map of morphTo model+name → list of source model FQCNs.
+     * The models that invert each morphTo, keyed by the morphTo's model and
+     * its morph type column.
      *
      * @param  list<array>  $allModels
      * @return array<string, list<class-string>>
@@ -82,53 +55,19 @@ class MorphToResolver
 
         foreach ($allModels as $allModel) {
             foreach ($allModel['relationships'] as $rel) {
-                $relationType = $rel['relationType'] ?? '';
-
-                if ($relationType !== MorphMany::class && $relationType !== MorphOne::class) {
+                if ($rel['type'] === 'morphTo' || ! isset($rel['morphType'])) {
                     continue;
                 }
 
-                $relatedFqcn = $rel['related'];
-                $morphName = $this->findMorphNameForRelated($allModels, $relatedFqcn);
-
-                if ($morphName !== null) {
-                    $key = $relatedFqcn.'.'.$morphName;
-                    $map[$key][] = $allModel['fqcn'];
-                }
+                $map[$this->key($rel['related'], $rel['morphType'])][] = $allModel['fqcn'];
             }
         }
 
         return $map;
     }
 
-    /**
-     * Find the morphTo relationship name on the related model.
-     */
-    protected function findMorphNameForRelated(array $allModels, string $relatedFqcn): ?string
+    private function key(string $modelFqcn, string $morphType): string
     {
-        foreach ($allModels as $allModel) {
-            if ($allModel['fqcn'] !== $relatedFqcn) {
-                continue;
-            }
-
-            foreach ($allModel['relationships'] as $rel) {
-                if ($rel['type'] === 'morphTo') {
-                    return $rel['name'];
-                }
-            }
-        }
-
-        return null;
-    }
-
-    /**
-     * Check if a relationship is a morph relationship pointing to a specific model.
-     */
-    protected function isMorphRelationPointingTo(array $rel, string $targetFqcn): bool
-    {
-        $relationType = $rel['relationType'] ?? '';
-
-        return ($relationType === MorphMany::class || $relationType === MorphOne::class)
-            && $rel['related'] === $targetFqcn;
+        return $modelFqcn.'|'.$morphType;
     }
 }
