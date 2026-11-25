@@ -6,6 +6,7 @@ namespace Pentacore\Typefinder\Resolvers;
 
 use BackedEnum;
 use Illuminate\Database\Eloquent\Casts\AsArrayObject;
+use Illuminate\Database\Eloquent\Casts\AsBinary;
 use Illuminate\Database\Eloquent\Casts\AsCollection;
 use Illuminate\Database\Eloquent\Casts\AsEncryptedArrayObject;
 use Illuminate\Database\Eloquent\Casts\AsEncryptedCollection;
@@ -15,13 +16,22 @@ use Illuminate\Database\Eloquent\Casts\AsFluent;
 use Illuminate\Database\Eloquent\Casts\AsHtmlString;
 use Illuminate\Database\Eloquent\Casts\AsStringable;
 use Illuminate\Database\Eloquent\Casts\AsUri;
+use Illuminate\Database\Eloquent\Casts\AsVector;
 use Pentacore\Typefinder\Attributes\TypefinderCast;
+use Pentacore\Typefinder\Renderers\TypeScriptRenderer;
 use Pentacore\Typefinder\TypefinderRegistry;
 use ReflectionAttribute;
 use ReflectionClass;
+use UnitEnum;
 
 class CastTypeResolver
 {
+    /**
+     * What an array or collection cast serialises to: a list, or an object
+     * for an associative value (`{"a": 1}`).
+     */
+    protected const string ARRAY_OR_RECORD = 'unknown[] | Record<string, unknown>';
+
     /** @var array<string, string> */
     protected const array BUILT_IN_MAP = [
         'string' => 'string',
@@ -40,13 +50,13 @@ class CastTypeResolver
         'immutable_date' => 'string',
         'custom_datetime' => 'string',
         'immutable_custom_datetime' => 'string',
-        'array' => 'unknown[]',
+        'array' => self::ARRAY_OR_RECORD,
         'object' => 'Record<string, unknown>',
-        'collection' => 'unknown[]',
+        'collection' => self::ARRAY_OR_RECORD,
         'json' => 'unknown',
         'encrypted' => 'string',
-        'encrypted:array' => 'unknown[]',
-        'encrypted:collection' => 'unknown[]',
+        'encrypted:array' => self::ARRAY_OR_RECORD,
+        'encrypted:collection' => self::ARRAY_OR_RECORD,
         'encrypted:object' => 'Record<string, unknown>',
         'encrypted:json' => 'unknown',
         'hashed' => 'string',
@@ -58,8 +68,11 @@ class CastTypeResolver
         AsEncryptedArrayObject::class => 'Record<string, unknown>',
         // Fluent serialises to a JSON object of its attributes, like ArrayObject.
         AsFluent::class => 'Record<string, unknown>',
-        AsCollection::class => 'unknown[]',
-        AsEncryptedCollection::class => 'unknown[]',
+        AsCollection::class => self::ARRAY_OR_RECORD,
+        AsEncryptedCollection::class => self::ARRAY_OR_RECORD,
+        AsVector::class => 'number[]',
+        AsBinary::class.':uuid' => 'string',
+        AsBinary::class.':ulid' => 'string',
         AsStringable::class => 'string',
         AsUri::class => 'string',
         AsHtmlString::class => 'string',
@@ -92,7 +105,7 @@ class CastTypeResolver
      *   3. #[TypefinderCast] attribute on the cast class
      *   4. Built-in name map (e.g. 'datetime')
      *   5. Built-in class map (e.g. AsCollection::class)
-     *   6. BackedEnum detection
+     *   6. BackedEnum detection (a pure enum: the union of its case names)
      *   7. AsEnumCollection / AsEnumArrayObject with an enum argument
      *   8. Parameterised casts ('decimal:2', 'datetime:Y-m-d',
      *      MyCast::class.':arg'): steps 1-6 retried with the part before
@@ -170,6 +183,18 @@ class CastTypeResolver
 
         if (is_subclass_of($cast, BackedEnum::class)) {
             return ['enum' => $cast];
+        }
+
+        // A pure enum serialises to its case name.
+        if (enum_exists($cast) && is_subclass_of($cast, UnitEnum::class)) {
+            if ($cast::cases() === []) {
+                return 'never';
+            }
+
+            return implode(' | ', array_map(
+                static fn (UnitEnum $case): string => TypeScriptRenderer::stringLiteral($case->name),
+                $cast::cases(),
+            ));
         }
 
         return null;
