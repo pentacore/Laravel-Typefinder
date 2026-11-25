@@ -209,7 +209,9 @@ Handy for `<select options={Object.values(PostStatus)}>` and similar runtime pat
 
 ### Form Requests
 
-Validation rules map to TypeScript types. `required` and `present` → non-optional; `nullable` → adds `| null`; `sometimes` (also next to `required` or `present`) and conditional `required_*` / `present_*` rules → optional. Fields without `required` or `present` are optional. `prohibited` → `never` (the key may only be missing or empty); the conditional `prohibited_if` / `prohibited_unless` keep the type of the key's other rules.
+Validation rules map to TypeScript types. `required` and `present` → non-optional; `nullable` → adds `| null`; `sometimes` (also next to `required` or `present`) and conditional `required_*` / `present_*` rules → optional. Fields without `required` or `present` are optional. `prohibited` and `missing` → `never` (the key may only be missing or empty); the conditional `prohibited_if` / `missing_if` / … keep the type of the key's other rules. `accepted` and `declined` make the key required and allow only the values they accept: `true | 'yes' | 'on' | 1 | '1' | 'true'` (and the `false | 'no' | …` mirror).
+
+A primitive rule (`string`, `integer`, `numeric`, `boolean`, `array`, `list`, `file`, `image`) decides the type wherever it sits in the list; a format rule (`digits`, `regex`, `email`, `date_format`, `mimes`, `extensions`, …) only when there is none, so `['digits:4', 'string']` is a `string`. Laravel's rule objects are typed like their string form: `Rule::date()`, `Rule::numeric()`, `Rule::email()`, `Rule::url()`, `Password::defaults()`, `File::image()`, …. `Rule::when()` is the union of both branches, optional unless both require the key; `Rule::forEach()` is called with no item value to read its rules. `rules()` is called through the container, so its parameters are injected; a request without `rules()` is `Record<string, never>`.
 
 ```typescript
 import type { PostStatus } from '../enums';
@@ -225,7 +227,7 @@ export type StorePostRequest = {
 
 `Rule::enum(PostStatus::class)` is the enum's type. Narrowed with `->only([...])` or `->except([...])` it is the same subset the rule accepts: `Extract<PostStatus, 'draft' | 'published'>` or `Exclude<PostStatus, 'archived'>`.
 
-`Rule::in([...])` and `in:a,b` give a union of the listed values: `'a' | 'b'`, or `1 | 2` on a numeric field (`integer`, `numeric`, …). On an `array` field they type the items: `('a' | 'b')[]`. Like `Rule::enum()`, they narrow the field wherever they sit in the rule list, so `['string', Rule::in([...])]` and `[Rule::in([...]), 'string']` give the same type.
+`Rule::in([...])` and `in:a,b` give a union of the listed values: `'a' | 'b'`, or `1 | 2` on a numeric field (`integer`, `numeric`, …). `Rule::in()` keeps the values' own types (`Rule::in([1, 2])` is `1 | 2`, `Rule::in([true, false])` is `boolean`, the cases of one backed enum are that enum narrowed with `Extract<>`). On an `array` field they type the items: `('a' | 'b')[]`. Like `Rule::enum()`, they narrow the field wherever they sit in the rule list, so `['string', Rule::in([...])]` and `[Rule::in([...]), 'string']` give the same type.
 
 Dotted rule names nest to any depth, and a `*` segment means "array of":
 
