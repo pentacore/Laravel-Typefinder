@@ -44,7 +44,9 @@ trait RendersResources
             return $this->assembleResourceFile($imports, "export type {$name} = {\n".implode("\n", $lines)."\n};\n");
         }
 
-        if ($shape['kind'] === 'phpdoc') {
+        // A type tree: documented (`phpdoc`), a collection's items
+        // (`collection`) or read from the literal keys of `toArray()` (`inferred`).
+        if (in_array($shape['kind'], ['phpdoc', 'collection', 'inferred'], true)) {
             return $this->renderPhpdocResource($resource, $allModels, $allEnums, $allResources);
         }
 

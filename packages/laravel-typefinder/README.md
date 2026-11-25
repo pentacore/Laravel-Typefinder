@@ -308,8 +308,9 @@ Classes extending `JsonResource`. The type comes from the first of these that ap
 1. **Explicit shape** via `#[TypefinderResource(shape: [...])]`.
 2. **Model extension** via `#[TypefinderResource(model: User::class, omit: [...], extend: [...])]` → `Omit<User, ...> & { ... }`.
 3. **PHPDoc array shape** on `toArray()` — `@return array{…}` (or `@phpstan-return` / `@psalm-return`, which take precedence), or one composed from documented helpers / a documented parent `toArray()` (see [Composed shapes](#composed-shapes)). Applies whether or not the name convention is on.
-4. **Name convention** — `UserResource` → `User` automatically, when `User` is one of the models typefinder generates (found under `models.paths` and not ignored). Models from other packages and models outside `models.paths` are never matched.
-5. Otherwise the resource is skipped with a warning.
+4. **Resource collection** — a `ResourceCollection` subclass that does not override `toArray()` is a list of the resource it collects, found as Laravel finds it: `#[Collects]`, `$collects`, or `UserCollection` → `User` / `UserResource` in the same namespace. `export type UserCollection = UserResource[];` (the `{ data: … }` envelope is left to the `Wrapped*` / `*Paginated*` helpers).
+5. **Name convention** — `UserResource` → `User` automatically, when `User` is one of the models typefinder generates (found under `models.paths` and not ignored). Models from other packages and models outside `models.paths` are never matched.
+6. Otherwise the resource is skipped with a warning.
 
 `#[TypefinderIgnore]` skips a resource before any of these run.
 
