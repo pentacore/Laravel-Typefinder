@@ -6,6 +6,7 @@ namespace Tests\Fixtures\Models;
 
 use App\Enums\PostStatus;
 use App\Http\Resources\UserResource;
+use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
 
 /**
@@ -15,6 +16,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property list<PostStatus>|null $description
  * @property string $title
  * @property UserResource $party_id
+ * @property list<User> $completed_at
  */
 final class DocumentedCastQuest extends Model
 {
@@ -25,5 +27,6 @@ final class DocumentedCastQuest extends Model
         'description' => 'json',
         'title' => 'string',
         'party_id' => 'array',
+        'completed_at' => 'array',
     ];
 }
