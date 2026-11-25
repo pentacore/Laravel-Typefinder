@@ -89,6 +89,9 @@ final class PhpDocTypeMapperTest extends TestCase
             'non-positive-int' => ['non-positive-int', $number],
             'non-zero-int' => ['non-zero-int', $number],
             'int range' => ['int<0, max>', $number],
+            'literal-int' => ['literal-int', $number],
+            'int-mask' => ['int-mask<1, 2>', $number],
+            'int-mask-of' => ['int-mask-of<1|2>', $number],
             'float' => ['float', $number],
             'double' => ['double', $number],
             'numeric' => ['numeric', self::ts('number | string')],
@@ -372,7 +375,8 @@ final class PhpDocTypeMapperTest extends TestCase
             'resource' => ['resource'],
             'conditional' => ['($x is int ? int : string)'],
             'value-of' => ['value-of<X>'],
-            'int-mask' => ['int-mask<1, 2>'],
+            'value-of a pure enum' => ['value-of<SomePureEnum>'],
+            'key-of a list type' => ['key-of<list<int>>'],
             'class constant' => ['Foo::BAR'],
             'callable signature' => ['callable(int): void'],
             'offset access' => ["Foo['bar']"],
@@ -387,6 +391,39 @@ final class PhpDocTypeMapperTest extends TestCase
         $this->assertSame(self::ts('unknown'), $this->map($type, 'field'));
         $this->assertCount(1, $this->warnings);
         $this->assertStringContainsString('"field" has unsupported type', $this->warnings[0]);
+    }
+
+    public function test_value_of_a_generated_backed_enum_is_the_enum(): void
+    {
+        $this->assertSame(['kind' => 'enum', 'fqcn' => PostStatus::class], $this->map('value-of<PostStatus>'));
+        $this->assertSame([], $this->warnings);
+    }
+
+    public function test_key_of_a_shape_is_the_union_of_its_keys(): void
+    {
+        $this->assertSame(
+            ['kind' => 'union', 'of' => [self::ts("'x'"), self::ts("'y-z'"), self::ts('3'), self::ts('4')]],
+            $this->map("key-of<array{x: int, 'y-z': int, 3: string, string}>"),
+        );
+        $this->assertSame([], $this->warnings);
+    }
+
+    public function test_value_of_a_shape_is_the_union_of_its_value_types(): void
+    {
+        $this->assertSame(
+            ['kind' => 'union', 'of' => [self::ts('number'), self::ts('string')]],
+            $this->map('value-of<array{x: int, y: string}>'),
+        );
+    }
+
+    public function test_key_of_an_alias_expands_it(): void
+    {
+        $scope = $this->scope(['Point' => ['type' => $this->parse('array{x: int, y: int}'), 'scope' => null]]);
+
+        $this->assertSame(
+            ['kind' => 'union', 'of' => [self::ts("'x'"), self::ts("'y'")]],
+            $this->phpDocTypeMapper->map($this->parse('key-of<Point>'), $scope, ''),
+        );
     }
 
     public function test_warning_paths_are_dot_joined(): void

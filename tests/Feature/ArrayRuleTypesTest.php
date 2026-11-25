@@ -128,7 +128,7 @@ final class ArrayRuleTypesTest extends TestCase
         $this->assertStringContainsString('  matrix?: ('.self::ARRAY_OR_RECORD.")[];\n", $output);
         $this->assertStringContainsString('    extra?: '.self::ARRAY_OR_RECORD.";\n", $output);
         $this->assertStringContainsString('    cells: '.self::ARRAY_OR_RECORD.";\n  }[];\n", $output);
-        $this->assertStringContainsString('  secret_confirmation?: '.self::ARRAY_OR_RECORD.";\n", $output);
+        $this->assertStringContainsString('  secret_confirmation: '.self::ARRAY_OR_RECORD.";\n", $output);
         $this->assertNoArrayMarker($output);
     }
 

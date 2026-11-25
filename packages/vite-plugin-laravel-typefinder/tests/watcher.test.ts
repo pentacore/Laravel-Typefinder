@@ -34,11 +34,20 @@ const HANDSHAKE: Handshake = {
     },
 };
 
-function spawnAndHandshake(child: ReturnType<typeof fakeChild>): Promise<Watcher> {
+const DONE: Omit<RegenResponse, 'id'> = {
+    type: 'regen.done',
+    duration_ms: 1,
+    changed: [],
+    warnings: [],
+    failed: [],
+};
+
+function spawnAndHandshake(child: ReturnType<typeof fakeChild>, regenTimeoutMs?: number): Promise<Watcher> {
     const promise = Watcher.spawn({
         command: 'php artisan typefinder:watch',
         cwd: '/tmp',
         startupTimeoutMs: 5_000,
+        regenTimeoutMs,
         spawnFn: () => child as unknown as ChildProcess,
     });
     child.stdout.write(JSON.stringify(HANDSHAKE) + '\n');
@@ -188,5 +197,90 @@ describe('Watcher.regen', () => {
         expect(watcher.dead).toBe(true);
 
         await expect(watcher.regen(['/foo.php'])).rejects.toThrow('watcher is dead');
+    });
+
+    it('keeps a queued full regen full when path regens are merged into it', async () => {
+        const child = fakeChild();
+        const stdinWrites: string[] = [];
+        child.stdin.write = (chunk: unknown) => {
+            stdinWrites.push(String(chunk));
+            return true;
+        };
+
+        const watcher = await spawnAndHandshake(child);
+
+        const p1 = watcher.regen(['/a.php']);
+        const p2 = watcher.regen([]);
+        const p3 = watcher.regen(['/b.php']);
+
+        const req1 = JSON.parse(stdinWrites[0]!);
+        child.stdout.write(JSON.stringify({ ...DONE, id: req1.id }) + '\n');
+        await p1;
+
+        const req2 = JSON.parse(stdinWrites[1]!);
+        expect(req2.paths).toEqual([]);
+
+        child.stdout.write(JSON.stringify({ ...DONE, id: req2.id }) + '\n');
+        await Promise.all([p2, p3]);
+    });
+
+    it('fails a regen that gets no answer within regenTimeoutMs and dispatches the queued one', async () => {
+        vi.useFakeTimers();
+        try {
+            const child = fakeChild();
+            const stdinWrites: string[] = [];
+            child.stdin.write = (chunk: unknown) => {
+                stdinWrites.push(String(chunk));
+                return true;
+            };
+
+            const watcher = await spawnAndHandshake(child, 1_000);
+
+            const p1 = watcher.regen(['/a.php']);
+            const p2 = watcher.regen(['/b.php']);
+            const p1Rejected = expect(p1).rejects.toThrow('regen timed out after 1000ms');
+
+            await vi.advanceTimersByTimeAsync(1_000);
+            await p1Rejected;
+
+            expect(stdinWrites).toHaveLength(2);
+            const req1 = JSON.parse(stdinWrites[0]!);
+            const req2 = JSON.parse(stdinWrites[1]!);
+            expect(req2.paths).toEqual(['/b.php']);
+
+            // The late answer to the timed-out request is dropped.
+            child.stdout.write(JSON.stringify({ ...DONE, id: req1.id, changed: ['late'] }) + '\n');
+            child.stdout.write(JSON.stringify({ ...DONE, id: req2.id, changed: ['B'] }) + '\n');
+            await vi.advanceTimersByTimeAsync(0);
+
+            expect((await p2).changed).toEqual(['B']);
+            expect(watcher.dead).toBe(false);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('does not time out a regen when regenTimeoutMs is 0', async () => {
+        vi.useFakeTimers();
+        try {
+            const child = fakeChild();
+            const stdinWrites: string[] = [];
+            child.stdin.write = (chunk: unknown) => {
+                stdinWrites.push(String(chunk));
+                return true;
+            };
+
+            const watcher = await spawnAndHandshake(child, 0);
+            const p1 = watcher.regen(['/a.php']);
+            await vi.advanceTimersByTimeAsync(10 * 60_000);
+
+            const req1 = JSON.parse(stdinWrites[0]!);
+            child.stdout.write(JSON.stringify({ ...DONE, id: req1.id }) + '\n');
+            await vi.advanceTimersByTimeAsync(0);
+
+            expect((await p1).type).toBe('regen.done');
+        } finally {
+            vi.useRealTimers();
+        }
     });
 });

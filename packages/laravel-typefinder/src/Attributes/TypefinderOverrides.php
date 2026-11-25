@@ -7,9 +7,14 @@ namespace Pentacore\Typefinder\Attributes;
 use Attribute;
 
 /**
- * Override or add fields on a generated type. Applies to models (affects the
- * read shape and every write-shape companion) and form requests (replaces the
- * inferred type for the matching top-level field).
+ * Override or add fields on a generated type. Applies to models and form
+ * requests (replaces the inferred type for the matching top-level field).
+ *
+ * On a model, a key that names a column or an appended attribute replaces
+ * its type (in the read shape and every write-shape companion); a key that
+ * names a relation replaces the relation's type (the field stays optional);
+ * any other key adds a read-only field to the read shape, such as a
+ * `withCount()` attribute (`posts_count`). `$hidden` / `$visible` still apply.
  *
  * Values may be literal TypeScript strings, model class-strings (resolved to
  * the matching generated model type), enum class-strings (same, resolved via
@@ -25,8 +30,9 @@ use Attribute;
  *
  * #[TypefinderOverrides([
  *     'metadata' => 'Record<string, string>',       // replace inferred type
- *     'full_title' => 'string',                     // virtual accessor
- *     'owner' => \App\Models\User::class,           // resolved to the generated User type
+ *     'full_title' => 'string',                     // added field
+ *     'comments_count' => 'number',                 // withCount() attribute
+ *     'owner' => \App\Models\User::class,           // relation, resolved to the generated User type
  * ])]
  * class Post extends \Illuminate\Database\Eloquent\Model {}
  * </pre>

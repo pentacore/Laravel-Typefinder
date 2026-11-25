@@ -37,6 +37,7 @@ use Pentacore\Typefinder\Extractors\ResourceExtractor;
 use Pentacore\Typefinder\Resolvers\CastTypeResolver;
 use Pentacore\Typefinder\Resolvers\ColumnTypeResolver;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Tests\Fixtures\Controllers\ChainedPropController;
 use Tests\TestCase;
 
 use function Orchestra\Testbench\workbench_path;
@@ -569,6 +570,14 @@ final class KeyDriftDetectorTest extends TestCase
         $this->assertSame([
             DriftingPageController::class.'::index(): prop "stats" of "Drift/Index" is optional or deferred in code but required in #[TypefinderPage] (add it to optional?)',
         ], $this->checkPage(DriftingPageController::class, 'index'));
+    }
+
+    public function test_deferred_prop_with_a_chained_call_declared_required(): void
+    {
+        $this->assertSame([
+            ChainedPropController::class.'::chained(): prop "stats" of "Drift/Chained" is optional or deferred in code but required in #[TypefinderPage] (add it to optional?)',
+            ChainedPropController::class.'::chained(): prop "feed" of "Drift/Chained" is optional or deferred in code but required in #[TypefinderPage] (add it to optional?)',
+        ], $this->checkPage(ChainedPropController::class, 'chained'));
     }
 
     public function test_render_in_a_helper_is_not_checked(): void
