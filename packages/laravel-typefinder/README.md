@@ -122,7 +122,7 @@ Choose one of two workflows. They differ in whether the generated files are comm
 
 Every run produces a single tree under `output_path` (default `resources/js/typefinder/`). The categories below are each gated by config — most are default-on, the ones that depend on optional packages are opt-in.
 
-Each type is named after its class's short name, so two classes with the same short name in one category (for example `Api\StoreUserRequest` and `Web\StoreUserRequest`) would produce the same file. The run fails with both class names instead; rename one, mark one `#[TypefinderIgnore]`, or narrow that category's `paths`. The same name in two different categories (a `Role` model and a `Role` enum) only warns, because the top-level `index.d.ts` then exports `Role` twice. Import it from its category barrel instead.
+Each type is named after its class's short name, so two classes with the same short name in one category (for example `Api\StoreUserRequest` and `Web\StoreUserRequest`) would produce the same file. The run fails with both class names instead; rename one, mark one `#[TypefinderIgnore]`, or narrow that category's `paths`. For form requests, [keyed paths](#same-name-requests-in-several-directories) emit both under prefixed names. The same name in two different categories (a `Role` model and a `Role` enum) only warns, because the top-level `index.d.ts` then exports `Role` twice. Import it from its category barrel instead.
 
 Every category has a barrel (`models/index.d.ts`, …) that re-exports every type of every file, so the companion types are importable from it too:
 
@@ -290,6 +290,21 @@ export type SetValueRequestQuery = {
 - A tagged key takes its whole top-level field along: tagging `filter` or `filter.status` puts all of `filter` in the query type.
 - A request without tagged keys gets no `{Name}Query` type. One with only tagged keys gets `Record<string, never>` as its request type.
 - `{Name}Query` lives in the request's file and is re-exported by the `requests` barrel, like the `{Model}Create` / `{Model}Update` companions of a model.
+
+#### Same-name requests in several directories
+
+Requests are named after their short name, so `Api\StoreUserRequest` and `Web\StoreUserRequest` collide and fail the run. Give their directories a string key in `requests.paths` and the key becomes a prefix of every request under that directory:
+
+```php
+'requests' => [
+    'paths' => [
+        'Api' => app_path('Http/Requests/Api'),
+        'Web' => app_path('Http/Requests/Web'),
+    ],
+],
+```
+
+This emits `requests/ApiStoreUserRequest.d.ts` (`ApiStoreUserRequest`, and `ApiStoreUserRequestQuery` and nested types named from it) and `requests/WebStoreUserRequest.d.ts`. A list entry keeps the short name, and keyed and list entries can be mixed; when directories nest, the innermost one decides. A key must be a valid TypeScript identifier.
 
 ### Pivots
 

@@ -85,6 +85,12 @@ return [
     |
     | Configuration for form request type generation.
     |
+    | A string key on a path is a type-name prefix for the requests under it,
+    | so requests with the same short name in different directories can both
+    | be emitted: ['Api' => app_path('Http/Requests/Api'), 'Web' => ...]
+    | emits ApiStoreUserRequest and WebStoreUserRequest. List entries keep
+    | the short name; keyed and list entries can be mixed.
+    |
     */
     'requests' => [
         'enabled' => true,

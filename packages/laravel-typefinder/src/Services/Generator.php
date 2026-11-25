@@ -549,10 +549,13 @@ final class Generator
 
         throw new \RuntimeException(sprintf(
             "Several %s would be emitted under the same type name:\n%s\n"
-            .'Rename one, mark it #[TypefinderIgnore], or narrow typefinder.%s.paths.',
+            .'Rename one, mark it #[TypefinderIgnore], or narrow typefinder.%s.paths.%s',
             $category,
             implode("\n", $lines),
             $category,
+            $category === 'requests'
+                ? " Or key the paths to prefix the type names: ['Api' => app_path('Http/Requests/Api'), 'Web' => app_path('Http/Requests/Web')]."
+                : '',
         ));
     }
 

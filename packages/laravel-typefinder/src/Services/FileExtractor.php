@@ -19,6 +19,7 @@ use Pentacore\Typefinder\Extractors\ResourceExtractor;
 use Pentacore\Typefinder\Resolvers\CastTypeResolver;
 use Pentacore\Typefinder\Resolvers\ColumnTypeResolver;
 use Pentacore\Typefinder\Resolvers\PhpDocShapeResolver;
+use Pentacore\Typefinder\Support\Categories;
 use Pentacore\Typefinder\Support\ClassDiscovery;
 use Pentacore\Typefinder\Support\ClassNameResolver;
 use Pentacore\Typefinder\Support\GeneratedClasses;
@@ -86,7 +87,7 @@ final class FileExtractor
         return match ($category) {
             'enums' => $this->enum($class),
             'models' => $this->model($class),
-            'requests' => $this->request($class),
+            'requests' => $this->request($class, Categories::prefix('requests', $file)),
             'resources' => $this->resource($class),
             'inertia' => $this->pages($class),
             'broadcasting' => $this->broadcast($class),
@@ -167,7 +168,7 @@ final class FileExtractor
     /**
      * @param  class-string  $class
      */
-    private function request(string $class): ?array
+    private function request(string $class, string $prefix): ?array
     {
         $this->requestExtractor ??= new RequestExtractor;
         if (! $this->requestExtractor->isEmittable($class)) {
@@ -176,6 +177,12 @@ final class FileExtractor
 
         $request = $this->requestExtractor->tryExtract($class, $this->skipped(...));
         array_map($this->warn, $request['warnings'] ?? []);
+
+        // A keyed path names its requests `{Prefix}{ShortName}` (#195). The
+        // file, the `Query` companion and nested types all follow the name.
+        if ($request !== null && $prefix !== '') {
+            $request['name'] = $prefix.$request['name'];
+        }
 
         return $request;
     }

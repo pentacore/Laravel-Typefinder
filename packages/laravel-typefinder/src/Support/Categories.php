@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Pentacore\Typefinder\Support;
 
+use InvalidArgumentException;
+
 /**
  * The source categories of `config('typefinder')`: which exist, which are
  * enabled and which directories each one reads. The generator, the watch
@@ -42,7 +44,8 @@ final class Categories
     }
 
     /**
-     * The directories a category reads.
+     * The directories a category reads, as a list: string keys (type-name
+     * prefixes, see {@see self::prefix()}) are dropped.
      *
      * @return list<string> real paths
      */
@@ -52,6 +55,39 @@ final class Categories
             static fn (mixed $dir): string => self::realPath((string) $dir),
             array_values((array) config(sprintf('typefinder.%s.paths', $category), [])),
         );
+    }
+
+    /**
+     * The type-name prefix of a file: the string key its directory has in
+     * the category's paths (`['Api' => app_path('Http/Requests/Api')]`), or
+     * '' when that key is a list index. When several directories hold the
+     * file, the innermost one decides.
+     *
+     * @throws InvalidArgumentException when the key is not a valid identifier
+     */
+    public static function prefix(string $category, string $file): string
+    {
+        $prefix = '';
+        $depth = -1;
+        foreach ((array) config(sprintf('typefinder.%s.paths', $category), []) as $key => $dir) {
+            $dir = self::realPath((string) $dir);
+            if (! self::contains($dir, $file) || strlen($dir) <= $depth) {
+                continue;
+            }
+
+            $depth = strlen($dir);
+            $prefix = is_string($key) ? $key : '';
+        }
+
+        if ($prefix !== '' && preg_match('/^[A-Za-z_$][\w$]*$/', $prefix) !== 1) {
+            throw new InvalidArgumentException(sprintf(
+                'typefinder.%s.paths: the key "%s" is a type-name prefix and must be a valid TypeScript identifier.',
+                $category,
+                $prefix,
+            ));
+        }
+
+        return $prefix;
     }
 
     /**
