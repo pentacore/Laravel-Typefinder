@@ -37,4 +37,26 @@ describe('compileMatcher', () => {
         const match = compileMatcher(['/app/Models']);
         expect(match('\\app\\Models\\User.php')).toBe(true);
     });
+
+    it.each([
+        '/home/u/My Project (old)',
+        '/home/u/a{b,c}',
+        '/home/u/x+(y)',
+        '/home/u/[brackets]',
+        '/home/u/star*dir',
+    ])('matches files under a directory with glob characters: %s', (dir) => {
+        const match = compileMatcher([`${dir}/app/Models`]);
+        expect(match(`${dir}/app/Models/User.php`)).toBe(true);
+        expect(match(`${dir}/app/Other/User.php`)).toBe(false);
+    });
+
+    it('does not match a sibling directory sharing the prefix', () => {
+        const match = compileMatcher(['/app/Models']);
+        expect(match('/app/ModelsExtra/User.php')).toBe(false);
+    });
+
+    it('accepts watched directories with a trailing slash', () => {
+        const match = compileMatcher(['/app/Models/']);
+        expect(match('/app/Models/User.php')).toBe(true);
+    });
 });

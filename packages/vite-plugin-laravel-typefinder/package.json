@@ -32,13 +32,12 @@
             "import": "./dist/index.js"
         }
     },
-    "dependencies": {
-        "picomatch": "^4.0.7"
+    "peerDependencies": {
+        "vite": "^6.0.0 || ^7.0.0 || ^8.0.0"
     },
     "devDependencies": {
         "@eslint/js": "^10.0.1",
         "@types/node": "^24.19.1",
-        "@types/picomatch": "^4.0.3",
         "@vitest/coverage-v8": "^5.1.0",
         "eslint": "^10.15.0",
         "typescript": "^6.0.3",
