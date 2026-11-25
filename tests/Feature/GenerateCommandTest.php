@@ -390,6 +390,81 @@ final class GenerateCommandTest extends TestCase
         }
     }
 
+    public function test_json_counts_are_the_generated_types_not_the_changed_files(): void
+    {
+        Artisan::call('typefinder:generate', ['--json' => true]);
+        $first = json_decode(Artisan::output(), true);
+
+        File::put($this->outputPath.'/models/User.d.ts', '// stale');
+        Artisan::call('typefinder:generate', ['--json' => true]);
+        $second = json_decode(Artisan::output(), true);
+
+        $this->assertGreaterThan(1, $second['counts']['models']);
+        $this->assertSame($first['counts'], $second['counts']);
+        $this->assertSame([['path' => 'models/User.d.ts', 'written' => true, 'removed' => false]], $second['files']);
+    }
+
+    public function test_json_counts_are_an_object_when_nothing_is_generated(): void
+    {
+        $empty = sys_get_temp_dir().'/typefinder-empty-'.uniqid();
+        config([
+            'typefinder.models.paths' => [$empty],
+            'typefinder.enums.paths' => [$empty],
+            'typefinder.requests.paths' => [$empty],
+            'typefinder.resources.paths' => [$empty],
+        ]);
+
+        Artisan::call('typefinder:generate', ['--json' => true]);
+
+        $this->assertStringContainsString('"counts":{}', Artisan::output());
+    }
+
+    public function test_json_lists_the_files_a_run_removed(): void
+    {
+        Artisan::call('typefinder:generate', ['--json' => true]);
+
+        config(['typefinder.enums.enabled' => false]);
+        Artisan::call('typefinder:generate', ['--json' => true]);
+        $decoded = json_decode(Artisan::output(), true);
+
+        $this->assertContains(['path' => 'enums/index.d.ts', 'written' => false, 'removed' => true], $decoded['files']);
+        $this->assertArrayNotHasKey('enums', $decoded['counts']);
+    }
+
+    public function test_text_mode_prints_the_number_of_generated_types(): void
+    {
+        $this->artisan('typefinder:generate')->assertSuccessful();
+
+        $models = count(glob($this->outputPath.'/models/*.d.ts') ?: []) - 1;
+
+        $this->artisan('typefinder:generate')
+            ->expectsOutputToContain(sprintf('Generated %d model type(s)', $models))
+            ->assertSuccessful();
+    }
+
+    public function test_gitignore_is_left_alone_for_an_output_path_outside_the_project(): void
+    {
+        $gitignore = base_path('.gitignore');
+        $original = File::exists($gitignore) ? File::get($gitignore) : null;
+        $outputPath = base_path('../typefinder-outside-'.uniqid());
+
+        try {
+            config(['typefinder.output_path' => $outputPath, 'typefinder.gitignore_generated' => true]);
+            File::put($gitignore, "/vendor\n");
+
+            $this->artisan('typefinder:generate')->assertSuccessful();
+
+            $this->assertSame("/vendor\n", File::get($gitignore));
+        } finally {
+            File::deleteDirectory($outputPath);
+            if ($original === null) {
+                File::delete($gitignore);
+            } else {
+                File::put($gitignore, $original);
+            }
+        }
+    }
+
     /**
      * A model in the workbench models path that throws when extracted.
      */

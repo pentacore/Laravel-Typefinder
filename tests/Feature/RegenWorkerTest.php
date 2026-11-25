@@ -176,6 +176,36 @@ final class RegenWorkerTest extends TestCase
         $this->assertSame(['type' => 'regen.error', 'id' => 'r1', 'message' => 'the regen worker stopped without an answer (exit code 3)'], $answer);
     }
 
+    public function test_a_fork_that_does_not_answer_in_time_is_stopped(): void
+    {
+        $this->requiresFork();
+        $this->writeEnum('Level', ['one'], prelude: 'sleep(30);');
+        $this->autoload();
+
+        $startedAt = microtime(true);
+        $answer = $this->worker(timeout: 0.5)->isolated('r1', []);
+
+        $this->assertLessThan(10, microtime(true) - $startedAt);
+        $this->assertSame('regen.error', $answer['type']);
+        $this->assertSame('r1', $answer['id']);
+        $this->assertStringContainsString('did not answer within 0.5 seconds', $answer['message']);
+    }
+
+    public function test_a_new_process_that_does_not_answer_in_time_is_stopped(): void
+    {
+        $enum = $this->writeEnum('Level', ['one']);
+        require $enum;
+        $worker = $this->worker([PHP_BINARY, '-r', 'sleep(30);'], timeout: 0.5);
+
+        $this->writeEnum('Level', ['one', 'two']);
+        $startedAt = microtime(true);
+        $answer = $worker->isolated('r1', [$enum]);
+
+        $this->assertLessThan(10, microtime(true) - $startedAt);
+        $this->assertSame('regen.error', $answer['type']);
+        $this->assertStringContainsString('did not answer within 0.5 seconds', $answer['message']);
+    }
+
     public function test_database_connections_are_closed_before_forking(): void
     {
         $this->requiresFork();
@@ -227,12 +257,13 @@ final class RegenWorkerTest extends TestCase
     /**
      * @param  ?list<string>  $command
      */
-    private function worker(?array $command = null): RegenWorker
+    private function worker(?array $command = null, ?float $timeout = null): RegenWorker
     {
         return new RegenWorker(
             app(Generator::class),
             $this->stderr,
             $command ?? [PHP_BINARY, dirname(__DIR__, 2).'/vendor/bin/testbench', 'typefinder:watch', '--in-process'],
+            $timeout,
         );
     }
 

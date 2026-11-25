@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Pentacore\Typefinder\Support;
 
+use Composer\Autoload\ClassLoader;
+use ReflectionClass;
 use RuntimeException;
 use Symfony\Component\Finder\Finder;
 
@@ -76,5 +78,51 @@ final class ClassDiscovery
         }
 
         return $classes;
+    }
+
+    /**
+     * The files a class's own file builds on: those of its parent classes
+     * and of the traits it and they use. Composer packages are left out:
+     * they change only with composer.lock, which the cache key covers.
+     *
+     * @param  class-string  $class
+     * @return list<string> real paths, without the class's own file
+     */
+    public static function dependencies(string $class): array
+    {
+        $reflection = new ReflectionClass($class);
+        $own = $reflection->getFileName();
+        $vendor = dirname((string) new ReflectionClass(ClassLoader::class)->getFileName(), 2).DIRECTORY_SEPARATOR;
+
+        $files = [];
+        $pending = [$reflection];
+        $seen = [];
+
+        while (($current = array_pop($pending)) !== null) {
+            if (isset($seen[$current->getName()])) {
+                continue;
+            }
+
+            $seen[$current->getName()] = true;
+
+            $file = $current->getFileName();
+            if ($file !== false && $file !== $own && ! str_starts_with($file, $vendor) && is_file($file)) {
+                $files[(string) realpath($file)] = true;
+            }
+
+            $parent = $current->getParentClass();
+            if ($parent !== false) {
+                $pending[] = $parent;
+            }
+
+            foreach ($current->getTraits() as $trait) {
+                $pending[] = $trait;
+            }
+        }
+
+        $files = array_keys($files);
+        sort($files);
+
+        return $files;
     }
 }
