@@ -4,13 +4,7 @@ parameters:
 			message: '#^Access to an undefined property PhpParser\\Node\\Expr\\CallLike\:\:\$args\.$#'
 			identifier: property.notFound
 			count: 2
-			path: packages/laravel-typefinder/src/Analysis/KeyDriftDetector.php
-
-		-
-			message: '#^Strict comparison using \!\=\= between non\-empty\-list\<non\-falsy\-string\> and array\{\} will always evaluate to true\.$#'
-			identifier: notIdentical.alwaysTrue
-			count: 4
-			path: packages/laravel-typefinder/src/Analysis/KeyDriftDetector.php
+			path: packages/laravel-typefinder/src/Analysis/PageDrift.php
 
 		-
 			message: '#^Access to an undefined property PhpParser\\Node\:\:\$name\.$#'
@@ -25,6 +19,24 @@ parameters:
 			path: packages/laravel-typefinder/src/Analysis/QueryRuleKeys.php
 
 		-
+			message: '#^Parameter \#1 \$read of static method Pentacore\\Typefinder\\Analysis\\RequestStateBranches\:\:describe\(\) expects PhpParser\\Node\\Expr, PhpParser\\Node given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/laravel-typefinder/src/Analysis/RequestStateBranches.php
+
+		-
+			message: '#^Offset ''optional'' on array\{name\: string\} in empty\(\) does not exist\.$#'
+			identifier: empty.offset
+			count: 1
+			path: packages/laravel-typefinder/src/Analysis/ResourceDrift.php
+
+		-
+			message: '#^Strict comparison using \!\=\= between non\-empty\-list\<non\-falsy\-string\> and array\{\} will always evaluate to true\.$#'
+			identifier: notIdentical.alwaysTrue
+			count: 4
+			path: packages/laravel-typefinder/src/Analysis/ResourceDrift.php
+
+		-
 			message: '#^Call to method Pentacore\\Typefinder\\Analysis\\ReturnedArrayReader\:\:isThisCall\(\) with PhpParser\\Node\\Expr and ''mergeUnless'' will always evaluate to false\.$#'
 			identifier: method.impossibleType
 			count: 2
@@ -35,12 +47,6 @@ parameters:
 			identifier: method.impossibleType
 			count: 2
 			path: packages/laravel-typefinder/src/Analysis/ReturnedArrayReader.php
-
-		-
-			message: '#^Variable \$outputPath on left side of \?\? always exists and is not nullable\.$#'
-			identifier: nullCoalesce.variable
-			count: 1
-			path: packages/laravel-typefinder/src/Commands/GenerateCommand.php
 
 		-
 			message: '#^Call to function is_string\(\) with \*NEVER\* will always evaluate to true\.$#'
@@ -91,8 +97,26 @@ parameters:
 			path: packages/laravel-typefinder/src/Extractors/ModelExtractor.php
 
 		-
+			message: '#^Offset ''type'' on array\{name\: string, schema\: string, schema_qualified_name\: string, type\: string, category\: string, implicit\: bool\} on left side of \?\? always exists and is not nullable\.$#'
+			identifier: nullCoalesce.offset
+			count: 1
+			path: packages/laravel-typefinder/src/Extractors/ModelExtractor.php
+
+		-
+			message: '#^Parameter \#1 \$model of method Pentacore\\Typefinder\\Resolvers\\ModelPropertyDocReader\:\:read\(\) expects ReflectionClass\<object\>, ReflectionClass\<Illuminate\\Database\\Eloquent\\Model\> given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/laravel-typefinder/src/Extractors/ModelExtractor.php
+
+		-
 			message: '#^Parameter \#1 \$relation of method Pentacore\\Typefinder\\Extractors\\ModelExtractor\:\:extractPivotInfo\(\) expects Illuminate\\Database\\Eloquent\\Relations\\BelongsToMany, Illuminate\\Database\\Eloquent\\Relations\\Relation given\.$#'
 			identifier: argument.type
+			count: 1
+			path: packages/laravel-typefinder/src/Extractors/ModelExtractor.php
+
+		-
+			message: '#^Strict comparison using \!\=\= between ''pivot'' and ''pivot'' will always evaluate to false\.$#'
+			identifier: notIdentical.alwaysFalse
 			count: 1
 			path: packages/laravel-typefinder/src/Extractors/ModelExtractor.php
 
@@ -103,26 +127,32 @@ parameters:
 			path: packages/laravel-typefinder/src/Extractors/RequestExtractor.php
 
 		-
-			message: '#^Call to an undefined method Illuminate\\Foundation\\Http\\FormRequest\:\:rules\(\)\.$#'
-			identifier: method.notFound
-			count: 2
-			path: packages/laravel-typefinder/src/Extractors/RequestExtractor.php
-
-		-
-			message: '#^Empty array passed to foreach\.$#'
-			identifier: foreach.emptyArray
-			count: 2
-			path: packages/laravel-typefinder/src/Extractors/RequestExtractor.php
-
-		-
-			message: '#^Offset \*NEVER\* on array\{\} in isset\(\) does not exist\.$#'
-			identifier: isset.offset
+			message: '#^Call to function in_array\(\) with arguments true, array\{\} and true will always evaluate to false\.$#'
+			identifier: function.impossibleType
 			count: 1
 			path: packages/laravel-typefinder/src/Extractors/RequestExtractor.php
 
 		-
-			message: '#^Offset string on array\{\} on left side of \?\?\= does not exist\.$#'
+			message: '#^Offset ''nullableItems'' on array\{type\: mixed, children\: list\<array\>, arrayDepth\?\: int\} on left side of \?\? does not exist\.$#'
 			identifier: nullCoalesce.offset
+			count: 1
+			path: packages/laravel-typefinder/src/Extractors/RequestExtractor.php
+
+		-
+			message: '#^Offset ''nullableItems'' on array\{type\: mixed, children\?\: list\<array\>, arrayDepth\?\: int\} on left side of \?\? does not exist\.$#'
+			identifier: nullCoalesce.offset
+			count: 1
+			path: packages/laravel-typefinder/src/Extractors/RequestExtractor.php
+
+		-
+			message: '#^Offset ''override'' on array\{rules\: list\<mixed\>\|null, children\: array\<array\>\} in isset\(\) does not exist\.$#'
+			identifier: isset.offset
+			count: 2
+			path: packages/laravel-typefinder/src/Extractors/RequestExtractor.php
+
+		-
+			message: '#^Parameter \#1 \$request of static method Pentacore\\Typefinder\\Analysis\\RequestStateBranches\:\:in\(\) expects ReflectionClass\<object\>, ReflectionClass\<Illuminate\\Foundation\\Http\\FormRequest\> given\.$#'
+			identifier: argument.type
 			count: 1
 			path: packages/laravel-typefinder/src/Extractors/RequestExtractor.php
 
@@ -133,10 +163,16 @@ parameters:
 			path: packages/laravel-typefinder/src/Extractors/RequestExtractor.php
 
 		-
-			message: '#^Strict comparison using \=\=\= between \*NEVER\* and ''\*'' will always evaluate to false\.$#'
-			identifier: identical.alwaysFalse
+			message: '#^Parameter \#1 \$class of method Pentacore\\Typefinder\\Extractors\\ResourceExtractor\:\:collectedResource\(\) expects ReflectionClass\<object\>, ReflectionClass\<Illuminate\\Http\\Resources\\Json\\JsonResource\> given\.$#'
+			identifier: argument.type
 			count: 1
-			path: packages/laravel-typefinder/src/Extractors/RequestExtractor.php
+			path: packages/laravel-typefinder/src/Extractors/ResourceExtractor.php
+
+		-
+			message: '#^Parameter \#1 \$resource of method Pentacore\\Typefinder\\Resolvers\\LiteralShapeResolver\:\:resolve\(\) expects ReflectionClass\<object\>, ReflectionClass\<Illuminate\\Http\\Resources\\Json\\JsonResource\> given\.$#'
+			identifier: argument.type
+			count: 1
+			path: packages/laravel-typefinder/src/Extractors/ResourceExtractor.php
 
 		-
 			message: '#^Parameter \#1 \$resource of method Pentacore\\Typefinder\\Resolvers\\PhpDocShapeResolver\:\:resolve\(\) expects ReflectionClass\<object\>, ReflectionClass\<Illuminate\\Http\\Resources\\Json\\JsonResource\> given\.$#'
@@ -169,9 +205,27 @@ parameters:
 			path: packages/laravel-typefinder/src/Renderers/TypeScriptRenderer.php
 
 		-
+			message: '#^Parameter &\$imports by\-ref type of method Pentacore\\Typefinder\\Renderers\\TypeScriptRenderer\:\:resolveTypeString\(\) expects list\<string\>, array given\.$#'
+			identifier: parameterByRef.type
+			count: 1
+			path: packages/laravel-typefinder/src/Renderers/TypeScriptRenderer.php
+
+		-
 			message: '#^Expression on left side of \?\? is not nullable\.$#'
 			identifier: nullCoalesce.expr
-			count: 2
+			count: 1
+			path: packages/laravel-typefinder/src/Resolvers/PhpDocReader.php
+
+		-
+			message: '#^Using nullsafe method call on non\-nullable type PHPStan\\PhpDocParser\\Parser\\ParserException\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: packages/laravel-typefinder/src/Resolvers/PhpDocReader.php
+
+		-
+			message: '#^Expression on left side of \?\? is not nullable\.$#'
+			identifier: nullCoalesce.expr
+			count: 1
 			path: packages/laravel-typefinder/src/Resolvers/PhpDocShapeResolver.php
 
 		-
@@ -187,13 +241,13 @@ parameters:
 			path: packages/laravel-typefinder/src/Resolvers/PhpDocShapeResolver.php
 
 		-
-			message: '#^Using nullsafe method call on non\-nullable type PHPStan\\PhpDocParser\\Parser\\ParserException\. Use \-\> instead\.$#'
-			identifier: nullsafe.neverNull
+			message: '#^Parameter \#1 \$array \(list\<mixed\>\) of array_values is already a list, call has no effect\.$#'
+			identifier: arrayValues.list
 			count: 1
-			path: packages/laravel-typefinder/src/Resolvers/PhpDocShapeResolver.php
+			path: packages/laravel-typefinder/src/Services/FileExtractor.php
 
 		-
 			message: '#^Parameter \#1 \$array \(list\<mixed\>\) of array_values is already a list, call has no effect\.$#'
 			identifier: arrayValues.list
 			count: 1
-			path: packages/laravel-typefinder/src/Services/FileExtractor.php
+			path: packages/laravel-typefinder/src/Services/Generator.php
