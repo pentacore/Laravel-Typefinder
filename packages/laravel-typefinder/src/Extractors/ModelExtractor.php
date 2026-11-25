@@ -19,7 +19,7 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Database\Eloquent\Relations\MorphToMany;
 use Illuminate\Database\Eloquent\Relations\Pivot;
 use Illuminate\Database\Eloquent\Relations\Relation;
-use Illuminate\Support\Facades\Schema;
+use Illuminate\Database\Schema\Builder;
 use Illuminate\Support\Str;
 use Pentacore\Typefinder\Attributes\TypefinderIgnore;
 use Pentacore\Typefinder\Attributes\TypefinderOverrides;
@@ -31,6 +31,7 @@ use ReflectionAttribute;
 use ReflectionClass;
 use ReflectionMethod;
 use ReflectionNamedType;
+use Throwable;
 
 class ModelExtractor
 {
@@ -43,6 +44,9 @@ class ModelExtractor
         'true' => 'true',
         'false' => 'false',
     ];
+
+    /** @var array<string, list<string>> */
+    private array $enumTypesByConnection = [];
 
     public function __construct(
         protected ColumnTypeResolver $columnTypeResolver,
@@ -111,7 +115,23 @@ class ModelExtractor
      */
     protected function extractColumns(Model $model, string $table, ?string $modelClass = null): array
     {
-        $schemaColumns = Schema::getColumns($table);
+        // The model's own connection: a model on a non-default `$connection`
+        // has its table there.
+        $connection = $model->getConnection();
+        $schemaBuilder = $connection->getSchemaBuilder();
+        $driver = $connection->getDriverName();
+        $schemaColumns = $schemaBuilder->getColumns($table);
+
+        if ($schemaColumns === [] && ! $schemaBuilder->hasTable($table)) {
+            $this->warn(sprintf(
+                '%s: table "%s" not found on connection "%s" — the model type has no columns. Run the migrations before generating.',
+                $modelClass ?? $model::class,
+                $table,
+                $connection->getName(),
+            ));
+        }
+
+        $enumTypes = $this->enumTypes($schemaBuilder, $driver);
         $casts = $model->getCasts();
         $overrides = $this->getTypeOverrides($model);
         $hidden = $model->getHidden();
@@ -179,8 +199,8 @@ class ModelExtractor
             }
 
             // Priority 3: DB column type
-            $resolved = $this->columnTypeResolver->resolve($schemaColumn['type_name'], false);
-            if ($resolved === 'unknown' && $this->onWarn !== null) {
+            $resolved = $this->columnTypeResolver->resolve($schemaColumn['type_name'], false, $driver, $enumTypes);
+            if (! $this->columnTypeResolver->recognises($schemaColumn['type_name'], $driver, $enumTypes) && $this->onWarn !== null) {
                 ($this->onWarn)(sprintf(
                     "%s.%s: column type '%s' not recognised — emitted as `unknown`. Add a #[TypefinderOverrides] entry or open an issue if this is a common DB type.",
                     $modelClass ?? $model::class,
@@ -193,6 +213,42 @@ class ModelExtractor
         }
 
         return $columns;
+    }
+
+    protected function warn(string $message): void
+    {
+        if ($this->onWarn !== null) {
+            ($this->onWarn)($message);
+        }
+    }
+
+    /**
+     * The user-defined enum types of a PostgreSQL database, which a column
+     * names by its own type name. Read once per connection.
+     *
+     * @return list<string>
+     */
+    protected function enumTypes(Builder $schemaBuilder, string $driver): array
+    {
+        if ($driver !== 'pgsql') {
+            return [];
+        }
+
+        $connectionName = (string) $schemaBuilder->getConnection()->getName();
+        if (! isset($this->enumTypesByConnection[$connectionName])) {
+            try {
+                $types = $schemaBuilder->getTypes();
+            } catch (Throwable) {
+                $types = [];
+            }
+
+            $this->enumTypesByConnection[$connectionName] = array_values(array_map(
+                fn (array $type): string => (string) $type['name'],
+                array_filter($types, fn (array $type): bool => ($type['type'] ?? null) === 'enum'),
+            ));
+        }
+
+        return $this->enumTypesByConnection[$connectionName];
     }
 
     /**
@@ -396,7 +452,7 @@ class ModelExtractor
     {
         try {
             $relation = $reflectionMethod->invoke($model);
-        } catch (\Throwable) {
+        } catch (Throwable) {
             return null;
         }
 

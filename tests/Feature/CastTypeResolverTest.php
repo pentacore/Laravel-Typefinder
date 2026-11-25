@@ -52,14 +52,14 @@ final class CastTypeResolverTest extends TestCase
         $this->assertSame('number', $this->castTypeResolver->resolve('float'));
         $this->assertSame('number', $this->castTypeResolver->resolve('real'));
         $this->assertSame('number', $this->castTypeResolver->resolve('double'));
-        $this->assertSame('number', $this->castTypeResolver->resolve('decimal'));
+        $this->assertSame('string', $this->castTypeResolver->resolve('decimal'));
     }
 
     public function test_built_in_date_casts(): void
     {
         $this->assertSame('string', $this->castTypeResolver->resolve('datetime'));
         $this->assertSame('string', $this->castTypeResolver->resolve('date'));
-        $this->assertSame('string', $this->castTypeResolver->resolve('timestamp'));
+        $this->assertSame('number', $this->castTypeResolver->resolve('timestamp'));
         $this->assertSame('string', $this->castTypeResolver->resolve('immutable_datetime'));
         $this->assertSame('string', $this->castTypeResolver->resolve('immutable_date'));
     }
@@ -131,7 +131,7 @@ final class CastTypeResolverTest extends TestCase
 
     public function test_parameterised_built_in_casts_resolve_by_base_name(): void
     {
-        $this->assertSame('number', $this->castTypeResolver->resolveOrNull('decimal:2'));
+        $this->assertSame('string', $this->castTypeResolver->resolveOrNull('decimal:2'));
         $this->assertSame('string', $this->castTypeResolver->resolveOrNull('datetime:Y-m-d'));
         $this->assertSame('string', $this->castTypeResolver->resolveOrNull('date:Y-m-d'));
         $this->assertSame('string', $this->castTypeResolver->resolveOrNull('immutable_datetime:Y-m-d H:i'));

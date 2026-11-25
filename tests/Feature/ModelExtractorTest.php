@@ -158,10 +158,10 @@ final class ModelExtractorTest extends TestCase
         $shapeCol = $this->findColumn($result, 'shape');
         $this->assertSame('unknown', $shapeCol['type']);
 
-        $this->assertCount(1, $warnings, 'expected exactly one warning for the geometry column');
+        $this->assertCount(1, $warnings, 'expected exactly one warning for the cube column');
         $this->assertStringContainsString('QuirkyThing', $warnings[0]);
         $this->assertStringContainsString('shape', $warnings[0]);
-        $this->assertStringContainsString('geometry', $warnings[0]);
+        $this->assertStringContainsString('cube', $warnings[0]);
     }
 
     public function test_unknown_cast_emits_warning(): void
@@ -220,7 +220,7 @@ final class ModelExtractorTest extends TestCase
         $warnings = [];
         $result = $this->warningExtractor($warnings)->extract(ParameterisedCastQuest::class);
 
-        $this->assertSame('number', $this->findColumn($result, 'party_id')['type']);
+        $this->assertSame('string', $this->findColumn($result, 'party_id')['type']);
         $this->assertSame('string', $this->findColumn($result, 'completed_at')['type']);
         $this->assertSame('{ amount: number; currency: string }', $this->findColumn($result, 'rewards')['type']);
         $this->assertSame([], $warnings);
