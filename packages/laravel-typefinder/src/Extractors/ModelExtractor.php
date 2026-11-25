@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\HasOneThrough;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\Relations\MorphOne;
+use Illuminate\Database\Eloquent\Relations\MorphOneOrMany;
 use Illuminate\Database\Eloquent\Relations\MorphPivot;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Database\Eloquent\Relations\MorphToMany;
@@ -421,6 +422,12 @@ class ModelExtractor
             $relation instanceof BelongsToMany, $relation instanceof MorphToMany => 'manyWithPivot',
             default => 'unknown',
         };
+
+        // The morph type column pairs a morphTo with the morphOne / morphMany
+        // relations that invert it: `subject_type` on both sides.
+        if ($relation instanceof MorphTo || $relation instanceof MorphOneOrMany) {
+            $result['morphType'] = $relation->getMorphType();
+        }
 
         // Extract pivot information for belongsToMany and morphToMany
         if ($result['type'] === 'manyWithPivot') {

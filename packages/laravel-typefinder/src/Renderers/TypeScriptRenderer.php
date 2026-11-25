@@ -654,7 +654,7 @@ TS;
                 return sprintf('  %s?: (%s & { pivot: %s })[];', $name, $relatedName, $pivotName);
 
             case 'morphTo':
-                return sprintf('  %s?: T | null;', $name);
+                return sprintf('  %s?: %s | null;', $name, $rel['generic'] ?? 'T');
 
             default:
                 return null;
