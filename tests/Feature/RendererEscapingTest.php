@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Models\Post;
 use App\Models\QuirkyThing;
 use Pentacore\Typefinder\Renderers\TypeScriptRenderer;
 use Tests\TestCase;
@@ -25,7 +26,7 @@ final class RendererEscapingTest extends TestCase
     public function test_string_literal_escapes_quotes_backslashes_and_line_breaks(): void
     {
         $this->assertSame("'it\\'s'", TypeScriptRenderer::stringLiteral("it's"));
-        $this->assertSame("'App\\\\Models\\\\Post'", TypeScriptRenderer::stringLiteral(\App\Models\Post::class));
+        $this->assertSame("'App\\\\Models\\\\Post'", TypeScriptRenderer::stringLiteral(Post::class));
         $this->assertSame("'a\\nb'", TypeScriptRenderer::stringLiteral("a\nb"));
     }
 
@@ -136,7 +137,7 @@ final class RendererEscapingTest extends TestCase
         $output = $this->typeScriptRenderer->renderRequest([
             'name' => 'StoreThing',
             'fqcn' => 'App\\Http\\Requests\\StoreThing',
-            'fields' => [['name' => 'surname', 'type' => ['in' => ["O'Brien", \App\Models\Post::class]], 'nullable' => false, 'required' => true]],
+            'fields' => [['name' => 'surname', 'type' => ['in' => ["O'Brien", Post::class]], 'nullable' => false, 'required' => true]],
         ], []);
 
         $this->assertStringContainsString("surname: 'O\\'Brien' | 'App\\\\Models\\\\Post';", $output);
