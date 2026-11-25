@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use App\Enums\PostStatus;
+use App\Models\Tag;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 use Pentacore\Typefinder\Extractors\ModelExtractor;
@@ -59,7 +60,7 @@ final class PivotSchemaTest extends TestCase
     public function test_the_relation_uses_the_pivot_accessor(): void
     {
         $model = new ModelExtractor(new ColumnTypeResolver, new CastTypeResolver)->extract(Thing::class);
-        $output = new TypeScriptRenderer()->renderModel($model, [], [$model]);
+        $output = new TypeScriptRenderer()->renderModel($model, [], [$model, ['name' => 'Tag', 'fqcn' => Tag::class]]);
 
         $this->assertStringContainsString('  labels?: (Tag & { tagging: LabelThingPivot })[];', $output);
     }
