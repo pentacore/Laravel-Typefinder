@@ -322,18 +322,10 @@ class ModelExtractor
         }
 
         $connectionName = (string) $schemaBuilder->getConnection()->getName();
-        if (! isset($this->enumTypesByConnection[$connectionName])) {
-            try {
-                $types = $schemaBuilder->getTypes();
-            } catch (Throwable) {
-                $types = [];
-            }
-
-            $this->enumTypesByConnection[$connectionName] = array_values(array_map(
-                fn (array $type): string => (string) $type['name'],
-                array_filter($types, fn (array $type): bool => ($type['type'] ?? null) === 'enum'),
-            ));
-        }
+        $this->enumTypesByConnection[$connectionName] ??= array_values(array_map(
+            fn (array $type): string => (string) $type['name'],
+            array_filter($schemaBuilder->getTypes(), fn (array $type): bool => ($type['type'] ?? null) === 'enum'),
+        ));
 
         return $this->enumTypesByConnection[$connectionName];
     }
@@ -645,10 +637,7 @@ class ModelExtractor
             return false;
         }
 
-        $lines = file($file);
-        if ($lines === false) {
-            return false;
-        }
+        $lines = file($file) ?: [];
 
         $body = implode('', array_slice(
             $lines,
@@ -766,20 +755,8 @@ class ModelExtractor
         $connection = $relation->getRelated()->getConnection();
         $driver = $connection->getDriverName();
 
-        try {
-            $schemaColumns = array_column($connection->getSchemaBuilder()->getColumns($pivot['table']), null, 'name');
-        } catch (Throwable) {
-            $schemaColumns = [];
-        }
-
-        $casts = [];
-        if (isset($pivot['using'])) {
-            try {
-                $casts = new $pivot['using']()->getCasts();
-            } catch (Throwable) {
-                $casts = [];
-            }
-        }
+        $schemaColumns = array_column($connection->getSchemaBuilder()->getColumns($pivot['table']), null, 'name');
+        $casts = isset($pivot['using']) ? new $pivot['using']()->getCasts() : [];
 
         $names = [$pivot['foreignKey'], $pivot['relatedKey']];
         if (isset($pivot['morphType'])) {
@@ -795,9 +772,7 @@ class ModelExtractor
 
             $type = isset($casts[$name]) ? $this->castTypeResolver->resolveOrNull($casts[$name]) : null;
             if ($type === null && $schemaColumn !== null) {
-                $type = $this->columnTypeResolver->recognises($schemaColumn['type_name'], $driver)
-                    ? $this->columnTypeResolver->resolve($schemaColumn['type_name'], false, $driver)
-                    : null;
+                $type = $this->columnTypeResolver->resolve($schemaColumn['type_name'], false, $driver);
             }
 
             $columns[] = [

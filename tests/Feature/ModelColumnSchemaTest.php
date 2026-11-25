@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use Illuminate\Database\Connection;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Database\Schema\Builder;
 use Illuminate\Support\Facades\Schema;
+use Mockery;
 use Pentacore\Typefinder\Extractors\ModelExtractor;
 use Pentacore\Typefinder\Resolvers\CastTypeResolver;
 use Pentacore\Typefinder\Resolvers\ColumnTypeResolver;
@@ -122,6 +125,31 @@ final class ModelColumnSchemaTest extends TestCase
         $this->assertSame([], $result['columns']);
         $this->assertCount(1, $this->warnings);
         $this->assertStringContainsString(TablelessThing::class.': table "no_such_table" not found', $this->warnings[0]);
+    }
+
+    public function test_reads_postgres_enum_types_once_per_connection(): void
+    {
+        $connection = Mockery::mock(Connection::class);
+        $connection->shouldReceive('getName')->andReturn('pg');
+        $schemaBuilder = Mockery::mock(Builder::class);
+        $schemaBuilder->shouldReceive('getConnection')->andReturn($connection);
+        $schemaBuilder->shouldReceive('getTypes')->once()->andReturn([
+            ['name' => 'mood', 'type' => 'enum'],
+            ['name' => 'point3', 'type' => 'composite'],
+        ]);
+
+        $extractor = new class(new ColumnTypeResolver, new CastTypeResolver) extends ModelExtractor
+        {
+            /** @return list<string> */
+            public function enumTypesOf(Builder $schemaBuilder, string $driver): array
+            {
+                return $this->enumTypes($schemaBuilder, $driver);
+            }
+        };
+
+        $this->assertSame([], $extractor->enumTypesOf($schemaBuilder, 'mysql'));
+        $this->assertSame(['mood'], $extractor->enumTypesOf($schemaBuilder, 'pgsql'));
+        $this->assertSame(['mood'], $extractor->enumTypesOf($schemaBuilder, 'pgsql'));
     }
 
     private function extractor(): ModelExtractor

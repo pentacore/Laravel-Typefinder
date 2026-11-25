@@ -19,7 +19,10 @@ final class ModelPropertyDocTest extends TestCase
 {
     public function test_property_docs_type_array_and_json_casts(): void
     {
-        config(['typefinder.enums.paths' => [workbench_path('app/Enums')]]);
+        config([
+            'typefinder.enums.paths' => [workbench_path('app/Enums')],
+            'typefinder.resources.paths' => [workbench_path('app/Http/Resources')],
+        ]);
 
         $model = new ModelExtractor(new ColumnTypeResolver, new CastTypeResolver)->extract(DocumentedCastQuest::class);
         $output = new TypeScriptRenderer()->renderModel($model, [['name' => 'PostStatus', 'fqcn' => PostStatus::class]], [$model]);
@@ -27,6 +30,9 @@ final class ModelPropertyDocTest extends TestCase
         $this->assertStringContainsString('  rewards: { name: string; required: boolean }[] | null;', $output);
         $this->assertStringContainsString('  description: PostStatus[] | null;', $output);
         $this->assertStringContainsString("import type { PostStatus } from '../enums';", $output);
+        // A resource is imported from the resources directory.
+        $this->assertStringContainsString('  party_id: UserResource;', $output);
+        $this->assertStringContainsString("import type { UserResource } from '../resources';", $output);
         // A cast with a precise type keeps it.
         $this->assertStringContainsString('  title: string;', $output);
     }

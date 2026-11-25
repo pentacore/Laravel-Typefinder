@@ -9,10 +9,14 @@ use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Notifications\HasDatabaseNotifications;
 
 /** Relations without a return type, that throw, or that are hidden (#143, #149). */
 class RelationEdgeCases extends Model
 {
+    // Untyped relation methods in vendor code are not probed.
+    use HasDatabaseNotifications;
+
     protected $table = 'tags';
 
     protected $hidden = ['secretOwner'];
@@ -36,6 +40,12 @@ class RelationEdgeCases extends Model
     public function owner(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    /** An intersection type is never a relation. */
+    public function both(): \Countable&\IteratorAggregate
+    {
+        throw new \LogicException('must not be called');
     }
 
     /** Untyped, but not a relation: never called. */

@@ -26,6 +26,8 @@ final class ModelVisibilityAndRelationsTest extends TestCase
 
         $this->assertSame('many', $relations['untyped']['type']);
         $this->assertSame(Tag::class, $relations['untyped']['related']);
+        $this->assertArrayNotHasKey('notifications', $relations->all());
+        $this->assertArrayNotHasKey('both', $relations->all());
     }
 
     public function test_a_relation_that_throws_is_reported(): void

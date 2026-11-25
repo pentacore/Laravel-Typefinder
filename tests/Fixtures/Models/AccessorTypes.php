@@ -15,7 +15,7 @@ final class AccessorTypes extends Model
 {
     protected $table = 'tags';
 
-    protected $appends = ['full_name', 'shout', 'status', 'mode', 'owner', 'either', 'maybe_owner'];
+    protected $appends = ['full_name', 'shout', 'status', 'mode', 'owner', 'either', 'maybe_owner', 'phantom', 'exploding', 'loose', 'odd'];
 
     protected function fullName(): Attribute
     {
@@ -45,6 +45,21 @@ final class AccessorTypes extends Model
     public function getEitherAttribute(): int|string
     {
         return $this->name === null ? 1 : (string) $this->name;
+    }
+
+    public function getLooseAttribute(): mixed
+    {
+        return $this->name;
+    }
+
+    public function getOddAttribute(): int|\stdClass
+    {
+        return $this->name === null ? 1 : new \stdClass;
+    }
+
+    protected function exploding(): Attribute
+    {
+        throw new \LogicException('not buildable');
     }
 
     protected function maybeOwner(): Attribute

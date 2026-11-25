@@ -30,6 +30,11 @@ final class AccessorTypesTest extends TestCase
         $this->assertSame([User::class, false], $columns['owner']);
         $this->assertSame(['string | number', false], $columns['either']);
         $this->assertSame([User::class, true], $columns['maybe_owner']);
+
+        // No accessor, an accessor that throws, `mixed`, and a class with no TypeScript form.
+        foreach (['phantom', 'exploding', 'loose', 'odd'] as $name) {
+            $this->assertSame(['unknown', false], $columns[$name], $name);
+        }
     }
 
     public function test_enum_and_model_accessors_render_as_their_generated_types(): void

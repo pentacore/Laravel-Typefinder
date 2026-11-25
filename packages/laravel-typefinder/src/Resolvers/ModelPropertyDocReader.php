@@ -15,7 +15,6 @@ use PHPStan\PhpDocParser\Parser\TokenIterator;
 use PHPStan\PhpDocParser\Parser\TypeParser;
 use PHPStan\PhpDocParser\ParserConfig;
 use ReflectionClass;
-use Throwable;
 
 /**
  * The class-level `@property` / `@property-read` tags of a model, as the type
@@ -52,11 +51,7 @@ final class ModelPropertyDocReader
             return [];
         }
 
-        try {
-            $node = $this->phpDocParser->parse(new TokenIterator($this->lexer->tokenize($doc)));
-        } catch (Throwable) {
-            return [];
-        }
+        $node = $this->phpDocParser->parse(new TokenIterator($this->lexer->tokenize($doc)));
 
         $source = ParsedSource::forFile($file);
         $class = $model->getName();

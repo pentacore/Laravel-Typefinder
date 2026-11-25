@@ -23,6 +23,7 @@ use Pentacore\Typefinder\Resolvers\CastTypeResolver;
 use Pentacore\Typefinder\TypefinderRegistry;
 use Tests\Fixtures\Casts\MoneyCast;
 use Tests\Fixtures\Casts\UnmappedCast;
+use Tests\Fixtures\Ignored\Enums\CaselessStatus;
 use Tests\Fixtures\Ignored\Enums\UnbackedStatus;
 use Tests\TestCase;
 
@@ -214,6 +215,7 @@ final class CastTypeResolverTest extends TestCase
     public function test_a_pure_enum_cast_is_the_union_of_its_case_names(): void
     {
         $this->assertSame("'On' | 'Off'", $this->castTypeResolver->resolveOrNull(UnbackedStatus::class));
+        $this->assertSame('never', $this->castTypeResolver->resolveOrNull(CaselessStatus::class));
     }
 
     public function test_vector_and_binary_casts(): void
