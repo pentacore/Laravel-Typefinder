@@ -23,6 +23,12 @@ export interface TypefinderOptions {
      * `{ '/var/www/html': process.cwd() }`. Applied both ways.
      */
     pathMap?: Record<string, string>;
+    /**
+     * Directories whose `.php` files change the database schema. A change
+     * there triggers a full regen, since any model may be affected.
+     * Defaults to `database/migrations` under the Vite root; `false` disables it.
+     */
+    migrations?: string[] | false;
 }
 
 const log = (message: string): void => {
@@ -76,10 +82,13 @@ export const typefinder = ({
     killTimeoutMs = 2_000,
     regenTimeoutMs = 120_000,
     pathMap,
+    migrations,
 }: TypefinderOptions = {}): Plugin => {
     let resolvedRoot = process.cwd();
     let watcher: Watcher | null = null;
     let matcher: (file: string) => boolean = () => false;
+    let migrationMatcher: (file: string) => boolean = () => false;
+    let fullPending = false;
     let mapper = new PathMapper();
     const pending = new Set<string>();
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -89,12 +98,16 @@ export const typefinder = ({
         clearTimeout(timer);
         timer = setTimeout(() => {
             if (!watcher || watcher.dead) return;
-            const batch = Array.from(pending);
+            // A full regen covers every pending file too.
+            const batch = fullPending ? [] : Array.from(pending);
+            const label = fullPending ? 'full regen' : 'regen';
+            const run = fullPending || batch.length > 0;
             pending.clear();
-            if (batch.length === 0) return;
+            fullPending = false;
+            if (!run) return;
             watcher
                 .regen(batch)
-                .then((result) => reportRegen(result, 'regen'))
+                .then((result) => reportRegen(result, label))
                 .catch((error: Error) => {
                     log(`regen failed: ${error.message}`);
                 });
@@ -105,6 +118,11 @@ export const typefinder = ({
         if (isBuild || !watcher || watcher.dead) return;
         // PHP resolves symlinks, so compare and send real paths.
         const real = realpathLoose(file);
+        if (migrationMatcher(real)) {
+            fullPending = true;
+            scheduleRegen();
+            return;
+        }
         if (!matcher(real)) return;
         pending.add(mapper.toWatcher(real));
         scheduleRegen();
@@ -134,6 +152,10 @@ export const typefinder = ({
 
             const paths = watch ?? flattenCategoryPaths(watcher.handshake.categories).map((p) => mapper.toHost(p));
             matcher = compileMatcher(paths.map(realpathLoose));
+            const migrationPaths = migrations === false
+                ? []
+                : migrations ?? [`${resolvedRoot}/database/migrations`];
+            migrationMatcher = compileMatcher(migrationPaths.map(realpathLoose));
 
             watcher.on('died', (reason: string) => {
                 log(`watcher exited: ${reason} — restart the dev server`);
