@@ -71,6 +71,17 @@ final class Categories
     }
 
     /**
+     * Whether a file is under a directory. Separators are compared alike, as
+     * Windows paths may use either (#183).
+     */
+    public static function contains(string $dir, string $file): bool
+    {
+        $dir = rtrim(str_replace('\\', '/', $dir), '/');
+
+        return str_starts_with(str_replace('\\', '/', $file), $dir.'/');
+    }
+
+    /**
      * The real path, so a file or directory compares equal however it was
      * named. A deleted file has none; its directory's is used instead.
      */
@@ -83,6 +94,6 @@ final class Categories
 
         $dir = realpath(dirname($path));
 
-        return $dir === false ? $path : $dir.'/'.basename($path);
+        return $dir === false ? $path : $dir.DIRECTORY_SEPARATOR.basename($path);
     }
 }

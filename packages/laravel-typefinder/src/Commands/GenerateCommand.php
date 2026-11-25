@@ -17,7 +17,7 @@ class GenerateCommand extends Command
 
     protected $description = 'Generate TypeScript type definitions from Laravel Models, Enums, JsonResources, Typefinder Attributes, and Requests';
 
-    /** @var list<array{path: string, written: bool}> */
+    /** @var list<array{path: string, written: bool, removed: bool}> */
     private array $files = [];
 
     /** @var array<string, int> */
@@ -74,10 +74,13 @@ class GenerateCommand extends Command
             $this->warnings = $result->warnings;
             $this->failed = $result->failed;
             $this->printWarnings($useJson);
-            $this->files = array_map(fn (string $p): array => ['path' => $p, 'written' => true], $result->changed);
+            $this->files = array_map(fn (string $p): array => [
+                'path' => $p,
+                'written' => ! in_array($p, $result->removed, true),
+                'removed' => in_array($p, $result->removed, true),
+            ], $result->changed);
 
-            // Emit per-category info lines for non-JSON mode
-            $this->emitCategoryCounts($result->changed, $useJson);
+            $this->emitCategoryCounts($result->counts, $useJson);
 
             if ($useCheck) {
                 $drift = $this->collectDrift($outputPath, $realOutputPath);
@@ -169,32 +172,12 @@ class GenerateCommand extends Command
     }
 
     /**
-     * Reconstruct and print per-category info lines from the changed paths list.
+     * Print a line per category with the number of types it generated.
      *
-     * @param  list<string>  $changed
+     * @param  array<string, int>  $categoryCounts
      */
-    private function emitCategoryCounts(array $changed, bool $useJson): void
+    private function emitCategoryCounts(array $categoryCounts, bool $useJson): void
     {
-        $categoryCounts = [];
-
-        foreach ($changed as $path) {
-            // Skip barrel indexes — they aren't user-facing "generated types"
-            if (str_ends_with($path, '/index.d.ts')) {
-                continue;
-            }
-
-            if ($path === 'index.d.ts') {
-                continue;
-            }
-
-            if ($path === 'helpers.d.ts') {
-                continue;
-            }
-
-            $category = str_contains($path, '/') ? explode('/', $path, 2)[0] : 'other';
-            $categoryCounts[$category] = ($categoryCounts[$category] ?? 0) + 1;
-        }
-
         $labelMap = [
             'enums' => 'enum',
             'models' => 'model',
@@ -298,7 +281,8 @@ class GenerateCommand extends Command
             'success' => $success,
             'duration_ms' => $durationMs,
             'output_path' => $outputPath,
-            'counts' => $this->counts,
+            // An object even when empty, as the keys are category names.
+            'counts' => (object) $this->counts,
             'files' => $this->files,
             'warnings' => array_merge($this->warnings, $warnings),
             'errors' => $errors,
@@ -367,14 +351,35 @@ class GenerateCommand extends Command
 
     protected function relativeToBase(string $path): ?string
     {
-        $base = rtrim(str_replace('\\', '/', base_path()), '/');
-        $normalized = str_replace('\\', '/', $path);
+        $base = rtrim($this->normalizePath(base_path()), '/');
+        $normalized = $this->normalizePath($path);
 
         if (! str_starts_with($normalized, $base.'/')) {
             return null;
         }
 
         return substr($normalized, strlen($base) + 1);
+    }
+
+    /**
+     * Forward slashes, with `.` and `..` segments resolved, so a path that
+     * steps out of the project is not taken for one inside it (#188).
+     */
+    private function normalizePath(string $path): string
+    {
+        $real = realpath($path);
+        $path = str_replace('\\', '/', $real === false ? $path : $real);
+
+        $segments = [];
+        foreach (explode('/', $path) as $index => $segment) {
+            if ($segment === '..' && $segments !== [] && end($segments) !== '' && end($segments) !== '..') {
+                array_pop($segments);
+            } elseif ($segment !== '.' && ($segment !== '' || $index === 0)) {
+                $segments[] = $segment;
+            }
+        }
+
+        return implode('/', $segments);
     }
 
     /**

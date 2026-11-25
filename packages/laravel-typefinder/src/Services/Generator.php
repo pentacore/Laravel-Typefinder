@@ -28,6 +28,9 @@ use ReflectionClass;
  */
 final class Generator
 {
+    /** Categories whose extractions depend on which models and enums get a type. */
+    private const array READ_GENERATED_CLASSES = ['resources', 'inertia'];
+
     public function __construct(
         private readonly TypefinderRegistry $typefinderRegistry,
         private readonly TypeScriptRenderer $typeScriptRenderer,
@@ -82,13 +85,14 @@ final class Generator
 
         $lockHash = $this->cacheKeyFactory->composerLockHash();
         $configHash = $this->cacheKeyFactory->configHash($config);
+        $schemaHash = $this->cacheKeyFactory->schemaHash();
 
-        $extractionCache = $paths === [] ? null : ExtractionCache::load($this->cachePath, $lockHash, $configHash);
+        $extractionCache = $paths === [] ? null : ExtractionCache::load($this->cachePath, $lockHash, $configHash, $schemaHash);
         // Without the entries of a previous run nothing is known about the
         // other types, so every file is extracted.
         $incremental = $extractionCache instanceof ExtractionCache && $extractionCache->restored();
         if (! $incremental) {
-            $extractionCache = new ExtractionCache($this->cachePath, $lockHash, $configHash);
+            $extractionCache = new ExtractionCache($this->cachePath, $lockHash, $configHash, $schemaHash);
         }
 
         $roots = Categories::roots();
@@ -119,8 +123,18 @@ final class Generator
         }
 
         $fileExtractor = new FileExtractor($this->typefinderRegistry, $extractionCache, $warn);
+        $generatedBefore = $this->generatedClasses($extractionCache->persistedEntriesByCategory(...));
 
         foreach (array_keys($roots) as $category) {
+            // Resources infer their model from the models that get a type, and
+            // drift checks read them too. When that set changed, the cached
+            // entries of these categories may be wrong (#176).
+            if (in_array($category, self::READ_GENERATED_CLASSES, true) && $this->generatedClasses($extractionCache->entriesByCategory(...)) !== $generatedBefore) {
+                foreach ($this->sourceFiles($roots[$category]) as $file) {
+                    $pending[$category][$file] = true;
+                }
+            }
+
             foreach (array_keys($pending[$category] ?? []) as $file) {
                 if (! is_file($file)) {
                     $extractionCache->forget($file, $category);
@@ -136,7 +150,7 @@ final class Generator
                         $this->assertValid($category, array_values([...$extractionCache->entriesByCategory($category), $file => $extraction]));
                     }
 
-                    $extractionCache->put($file, $category, $extraction);
+                    $extractionCache->put($file, $category, $extraction, $fileExtractor->dependencies($file, $category));
                 } catch (\Throwable $throwable) {
                     if (! $incremental) {
                         throw $throwable;
@@ -147,26 +161,30 @@ final class Generator
             }
         }
 
-        $changed = $this->emit($extractionCache, $roots, $warn);
+        $outputTree = new OutputTree((string) config('typefinder.output_path'));
+        $counts = $this->emit($extractionCache, $roots, $outputTree, $warn);
         $extractionCache->persist();
 
         return new RegenResult(
-            changed: $changed,
+            changed: $outputTree->changed(),
             warnings: $warnings,
             failed: $failed,
             durationMs: (int) round((microtime(true) - $startedAt) * 1000),
+            removed: $outputTree->removed(),
+            counts: $counts,
         );
     }
 
     /**
      * Write the output tree for the types in the cache: every file of every
      * enabled category, the barrels, and nothing else in their directories.
+     * The output of a disabled category is removed.
      *
      * @param  array<string, list<string>>  $roots
      * @param  callable(string): void  $warn
-     * @return list<string> relative paths of the files that changed
+     * @return array<string, int> the number of types each output directory or file holds
      */
-    private function emit(ExtractionCache $extractionCache, array $roots, callable $warn): array
+    private function emit(ExtractionCache $extractionCache, array $roots, OutputTree $outputTree, callable $warn): array
     {
         $sets = array_fill_keys(Categories::ALL, []);
         foreach ($roots as $category => $dirs) {
@@ -182,7 +200,6 @@ final class Generator
         $pages = PageMerger::merge($this->pagesOf($sets['inertia']));
         $broadcasts = $sets['broadcasting'];
 
-        $outputTree = new OutputTree((string) config('typefinder.output_path'));
         $files = [];
 
         $emitWriteShapes = (bool) config('typefinder.models.emit_write_shapes', true);
@@ -206,11 +223,14 @@ final class Generator
         }
 
         $categories = [];
+        $counts = [];
         // What each category barrel exports, for the cross-category check.
         $barrelNames = [];
 
         foreach (['enums', 'models', 'requests', 'resources'] as $category) {
             if (! isset($roots[$category])) {
+                $outputTree->removeDirectory($category);
+
                 continue;
             }
 
@@ -224,6 +244,7 @@ final class Generator
                 ? $this->writeEnums($enums, $outputTree)
                 : $this->writeCategory($category, $files[$category], $outputTree, $warn);
             $categories[] = $category;
+            $counts[$category] = $category === 'enums' ? count($enums) : count($files[$category]);
         }
 
         $singleFiles = [
@@ -232,11 +253,7 @@ final class Generator
         ];
 
         foreach ($singleFiles as $category => [$name, $entries, $render]) {
-            if (! isset($roots[$category])) {
-                continue;
-            }
-
-            if ($entries === []) {
+            if (! isset($roots[$category]) || $entries === []) {
                 $outputTree->remove($name.'.d.ts');
 
                 continue;
@@ -244,6 +261,7 @@ final class Generator
 
             $outputTree->write($name.'.d.ts', $render());
             $categories[] = $name;
+            $counts[$name] = count($entries);
         }
 
         $this->warnOnCrossCategoryNames($barrelNames, $warn);
@@ -253,7 +271,24 @@ final class Generator
 
         $outputTree->write('index.d.ts', $this->typeScriptRenderer->renderTopLevelBarrel($categories));
 
-        return $outputTree->changed();
+        return $counts;
+    }
+
+    /**
+     * The classes of the categories other extractions refer to that get a type.
+     *
+     * @param  callable(string): array<string, array<string, mixed>>  $entriesByCategory
+     * @return array<string, list<string>>
+     */
+    private function generatedClasses(callable $entriesByCategory): array
+    {
+        $classes = [];
+        foreach (['models', 'enums'] as $category) {
+            $classes[$category] = array_values(array_column($entriesByCategory($category), 'fqcn'));
+            sort($classes[$category]);
+        }
+
+        return $classes;
     }
 
     /**
@@ -332,7 +367,7 @@ final class Generator
     private function rootIndex(string $file, array $dirs): ?int
     {
         foreach ($dirs as $index => $dir) {
-            if (str_starts_with($file, $dir.'/')) {
+            if (Categories::contains($dir, $file)) {
                 return $index;
             }
         }
