@@ -199,7 +199,6 @@ final class PhpDocTypeMapperTest extends TestCase
         return [
             'string key' => ['array<string, float>'],
             'non-empty string key' => ['non-empty-array<string, float>'],
-            'array-key' => ['array<array-key, float>'],
         ];
     }
 
@@ -207,6 +206,29 @@ final class PhpDocTypeMapperTest extends TestCase
     public function test_string_keyed_arrays_map_to_records(string $type): void
     {
         $this->assertSame(['kind' => 'record', 'of' => self::ts('number')], $this->map($type));
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function eitherKeyedTypes(): array
+    {
+        return [
+            'array-key' => ['array<array-key, float>'],
+            'int|string' => ['array<int|string, float>'],
+            'string|int' => ['array<string|int, float>'],
+            'mixed key' => ['array<mixed, float>'],
+        ];
+    }
+
+    /** #234: an array-key keyed array serialises as a JSON array when its keys are sequential. */
+    #[DataProvider('eitherKeyedTypes')]
+    public function test_array_key_keyed_arrays_map_to_list_or_record(string $type): void
+    {
+        $this->assertSame(
+            ['kind' => 'union', 'of' => [$this->arrayOf(self::ts('number')), ['kind' => 'record', 'of' => self::ts('number')]]],
+            $this->map($type),
+        );
     }
 
     public function test_array_shape_maps_to_object(): void

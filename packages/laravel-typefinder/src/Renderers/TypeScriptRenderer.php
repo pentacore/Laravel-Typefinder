@@ -284,9 +284,9 @@ class TypeScriptRenderer
         $output = self::FILE_HEADER."\n".self::importBlock($imports);
 
         $output .= "export type SharedPageProps = {\n".implode("\n", $sharedLines)."\n};\n\n";
-        $output .= "export type PageProps = {\n";
-        $output .= implode("\n", $entries)."\n";
-        $output .= "};\n\n";
+        $output .= $entries === []
+            ? "export type PageProps = {};\n\n"
+            : "export type PageProps = {\n".implode("\n", $entries)."\n};\n\n";
 
         return $output."export type PageName = keyof PageProps;\n";
     }

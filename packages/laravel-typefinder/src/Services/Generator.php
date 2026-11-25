@@ -294,9 +294,8 @@ final class Generator
             case 'inertia':
                 $pages = PageMerger::merge($this->pagesOf($entries));
 
-                return $pages === []
-                    ? [[], 0]
-                    : [['pages' => $this->typeScriptRenderer->renderPages($pages, $models, $enums, $resources)], count($pages)];
+                // Written with no tagged page too: `SharedPageProps` is useful on its own (#231).
+                return [['pages' => $this->typeScriptRenderer->renderPages($pages, $models, $enums, $resources)], count($pages)];
 
             case 'broadcasting':
                 return $entries === []

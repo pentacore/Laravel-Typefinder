@@ -259,9 +259,9 @@ export type StoreWebhookRequest = {
 - `confirmed` adds the key it compares with: `{key}_confirmation` beside the key (nested keys too), or the key named by `confirmed:other`. It takes the key's type and is required and nullable as the key is.
 - A key that is not a TypeScript identifier is quoted (`'content-type'?: string`). An escaped dot (`'config.app\.name'`) stays one key (`'app.name'`).
 - Two shapes cannot be expressed and produce a warning (so `--strict` fails): a wildcard at the top level (`'*.name'`, the body itself is a list) is left out, and a parent with both `parent.*` and named keys keeps the array shape and drops the named keys. Use `#[TypefinderOverrides]` for those fields.
-- A `rules()` that branches on request state (`$this->route()`, `$this->user()`, `request()`, … in the condition of an `if`, a ternary or a `match`) is typed from the branch taken with no route, user or input bound, with a warning.
+- A `rules()` that branches on request state (`$this->route()`, `$this->user()`, `request()`, … in the condition of an `if`, a ternary or a `match`) is typed from the branch taken with no route, user or input bound, with a warning. Declaring the fields with `#[TypefinderOverrides]` on the request acknowledges it and silences the warning (or write the branch as `Rule::when()`, which is typed from both branches).
 
-`#[TypefinderOverrides]` on a request replaces the type of a key and adds keys no rule names (required). Dotted keys reach nested fields: `'user.name' => 'Foo'`, `'lines.*.sku' => 'string'`.
+`#[TypefinderOverrides]` on a request replaces the type of a key and adds keys no rule names (required). A key ending in `?` is optional: `'password?' => 'string'` gives `password?: string`. Dotted keys reach nested fields: `'user.name' => 'Foo'`, `'lines.*.sku' => 'string'`.
 
 With `extract_nested: true`, every nested object becomes a named type, named after its path (`StorePostRequestMetadata`, `StoreWebhookRequestRequestHeaders`).
 
@@ -435,7 +435,7 @@ Several actions can render the same component, for example `create` and `edit` s
 - A prop that only some actions declare, or that any action marks optional, becomes optional (`post?: …`).
 - One prop declared with different types in different actions fails the run, naming each `Class::method` and its type. If the type really varies, declare the union in every action.
 
-`pages.d.ts` also declares `SharedPageProps`, the props every page gets: Inertia's `errors` (`Record<string, string>`) and each key the `share()` method of your Inertia middleware (classes under `app/Http/Middleware` extending `Inertia\Middleware`) returns. Keys are `unknown` unless `share()` documents them:
+`pages.d.ts` also declares `SharedPageProps`, the props every page gets: Inertia's `errors` (`Record<string, string>`) and each key the `share()` method of your Inertia middleware (classes under `app/Http/Middleware` extending `Inertia\Middleware`) returns. It is written whenever the Inertia category is enabled, with an empty `PageProps` when no action is tagged, so `SharedPageProps` can be used without `#[TypefinderPage]`. Keys are `unknown` unless `share()` documents them:
 
 ```php
 /**
