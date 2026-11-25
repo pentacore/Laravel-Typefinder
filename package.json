@@ -1,4 +1,5 @@
 {
+    "name": "laravel-typefinder-workspace",
     "private": true,
     "workspaces": [
         "packages/vite-plugin-laravel-typefinder"

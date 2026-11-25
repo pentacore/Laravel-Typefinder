@@ -22,12 +22,17 @@ jobs:
       matrix:
         php: ['8.4', '8.5']
         laravel: ['12.*', '13.*']
+        dependencies: ['highest']
         include:
+          # Checks the lower bounds in composer.json still install and pass.
+          - php: '8.4'
+            laravel: '12.*'
+            dependencies: 'lowest'
           - php: '8.5'
             laravel: '13.*'
             coverage: true
 
-    name: P${{ matrix.php }} L${{ matrix.laravel }}
+    name: P${{ matrix.php }} L${{ matrix.laravel }}${{ matrix.dependencies == 'lowest' && ' (lowest)' || '' }}
 
     steps:
       - uses: actions/checkout@v7
@@ -35,7 +40,13 @@ jobs:
       - name: Compute matrix slug
         env:
           LARAVEL_VERSION: ${{ matrix.laravel }}
-        run: echo "LARAVEL_SLUG=${LARAVEL_VERSION%%.*}" >> "$GITHUB_ENV"
+          DEPENDENCIES: ${{ matrix.dependencies }}
+        run: |
+          SLUG="${LARAVEL_VERSION%%.*}"
+          if [ "$DEPENDENCIES" = "lowest" ]; then
+            SLUG="${SLUG}-lowest"
+          fi
+          echo "LARAVEL_SLUG=${SLUG}" >> "$GITHUB_ENV"
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
@@ -60,9 +71,14 @@ jobs:
       - name: Install dependencies
         env:
           LARAVEL_VERSION: ${{ matrix.laravel }}
+          DEPENDENCIES: ${{ matrix.dependencies }}
         run: |
           composer require "laravel/framework:${LARAVEL_VERSION}" "orchestra/testbench:*" --no-update --no-interaction
-          composer update --prefer-dist --no-interaction --no-progress
+          if [ "$DEPENDENCIES" = "lowest" ]; then
+            composer update --prefer-lowest --prefer-stable --prefer-dist --no-interaction --no-progress
+          else
+            composer update --prefer-dist --no-interaction --no-progress
+          fi
 
       - name: Run tests
         env:
@@ -194,6 +210,32 @@ jobs:
           tool_name: rector
           fail_level: error
           level: error
+
+  phpstan:
+    runs-on: ubuntu-latest
+    name: PHPStan
+
+    steps:
+      - uses: actions/checkout@v7
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          coverage: none
+      - name: Get composer cache directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+      - name: Cache composer packages
+        uses: actions/cache@v6
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: composer-phpstan-${{ hashFiles('composer.json') }}
+          restore-keys: |
+            composer-phpstan-
+      - name: Install
+        run: composer install --prefer-dist --no-interaction --no-progress
+      - name: Run PHPStan
+        run: vendor/bin/phpstan analyse --no-progress --memory-limit=1G
 
   vite-plugin:
     runs-on: ubuntu-latest

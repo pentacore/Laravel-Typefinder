@@ -90,7 +90,9 @@ class ModelExtractor
         $table = $model->getTable();
 
         $columns = $this->extractColumns($model, $table, $modelClass);
-        $relationships = $this->extractRelationships($model, $reflectionClass);
+        $relationships = config('typefinder.models.include_relationships', true)
+            ? $this->extractRelationships($model, $reflectionClass)
+            : [];
 
         // `$hidden` / `$visible` only shape serialisation: a hidden column
         // stays writable, so only the read type leaves it out.

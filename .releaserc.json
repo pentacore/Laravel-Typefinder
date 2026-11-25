@@ -34,17 +34,18 @@
     ["@semantic-release/changelog", {
       "changelogFile": "CHANGELOG.md"
     }],
-    ["@semantic-release/exec", {
-      "prepareCmd": "node scripts/sync-php-version.mjs ${nextRelease.version}"
-    }],
     ["@semantic-release/npm", {
       "pkgRoot": "packages/vite-plugin-laravel-typefinder",
       "npmPublish": false
+    }],
+    ["@semantic-release/exec", {
+      "prepareCmd": "node scripts/sync-php-version.mjs ${nextRelease.version} && npm install --package-lock-only --ignore-scripts --no-audit --no-fund"
     }],
     ["@semantic-release/git", {
       "assets": [
         "CHANGELOG.md",
         "package.json",
+        "package-lock.json",
         "packages/vite-plugin-laravel-typefinder/package.json",
         "packages/laravel-typefinder/src/Version.php",
         "composer.json"

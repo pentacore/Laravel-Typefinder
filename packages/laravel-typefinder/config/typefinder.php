@@ -38,6 +38,8 @@ return [
     'models' => [
         'enabled' => true,
         'paths' => [app_path('Models')],
+        // When false, models emit no relationship fields, and no pivot
+        // types are derived from belongsToMany / morphToMany relations.
         'include_relationships' => true,
 
         // When enabled, each model emits {Model}Create and {Model}Update
@@ -45,11 +47,12 @@ return [
         'emit_write_shapes' => true,
 
         // Respect $fillable/$guarded when building write shapes.
-        // Override per-model via typefinderRespectMassAssignment().
+        // Override per model with
+        // #[TypefinderWriteShape(respectMassAssignment: true|false)].
         'respect_mass_assignment' => true,
 
         // Columns excluded from the Update shape. Merged with each model's
-        // typefinderImmutableOnUpdate() list.
+        // #[TypefinderWriteShape(immutableOnUpdate: [...])] list.
         'immutable_on_update' => ['id', 'created_at', 'updated_at', 'deleted_at'],
     ],
 
