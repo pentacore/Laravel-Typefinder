@@ -98,13 +98,13 @@ export const typefinder = ({
         clearTimeout(timer);
         timer = setTimeout(() => {
             if (!watcher || watcher.dead) return;
-            // A full regen covers every pending file too.
+            // Only scheduled right after a file was queued or a full regen
+            // was asked for, so there is always something to send. A full
+            // regen covers every pending file too.
             const batch = fullPending ? [] : Array.from(pending);
             const label = fullPending ? 'full regen' : 'regen';
-            const run = fullPending || batch.length > 0;
             pending.clear();
             fullPending = false;
-            if (!run) return;
             watcher
                 .regen(batch)
                 .then((result) => reportRegen(result, label))
