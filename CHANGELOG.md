@@ -1,3 +1,10 @@
+## [8.3.2](https://github.com/pentacore/Laravel-Typefinder/compare/v8.3.1...v8.3.2) (2026-11-25)
+
+### Bug Fixes
+
+* merge imports per module and lint the generated output in CI ([c49dacd](https://github.com/pentacore/Laravel-Typefinder/commit/c49dacd63ac3a4c1c7cea054fe4dfe575f63632e)), closes [#214](https://github.com/pentacore/Laravel-Typefinder/issues/214)
+* merge imports per module and lint the generated output in CI ([#226](https://github.com/pentacore/Laravel-Typefinder/issues/226)) ([7e5001d](https://github.com/pentacore/Laravel-Typefinder/commit/7e5001d15c971e7b514f824d684bd5e82f962213)), closes [#214](https://github.com/pentacore/Laravel-Typefinder/issues/214)
+
 ## [8.3.1](https://github.com/pentacore/Laravel-Typefinder/compare/v8.3.0...v8.3.1) (2026-11-25)
 
 ### Bug Fixes
