@@ -62,4 +62,13 @@ final class CategoriesTest extends TestCase
         $this->assertSame($dir.'/Vanished.php', Categories::realPath(workbench_path('app/Models/../Models/Vanished.php')));
         $this->assertSame('/nowhere/at/all.php', Categories::realPath('/nowhere/at/all.php'));
     }
+
+    public function test_contains_compares_windows_separators_alike(): void
+    {
+        $this->assertTrue(Categories::contains('C:\app\Models', 'C:\app\Models\User.php'));
+        $this->assertTrue(Categories::contains('C:\app\Models', 'C:/app/Models/Sub/User.php'));
+        $this->assertTrue(Categories::contains('/app/Models/', '/app/Models/User.php'));
+        $this->assertFalse(Categories::contains('C:\app\Models', 'C:\app\ModelsOld\User.php'));
+        $this->assertFalse(Categories::contains('/app/Models', '/app/Enums/Status.php'));
+    }
 }

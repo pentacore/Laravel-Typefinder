@@ -17,6 +17,22 @@ final class Categories
      */
     public const array ALL = ['enums', 'models', 'requests', 'resources', 'inertia', 'broadcasting'];
 
+    /**
+     * Where each category is emitted under the output path: a directory with
+     * a file per type and a barrel, or a single `{name}.d.ts` file. The
+     * names are also what the top-level barrel re-exports.
+     *
+     * @var array<string, array{0: 'directory'|'file', 1: string}>
+     */
+    public const array OUTPUT = [
+        'enums' => ['directory', 'enums'],
+        'models' => ['directory', 'models'],
+        'requests' => ['directory', 'requests'],
+        'resources' => ['directory', 'resources'],
+        'inertia' => ['file', 'pages'],
+        'broadcasting' => ['file', 'broadcasting'],
+    ];
+
     /** Off unless the config turns them on: they need Inertia or broadcasting. */
     private const array OPT_IN = ['inertia', 'broadcasting'];
 
@@ -71,6 +87,17 @@ final class Categories
     }
 
     /**
+     * Whether a file is under a directory. Separators are compared alike, as
+     * Windows paths may use either (#183).
+     */
+    public static function contains(string $dir, string $file): bool
+    {
+        $dir = rtrim(str_replace('\\', '/', $dir), '/');
+
+        return str_starts_with(str_replace('\\', '/', $file), $dir.'/');
+    }
+
+    /**
      * The real path, so a file or directory compares equal however it was
      * named. A deleted file has none; its directory's is used instead.
      */
@@ -83,6 +110,6 @@ final class Categories
 
         $dir = realpath(dirname($path));
 
-        return $dir === false ? $path : $dir.'/'.basename($path);
+        return $dir === false ? $path : $dir.DIRECTORY_SEPARATOR.basename($path);
     }
 }

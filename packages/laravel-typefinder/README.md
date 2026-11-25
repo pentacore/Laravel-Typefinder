@@ -67,7 +67,7 @@ This copies `config/typefinder.php` into your application's `config/` directory.
 php artisan typefinder:generate
 ```
 
-Scans configured directories, resolves types, and writes `.d.ts` files to `output_path`. Only files whose content has changed are rewritten; stale generated files are pruned automatically. By default the `output_path` is added to your project `.gitignore` on first run (`gitignore_generated`). Decide whether to commit the output before setting up CI; see [Using typefinder in CI](#using-typefinder-in-ci). Warnings from the run (unknown column types, skipped classes, and so on) are printed as `[typefinder] warning: …` lines.
+Scans configured directories, resolves types, and writes `.d.ts` files to `output_path`. Only files whose content has changed are rewritten; stale generated files are pruned automatically. By default the `output_path` is added to your project `.gitignore` on first run (`gitignore_generated`), unless it is outside the project directory. The output of a category you disable is removed on the next run. Decide whether to commit the output before setting up CI; see [Using typefinder in CI](#using-typefinder-in-ci). Warnings from the run (unknown column types, skipped classes, and so on) are printed as `[typefinder] warning: …` lines.
 
 ### Flags
 
@@ -77,7 +77,7 @@ Scans configured directories, resolves types, and writes `.d.ts` files to `outpu
 | `--debug` | Print line-oriented diagnostic output prefixed with `[typefinder]`. Includes per-class parsing lines so you can pinpoint a failing class. |
 | `--json` | Output a single JSON object to stdout (machine-readable, used by the Vite plugin). |
 | `--strict` | Exit non-zero when the run produced any warning (unknown column types, casts with no TypeScript mapping, PHPDoc fields emitted as `unknown`, skipped classes, …). Combine with `--check` for a CI gate on committed output, or add it to the regular generate step in CI. |
-| `--only=<path>` | Re-extract the given absolute paths, plus any source file that changed since the last run, instead of every file, then rewrite what that changes in the output. Repeatable (`--only=/a/Foo.php --only=/a/Bar.php`). Leaves the same output as a full run; without the cache of an earlier run it is a full run. A file that cannot be extracted keeps the type it had, is reported as an error and makes the command exit non-zero. Used by the Vite plugin's watch loop for incremental regeneration; rarely useful by hand. |
+| `--only=<path>` | Re-extract the given absolute paths, plus any source file that changed since the last run, instead of every file, then rewrite what that changes in the output. Repeatable (`--only=/a/Foo.php --only=/a/Bar.php`). A cached file is also extracted again when a parent class, a trait or (for a model) a cast class it uses changed, and every resource is extracted again when the set of models or enums that get a type changed. A change to the migrations (a migration file written or edited, or one the database ran) makes it a full run, as does a missing cache of an earlier run. What it does not see: a schema change made without a migration, `Typefinder::registerCast()` calls and the `casts.type_map` of a running watcher (they are read when the process boots), and a class an extraction reads that is none of the above (an imported `@phpstan-type` alias). Run a full `typefinder:generate` after those. A file that cannot be extracted keeps the type it had, is reported as an error and makes the command exit non-zero. Used by the Vite plugin's watch loop for incremental regeneration; rarely useful by hand. |
 
 ### Watching for changes
 
@@ -87,7 +87,7 @@ php artisan typefinder:watch
 
 Starts a long-lived generator process that reads incremental regeneration requests from stdin (NDJSON) and emits status lines on stdout. Not intended for direct interactive use — the [Vite plugin](../vite-plugin-laravel-typefinder/) spawns and drives it during `vite dev` for 20–60ms per-change latency. Exits on `SIGINT` / `SIGTERM`.
 
-Each request is answered by a fork of the watcher, so an edited class is read from its file as it is now (a PHP process cannot reload a class it has loaded). Without the `pcntl` extension, or once a class the application loads while booting has been edited, each request starts a new PHP process instead: the same output, a Laravel boot slower.
+Each request is answered by a fork of the watcher, so an edited class is read from its file as it is now (a PHP process cannot reload a class it has loaded). Without the `pcntl` extension, or once a class the application loads while booting has been edited, each request starts a new PHP process instead: the same output, a Laravel boot slower. A worker that has not answered after `watch.worker_timeout` seconds (default 300, `0` for no limit) is stopped and the request is reported as failed, so one hung extraction does not block the later ones.
 
 ### Using typefinder in CI
 
@@ -398,7 +398,7 @@ export type PostResource = {
 
 **Upgrading:** a resource that already documents `@return array{…}` on `toArray()` and has no `#[TypefinderResource]` attribute now gets that shape instead of the same-named model. To keep the old type, add `#[TypefinderResource(model: User::class)]`. This release also adds `nikic/php-parser` ^5 and `phpstan/phpdoc-parser` ^2 as dependencies; apps pinned to phpdoc-parser ^1 must upgrade.
 
-**Known limits:** in watch / `--only` runs, editing a parent resource's `toArray()` doc, a trait that provides `toArray()`, or a class that defines an imported `@phpstan-type` alias, does not re-render the resources that use it; run a full `typefinder:generate` to refresh. Trait conflict resolution (`insteadof` / `as`) is not considered: the first trait in `use` order that declares `toArray()` (or a helper) is read. Composition follows only `$this->m()`, `self::m()`, `static::m()` and `parent::toArray()` calls, at most 3 delegations deep from `toArray()` (a recursive helper is not composed), and only a `toArray()` declared in the resource class itself, not an inherited or trait-provided one. Editing a helper in a parent class or trait does not re-render the resources that use it in watch / `--only` runs. In watch mode, method bodies are re-read from disk on every change, but attributes (`#[TypefinderResource]`, `#[TypefinderPage]`) of a class the watcher has already loaded keep their old values, so drift warnings may compare the new code with the old attribute until the dev server restarts.
+**Known limits:** in watch / `--only` runs, editing a class that defines an imported `@phpstan-type` alias does not re-render the resources that use it; run a full `typefinder:generate` to refresh. (An edited parent resource or trait does: the resources that extend or use it are extracted again.) Trait conflict resolution (`insteadof` / `as`) is not considered: the first trait in `use` order that declares `toArray()` (or a helper) is read. Composition follows only `$this->m()`, `self::m()`, `static::m()` and `parent::toArray()` calls, at most 3 delegations deep from `toArray()` (a recursive helper is not composed), and only a `toArray()` declared in the resource class itself, not an inherited or trait-provided one. In watch mode, method bodies are re-read from disk on every change, but attributes (`#[TypefinderResource]`, `#[TypefinderPage]`) of a class the watcher has already loaded keep their old values, so drift warnings may compare the new code with the old attribute until the dev server restarts.
 
 ### Pages (opt-in, `typefinder.inertia.enabled`)
 
@@ -444,7 +444,7 @@ Consumers write `WrappedResource<UserResource>` or `PaginatedResourceCollection<
 Generation compares what you declare with what your code actually produces, by key name only (types are never compared), and reports mismatches as warnings:
 
 - **Resources:** the keys of a declared shape (`#[TypefinderResource(shape: [...])]`, or a PHPDoc `@return array{…}`) against the literal keys returned by the `toArray()` in the resource's own file. Inherited or trait-provided `toArray()` methods are not read.
-- **Model-typed resources:** a resource typed as a model (by the `{Model}Resource` name convention or `#[TypefinderResource(model: …)]`) against that model's type: columns (required, nullable or not), relations (optional), less `omit`, plus `extend`. Hidden columns are not in the model type, so returning one is reported. The resource's default `toArray()` and `return parent::toArray($request);` are not checked. Incremental runs (`--only`, watch) read the model's type from the extraction cache, which every run brings up to date with the model files first. A cached model does not notice a migration or an edited parent model or trait until the next full run.
+- **Model-typed resources:** a resource typed as a model (by the `{Model}Resource` name convention or `#[TypefinderResource(model: …)]`) against that model's type: columns (required, nullable or not), relations (optional), less `omit`, plus `extend`. Hidden columns are not in the model type, so returning one is reported. The resource's default `toArray()` and `return parent::toArray($request);` are not checked. Incremental runs (`--only`, watch) read the model's type from the extraction cache, which every run brings up to date with the model files first. A migration, or an edited parent model or trait, makes the models that depend on it extracted again.
 - **Pages:** the props of a `#[TypefinderPage]` against the props the same action passes to `Inertia::render()` or the `inertia()` helper for that component (literal arrays, `compact()`, chained `->with()` calls, and `Inertia::optional|lazy|defer` wrappers). Several `#[TypefinderPage]` attributes for one component on one action are merged first, as in the generated type: a prop is optional when any of them leaves it out or lists it in `optional`. Only with `typefinder.inertia.enabled`.
 
 The checks favour precision. When the code is not fully literal (a spread, `parent::toArray()`, a computed key), only "undeclared key" warnings are reported, since a key that is certainly returned and not declared is still a fact, while a missing key cannot be proven. Only renders the action makes directly are read, not renders in a helper method or a base controller: an action whose every return is such a call gets no page warnings, and an action that also returns anything other than a direct render of the page (a helper call, a redirect, another page, a bare `return;`) gets only "undeclared prop" warnings. A key is called conditional only when it is conditional everywhere it appears (`$this->when*()`, `unless()` or `transform()` without a default, `mergeWhen()`, `mergeUnless()`). An early `return [];` guard in `toArray()` does not make the other keys "not always returned". A file that fails to parse produces no drift warnings.
@@ -591,6 +591,10 @@ return [
     'casts' => [
         'type_map' => [],
     ],
+
+    'watch' => [
+        'worker_timeout' => 300,                        // seconds; 0 = no limit
+    ],
 ];
 ```
 
@@ -599,15 +603,17 @@ return [
 ```json
 {
   "success": true,
-  "counts": { "models": 3, "enums": 2, "requests": 2, "resources": 1, "pivots": 1 },
+  "counts": { "models": 4, "enums": 2, "requests": 2, "resources": 1 },
   "files": [
-    { "path": "models/Post.d.ts", "written": true },
-    { "path": "models/User.d.ts", "written": false }
+    { "path": "models/Post.d.ts", "written": true, "removed": false },
+    { "path": "resources/OldResource.d.ts", "written": false, "removed": true }
   ],
   "warnings": ["skipped App\\Http\\Resources\\Foo: no shape, model, or name-match"],
   "errors": []
 }
 ```
+
+`counts` is the number of types each output directory or file holds after the run (`models` includes pivots; `pages` and `broadcasting` count pages and events), changed or not. It is `{}` when nothing is generated. `files` lists only the files the run wrote or removed.
 
 ## Publishing the Claude Code skill
 

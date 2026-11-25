@@ -156,4 +156,19 @@ return [
         'enabled' => false,
         'paths' => [app_path('Events')],
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Watch
+    |--------------------------------------------------------------------------
+    |
+    | `typefinder:watch` (the Vite plugin) answers each regeneration in a
+    | worker process. A worker that has not answered after this many seconds
+    | (say, a model that blocks on a network call while it is extracted) is
+    | stopped and the regeneration reported as failed. 0 waits forever.
+    |
+    */
+    'watch' => [
+        'worker_timeout' => 300,
+    ],
 ];

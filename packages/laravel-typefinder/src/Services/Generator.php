@@ -28,6 +28,9 @@ use ReflectionClass;
  */
 final class Generator
 {
+    /** Categories whose extractions depend on which models and enums get a type. */
+    private const array READ_GENERATED_CLASSES = ['resources', 'inertia'];
+
     public function __construct(
         private readonly TypefinderRegistry $typefinderRegistry,
         private readonly TypeScriptRenderer $typeScriptRenderer,
@@ -82,13 +85,14 @@ final class Generator
 
         $lockHash = $this->cacheKeyFactory->composerLockHash();
         $configHash = $this->cacheKeyFactory->configHash($config);
+        $schemaHash = $this->cacheKeyFactory->schemaHash();
 
-        $extractionCache = $paths === [] ? null : ExtractionCache::load($this->cachePath, $lockHash, $configHash);
+        $extractionCache = $paths === [] ? null : ExtractionCache::load($this->cachePath, $lockHash, $configHash, $schemaHash);
         // Without the entries of a previous run nothing is known about the
         // other types, so every file is extracted.
         $incremental = $extractionCache instanceof ExtractionCache && $extractionCache->restored();
         if (! $incremental) {
-            $extractionCache = new ExtractionCache($this->cachePath, $lockHash, $configHash);
+            $extractionCache = new ExtractionCache($this->cachePath, $lockHash, $configHash, $schemaHash);
         }
 
         $roots = Categories::roots();
@@ -119,8 +123,18 @@ final class Generator
         }
 
         $fileExtractor = new FileExtractor($this->typefinderRegistry, $extractionCache, $warn);
+        $generatedBefore = $this->generatedClasses($extractionCache->persistedEntriesByCategory(...));
 
         foreach (array_keys($roots) as $category) {
+            // Resources infer their model from the models that get a type, and
+            // drift checks read them too. When that set changed, the cached
+            // entries of these categories may be wrong (#176).
+            if (in_array($category, self::READ_GENERATED_CLASSES, true) && $this->generatedClasses($extractionCache->entriesByCategory(...)) !== $generatedBefore) {
+                foreach ($this->sourceFiles($roots[$category]) as $file) {
+                    $pending[$category][$file] = true;
+                }
+            }
+
             foreach (array_keys($pending[$category] ?? []) as $file) {
                 if (! is_file($file)) {
                     $extractionCache->forget($file, $category);
@@ -136,7 +150,7 @@ final class Generator
                         $this->assertValid($category, array_values([...$extractionCache->entriesByCategory($category), $file => $extraction]));
                     }
 
-                    $extractionCache->put($file, $category, $extraction);
+                    $extractionCache->put($file, $category, $extraction, $fileExtractor->dependencies($file, $category));
                 } catch (\Throwable $throwable) {
                     if (! $incremental) {
                         throw $throwable;
@@ -145,115 +159,205 @@ final class Generator
                     $failed[] = ['path' => $file, 'message' => ThrowableMessage::describe($throwable)];
                 }
             }
+
+            if (! $incremental) {
+                // An incremental run checked each file as it was extracted.
+                $this->assertValid($category, $this->inSourceOrder($extractionCache->entriesByCategory($category), $roots[$category]));
+            }
         }
 
-        $changed = $this->emit($extractionCache, $roots, $warn);
+        $outputTree = new OutputTree((string) config('typefinder.output_path'));
+        $counts = $this->emit($extractionCache, $roots, $outputTree, $warn);
         $extractionCache->persist();
 
         return new RegenResult(
-            changed: $changed,
+            changed: $outputTree->changed(),
             warnings: $warnings,
             failed: $failed,
             durationMs: (int) round((microtime(true) - $startedAt) * 1000),
+            removed: $outputTree->removed(),
+            counts: $counts,
         );
     }
 
     /**
-     * Write the output tree for the types in the cache: every file of every
-     * enabled category, the barrels, and nothing else in their directories.
+     * Write the output tree for the types in the cache, in one pass over
+     * {@see Categories::ALL}: every file of every enabled category with the
+     * barrels, and nothing else in their directories. A category that is
+     * disabled or has no types leaves no output.
      *
      * @param  array<string, list<string>>  $roots
      * @param  callable(string): void  $warn
-     * @return list<string> relative paths of the files that changed
+     * @return array<string, int> the number of types each output directory or file holds
      */
-    private function emit(ExtractionCache $extractionCache, array $roots, callable $warn): array
+    private function emit(ExtractionCache $extractionCache, array $roots, OutputTree $outputTree, callable $warn): array
     {
         $sets = array_fill_keys(Categories::ALL, []);
         foreach ($roots as $category => $dirs) {
             $sets[$category] = $this->inSourceOrder($extractionCache->entriesByCategory($category), $dirs);
-            $this->assertValid($category, $sets[$category]);
         }
 
         $enums = $sets['enums'];
         $models = new MorphToResolver()->resolve($sets['models']);
-        $pivots = new PivotResolver()->resolve($models);
-        $requests = $sets['requests'];
         $resources = $sets['resources'];
-        $pages = PageMerger::merge($this->pagesOf($sets['inertia']));
-        $broadcasts = $sets['broadcasting'];
 
-        $outputTree = new OutputTree((string) config('typefinder.output_path'));
-        $files = [];
-
-        $emitWriteShapes = (bool) config('typefinder.models.emit_write_shapes', true);
-        $globalImmutable = (array) config('typefinder.models.immutable_on_update', ['id', 'created_at', 'updated_at', 'deleted_at']);
-        foreach ($models as $model) {
-            $immutable = array_values(array_unique([...$globalImmutable, ...$this->getContractImmutable($model['fqcn'])]));
-            $files['models'][$model['name']] = $this->typeScriptRenderer->renderModelFile($model, $enums, $models, $emitWriteShapes, $immutable);
-        }
-
-        foreach ($pivots as $pivot) {
-            $files['models'][$pivot['name']] = $this->typeScriptRenderer->renderPivot($pivot);
-        }
-
-        $extractNested = (bool) config('typefinder.requests.extract_nested', false);
-        foreach ($requests as $request) {
-            $files['requests'][$request['name']] = $this->typeScriptRenderer->renderRequest($request, $enums, $extractNested);
-        }
-
-        foreach ($resources as $resource) {
-            $files['resources'][$resource['name']] = $this->typeScriptRenderer->renderResource($resource, $models, $enums, $resources);
-        }
-
-        $categories = [];
+        $emitted = [];
+        $counts = [];
         // What each category barrel exports, for the cross-category check.
         $barrelNames = [];
 
-        foreach (['enums', 'models', 'requests', 'resources'] as $category) {
-            if (! isset($roots[$category])) {
-                continue;
-            }
+        foreach (Categories::ALL as $category) {
+            [$kind, $name] = Categories::OUTPUT[$category];
+            [$files, $count] = isset($roots[$category])
+                ? $this->render($category, $sets[$category], $enums, $models, $resources)
+                : [[], 0];
 
-            if ($sets[$category] === []) {
-                $outputTree->removeDirectory($category);
-
-                continue;
-            }
-
-            $barrelNames[$category] = $category === 'enums'
-                ? $this->writeEnums($enums, $outputTree)
-                : $this->writeCategory($category, $files[$category], $outputTree, $warn);
-            $categories[] = $category;
-        }
-
-        $singleFiles = [
-            'inertia' => ['pages', $pages, fn (): string => $this->typeScriptRenderer->renderPages($pages, $models, $enums, $resources)],
-            'broadcasting' => ['broadcasting', $broadcasts, fn (): string => $this->typeScriptRenderer->renderBroadcasting($broadcasts, $models, $enums, $resources)],
-        ];
-
-        foreach ($singleFiles as $category => [$name, $entries, $render]) {
-            if (! isset($roots[$category])) {
-                continue;
-            }
-
-            if ($entries === []) {
-                $outputTree->remove($name.'.d.ts');
+            if ($files === []) {
+                $kind === 'directory' ? $outputTree->removeDirectory($name) : $outputTree->remove($name.'.d.ts');
 
                 continue;
             }
 
-            $outputTree->write($name.'.d.ts', $render());
-            $categories[] = $name;
+            if ($kind === 'directory') {
+                $barrelNames[$category] = $this->writeDirectory($category, $files, $outputTree, $warn);
+            } else {
+                $outputTree->write($name.'.d.ts', $files[$name]);
+            }
+
+            $emitted[] = $name;
+            $counts[$name] = $count;
         }
 
         $this->warnOnCrossCategoryNames($barrelNames, $warn);
 
         $outputTree->write('helpers.d.ts', $this->typeScriptRenderer->renderHelpers());
-        $categories[] = 'helpers';
+        $emitted[] = 'helpers';
 
-        $outputTree->write('index.d.ts', $this->typeScriptRenderer->renderTopLevelBarrel($categories));
+        $outputTree->write('index.d.ts', $this->typeScriptRenderer->renderTopLevelBarrel($emitted));
 
-        return $outputTree->changed();
+        return $counts;
+    }
+
+    /**
+     * The files of one category and the number of types they hold.
+     *
+     * @param  list<array<string, mixed>>  $entries  the category's extractions, in source order
+     * @param  list<array<string, mixed>>  $enums
+     * @param  list<array<string, mixed>>  $models  with their morph targets resolved
+     * @param  list<array<string, mixed>>  $resources
+     * @return array{0: array<string, string>, 1: int} file contents by name (a type name, or the single file's name), and the count
+     */
+    private function render(string $category, array $entries, array $enums, array $models, array $resources): array
+    {
+        $files = [];
+
+        switch ($category) {
+            case 'enums':
+                $emitValues = (bool) config('typefinder.enums.emit_values', false);
+                foreach ($enums as $enum) {
+                    $files[$enum['name']] = $this->typeScriptRenderer->renderEnum($enum, $emitValues);
+                }
+
+                return [$files, count($files)];
+
+            case 'models':
+                $emitWriteShapes = (bool) config('typefinder.models.emit_write_shapes', true);
+                $globalImmutable = (array) config('typefinder.models.immutable_on_update', ['id', 'created_at', 'updated_at', 'deleted_at']);
+                foreach ($models as $model) {
+                    $immutable = array_values(array_unique([...$globalImmutable, ...$this->getContractImmutable($model['fqcn'])]));
+                    $files[$model['name']] = $this->typeScriptRenderer->renderModelFile($model, $enums, $models, $emitWriteShapes, $immutable);
+                }
+
+                foreach (new PivotResolver()->resolve($models) as $pivot) {
+                    $files[$pivot['name']] = $this->typeScriptRenderer->renderPivot($pivot);
+                }
+
+                return [$files, count($files)];
+
+            case 'requests':
+                $extractNested = (bool) config('typefinder.requests.extract_nested', false);
+                foreach ($entries as $request) {
+                    $files[$request['name']] = $this->typeScriptRenderer->renderRequest($request, $enums, $extractNested);
+                }
+
+                return [$files, count($files)];
+
+            case 'resources':
+                foreach ($resources as $resource) {
+                    $files[$resource['name']] = $this->typeScriptRenderer->renderResource($resource, $models, $enums, $resources);
+                }
+
+                return [$files, count($files)];
+
+            case 'inertia':
+                $pages = PageMerger::merge($this->pagesOf($entries));
+
+                return $pages === []
+                    ? [[], 0]
+                    : [['pages' => $this->typeScriptRenderer->renderPages($pages, $models, $enums, $resources)], count($pages)];
+
+            case 'broadcasting':
+                return $entries === []
+                    ? [[], 0]
+                    : [['broadcasting' => $this->typeScriptRenderer->renderBroadcasting($entries, $models, $enums, $resources)], count($entries)];
+        }
+
+        return [[], 0];
+    }
+
+    /**
+     * Write the files of a category directory and its barrel, and remove
+     * every other file in it.
+     *
+     * @param  array<string, string>  $files  file contents by type name
+     * @param  callable(string): void  $warn
+     * @return list<string> the type names the category barrel exports
+     */
+    private function writeDirectory(string $category, array $files, OutputTree $outputTree, callable $warn): array
+    {
+        $emitValues = $category === 'enums' && (bool) config('typefinder.enums.emit_values', false);
+        $ext = $emitValues ? 'ts' : 'd.ts';
+
+        $exports = [];
+        foreach ($files as $name => $content) {
+            $outputTree->write(sprintf('%s/%s.%s', $category, $name, $ext), $content);
+            // An enum file is named after its one type.
+            $exports[$name] = $category === 'enums' ? [(string) $name] : TypeScriptRenderer::exportedTypeNames($content, (string) $name);
+        }
+
+        $names = array_map(strval(...), array_keys($exports));
+        $outputTree->prune($category, array_map(fn (string $name): string => $name.'.'.$ext, [...$names, 'index']));
+
+        if ($category === 'enums') {
+            $outputTree->write('enums/index.'.$ext, $emitValues
+                ? $this->renderValueBarrel($names)
+                : $this->typeScriptRenderer->renderBarrelIndex($names));
+
+            return $names;
+        }
+
+        // Every type of every file is re-exported.
+        $exports = $this->barrelExports($category, $exports, $warn);
+        $outputTree->write($category.'/index.d.ts', $this->typeScriptRenderer->renderBarrelIndex($exports));
+
+        return array_merge([], ...array_values($exports));
+    }
+
+    /**
+     * The classes of the categories other extractions refer to that get a type.
+     *
+     * @param  callable(string): array<string, array<string, mixed>>  $entriesByCategory
+     * @return array<string, list<string>>
+     */
+    private function generatedClasses(callable $entriesByCategory): array
+    {
+        $classes = [];
+        foreach (['models', 'enums'] as $category) {
+            $classes[$category] = array_values(array_column($entriesByCategory($category), 'fqcn'));
+            sort($classes[$category]);
+        }
+
+        return $classes;
     }
 
     /**
@@ -332,35 +436,12 @@ final class Generator
     private function rootIndex(string $file, array $dirs): ?int
     {
         foreach ($dirs as $index => $dir) {
-            if (str_starts_with($file, $dir.'/')) {
+            if (Categories::contains($dir, $file)) {
                 return $index;
             }
         }
 
         return null;
-    }
-
-    /**
-     * @return list<string> the type names the category barrel exports
-     */
-    private function writeEnums(array $enums, OutputTree $outputTree): array
-    {
-        $emitValues = (bool) config('typefinder.enums.emit_values', false);
-        $ext = $emitValues ? 'ts' : 'd.ts';
-
-        $names = [];
-        foreach ($enums as $enum) {
-            $outputTree->write(sprintf('enums/%s.%s', $enum['name'], $ext), $this->typeScriptRenderer->renderEnum($enum, $emitValues));
-            $names[] = $enum['name'];
-        }
-
-        $outputTree->prune('enums', array_map(fn (string $name): string => $name.'.'.$ext, [...$names, 'index']));
-
-        $outputTree->write('enums/index.'.$ext, $emitValues
-            ? $this->renderValueBarrel($names)
-            : $this->typeScriptRenderer->renderBarrelIndex($names));
-
-        return $names;
     }
 
     /**
@@ -391,31 +472,6 @@ final class Generator
         }
 
         return $attrs[0]->newInstance()->immutableOnUpdate;
-    }
-
-    /**
-     * Write the files of a category directory and its barrel, and remove
-     * every other file in it.
-     *
-     * @param  array<string, string>  $files  file contents by type name
-     * @param  callable(string): void  $warn
-     * @return list<string> the type names the category barrel exports
-     */
-    private function writeCategory(string $category, array $files, OutputTree $outputTree, callable $warn): array
-    {
-        $exports = [];
-        foreach ($files as $name => $content) {
-            $outputTree->write(sprintf('%s/%s.d.ts', $category, $name), $content);
-            $exports[$name] = TypeScriptRenderer::exportedTypeNames($content, (string) $name);
-        }
-
-        $outputTree->prune($category, array_map(fn (string $name): string => $name.'.d.ts', [...array_map(strval(...), array_keys($exports)), 'index']));
-
-        // Every type of every file is re-exported.
-        $exports = $this->barrelExports($category, $exports, $warn);
-        $outputTree->write($category.'/index.d.ts', $this->typeScriptRenderer->renderBarrelIndex($exports));
-
-        return array_merge([], ...array_values($exports));
     }
 
     /**

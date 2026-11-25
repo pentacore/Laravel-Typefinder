@@ -247,6 +247,158 @@ final class IncrementalParityTest extends TestCase
         $this->assertFileDoesNotExist($this->output.'/broadcasting.d.ts');
     }
 
+    public function test_incremental_run_drops_the_type_of_a_resource_whose_model_was_deleted(): void
+    {
+        $model = $this->writeModel('Widget');
+        $this->writeResource('WidgetResource');
+        $this->useScratchModelsAndResources();
+
+        $generator = app(Generator::class);
+        $generator->generateFull();
+        $this->assertStringContainsString('export type WidgetResource = Widget;', File::get($this->output.'/resources/WidgetResource.d.ts'));
+
+        File::delete($model);
+        $regenResult = $generator->generatePaths([$model]);
+
+        $this->assertSame([], $regenResult->failed);
+        $this->assertFileDoesNotExist($this->output.'/models/Widget.d.ts');
+        $this->assertFileDoesNotExist($this->output.'/resources/WidgetResource.d.ts');
+        $this->assertContains('resources/WidgetResource.d.ts', $regenResult->removed);
+    }
+
+    public function test_incremental_run_types_a_resource_by_a_model_that_was_added(): void
+    {
+        $this->writeResource('GadgetResource');
+        $this->useScratchModelsAndResources();
+
+        $generator = app(Generator::class);
+        $generator->generateFull();
+        $this->assertFileDoesNotExist($this->output.'/resources/GadgetResource.d.ts');
+
+        $model = $this->writeModel('Gadget');
+        $regenResult = $generator->generatePaths([$model]);
+
+        $this->assertSame([], $regenResult->failed);
+        $this->assertStringContainsString('export type GadgetResource = Gadget;', File::get($this->output.'/resources/GadgetResource.d.ts'));
+    }
+
+    public function test_disabling_a_category_removes_its_output(): void
+    {
+        $generator = app(Generator::class);
+        $generator->generateFull();
+        $this->assertFileExists($this->output.'/resources/UserResource.d.ts');
+        $this->assertFileExists($this->output.'/pages.d.ts');
+        $this->assertFileExists($this->output.'/broadcasting.d.ts');
+
+        config([
+            'typefinder.resources.enabled' => false,
+            'typefinder.inertia.enabled' => false,
+            'typefinder.broadcasting.enabled' => false,
+        ]);
+        $regenResult = $generator->generateFull();
+
+        $this->assertDirectoryDoesNotExist($this->output.'/resources');
+        $this->assertFileDoesNotExist($this->output.'/pages.d.ts');
+        $this->assertFileDoesNotExist($this->output.'/broadcasting.d.ts');
+        $this->assertContains('resources/UserResource.d.ts', $regenResult->removed);
+        $this->assertContains('pages.d.ts', $regenResult->removed);
+        $this->assertStringNotContainsString("'./resources'", File::get($this->output.'/index.d.ts'));
+    }
+
+    public function test_incremental_run_sees_a_column_a_migration_added(): void
+    {
+        $generator = app(Generator::class);
+        $generator->generateFull();
+        $this->assertStringNotContainsString('nickname', File::get($this->output.'/models/User.d.ts'));
+
+        $migrations = $this->scratch.'/migrations';
+        File::ensureDirectoryExists($migrations);
+        File::put($migrations.'/2030_01_01_000000_add_nickname_to_users.php', <<<'PHP'
+            <?php
+            use Illuminate\Database\Migrations\Migration;
+            use Illuminate\Database\Schema\Blueprint;
+            use Illuminate\Support\Facades\Schema;
+            return new class extends Migration {
+                public function up(): void
+                {
+                    Schema::table('users', fn (Blueprint $table) => $table->string('nickname')->nullable());
+                }
+            };
+            PHP);
+        $this->artisan('migrate', ['--path' => $migrations, '--realpath' => true])->assertSuccessful();
+
+        $regenResult = $generator->generatePaths([workbench_path('app/Models/Post.php')]);
+
+        $this->assertSame([], $regenResult->failed);
+        $this->assertStringContainsString('nickname', File::get($this->output.'/models/User.d.ts'));
+    }
+
+    public function test_incremental_run_extracts_a_class_again_when_its_parent_changed(): void
+    {
+        $child = (string) realpath(workbench_path('app/Http/Resources/InheritedShapeResource.php'));
+        $parent = (string) realpath(workbench_path('app/Http/Resources/Concerns/BaseShapeResource.php'));
+        $mtime = (int) filemtime($parent);
+
+        $generator = app(Generator::class);
+        $generator->generateFull();
+        $this->assertSame([$mtime, filesize($parent)], $this->cachedDependency('resources', $child, $parent));
+
+        try {
+            touch($parent, $mtime + 5);
+            $generator->generatePaths([$parent]);
+
+            $this->assertSame([$mtime + 5, filesize($parent)], $this->cachedDependency('resources', $child, $parent), 'the child was extracted again');
+        } finally {
+            touch($parent, $mtime);
+        }
+    }
+
+    /**
+     * @return mixed what the persisted cache records about one dependency of a file
+     */
+    private function cachedDependency(string $category, string $file, string $dependency): mixed
+    {
+        $cache = json_decode(File::get(storage_path('framework/cache/typefinder/extractions.json')), true, 512, JSON_THROW_ON_ERROR);
+
+        return $cache['entries'][$category][$file]['deps'][$dependency] ?? null;
+    }
+
+    private function useScratchModelsAndResources(): void
+    {
+        config([
+            'typefinder.models.paths' => [$this->scratch.'/Models'],
+            'typefinder.resources.paths' => [$this->scratch.'/Resources'],
+            'typefinder.inertia.enabled' => false,
+            'typefinder.broadcasting.enabled' => false,
+        ]);
+    }
+
+    /**
+     * Write a model of the users table into the scratch dir and load it.
+     */
+    private function writeModel(string $name): string
+    {
+        File::ensureDirectoryExists($this->scratch.'/Models');
+        $file = $this->scratch.'/Models/'.$name.'.php';
+        File::put($file, "<?php\nnamespace Scratch\\Parity{$this->id}\\Models;\nclass {$name} extends \\Illuminate\\Database\\Eloquent\\Model { protected \$table = 'users'; }\n");
+        require $file;
+
+        return (string) realpath($file);
+    }
+
+    /**
+     * Write a resource without a declared shape into the scratch dir and load it.
+     */
+    private function writeResource(string $name): string
+    {
+        File::ensureDirectoryExists($this->scratch.'/Resources');
+        $file = $this->scratch.'/Resources/'.$name.'.php';
+        File::put($file, "<?php\nnamespace Scratch\\Parity{$this->id}\\Resources;\nclass {$name} extends \\Illuminate\\Http\\Resources\\Json\\JsonResource {}\n");
+        require $file;
+
+        return (string) realpath($file);
+    }
+
     /**
      * @return array<string, string> file contents by path relative to the output dir
      */
