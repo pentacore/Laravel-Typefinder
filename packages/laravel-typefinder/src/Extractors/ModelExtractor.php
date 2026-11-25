@@ -82,6 +82,7 @@ class ModelExtractor
         // stays writable, so only the read type leaves it out.
         $readColumns = array_values(array_filter($columns, fn (array $column): bool => $this->isSerialised($model, $column['name'])));
         $readColumns = [...$readColumns, ...$this->extractAppends($model, $reflectionClass, $readColumns)];
+        [$readColumns, $relationships] = $this->addOverriddenFields($model, $readColumns, $relationships);
 
         return [
             'name' => $reflectionClass->getShortName(),
@@ -222,6 +223,47 @@ class ModelExtractor
         }
 
         return $columns;
+    }
+
+    /**
+     * `#[TypefinderOverrides]` keys that are neither a column nor an appended
+     * attribute: a relation's key replaces the relation's type (still
+     * optional, as a relation is only there when loaded); any other key
+     * adds a read-only field (a `withCount()` attribute, say).
+     *
+     * @param  list<array<string, mixed>>  $columns
+     * @param  list<array<string, mixed>>  $relationships
+     * @return array{list<array<string, mixed>>, list<array<string, mixed>>}
+     */
+    protected function addOverriddenFields(Model $model, array $columns, array $relationships): array
+    {
+        $taken = array_column($columns, 'name');
+
+        foreach ($this->getTypeOverrides($model) as $name => $type) {
+            $name = (string) $name;
+            if (in_array($name, $taken, true) || ! $this->isSerialised($model, $name)) {
+                continue;
+            }
+
+            $relationNames = array_column($relationships, 'name');
+            $isRelation = in_array($name, $relationNames, true);
+            if ($isRelation) {
+                $relationships = array_values(array_filter($relationships, fn (array $rel): bool => $rel['name'] !== $name));
+            }
+
+            $taken[] = $name;
+            $columns[] = [
+                'type' => $type,
+                'name' => $name,
+                'nullable' => false,
+                'is_primary' => false,
+                'is_server_filled' => true,
+                'is_appended' => true,
+                'optional' => $isRelation,
+            ];
+        }
+
+        return [$columns, $relationships];
     }
 
     /**

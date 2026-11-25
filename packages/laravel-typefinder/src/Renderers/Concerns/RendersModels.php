@@ -114,7 +114,7 @@ trait RendersModels
 
         foreach ($model['columns'] as $column) {
             $typeStr = $this->resolveTypeString($column['type'], $column['nullable'], $allEnums, $imports, 'models', $model['fqcn'] ?? null, $allModels);
-            $lines[] = '  '.TypeScriptRenderer::member((string) $column['name'], TypeScriptRenderer::appendNullable($typeStr, (bool) $column['nullable'])).';';
+            $lines[] = '  '.TypeScriptRenderer::member((string) $column['name'], TypeScriptRenderer::appendNullable($typeStr, (bool) $column['nullable']), ! empty($column['optional'])).';';
         }
 
         foreach ($relationships as $rel) {
