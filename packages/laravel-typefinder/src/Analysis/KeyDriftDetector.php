@@ -22,7 +22,7 @@ use Pentacore\Typefinder\Support\GeneratedClasses;
 final readonly class KeyDriftDetector
 {
     /** Inertia prop wrappers that leave the prop out of the first load. */
-    private const array INERTIA_WRAPPERS = [
+    public const array INERTIA_WRAPPERS = [
         'Inertia\\Inertia::optional',
         'Inertia\\Inertia::lazy',
         'Inertia\\Inertia::defer',

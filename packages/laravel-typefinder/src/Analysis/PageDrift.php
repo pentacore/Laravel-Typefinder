@@ -19,6 +19,7 @@ use PhpParser\Node\Expr\Match_;
 use PhpParser\Node\Expr\MethodCall;
 use PhpParser\Node\Expr\StaticCall;
 use PhpParser\Node\Expr\Ternary;
+use PhpParser\Node\Expr\Variable;
 use PhpParser\Node\Identifier;
 use PhpParser\Node\Name;
 use PhpParser\Node\Scalar\String_;
@@ -307,6 +308,20 @@ final readonly class PageDrift
      */
     private function renderProps(Expr $expr, string $component): ?ReturnedArray
     {
+        $render = $this->render($expr);
+
+        return $render !== null && $render['component'] === $component ? $render['props'] : null;
+    }
+
+    /**
+     * The literal component and the props of `<render call>->with(…)->with(…)`,
+     * or null when $expr is not such a call or its component is not a
+     * string literal.
+     *
+     * @return ?array{component: string, props: ReturnedArray}
+     */
+    public function render(Expr $expr): ?array
+    {
         $withs = [];
 
         while ($expr instanceof MethodCall && $expr->name instanceof Identifier && $expr->name->toLowerString() === 'with') {
@@ -320,7 +335,7 @@ final readonly class PageDrift
 
         $first = $this->argument($expr, 0, 'component');
 
-        if (! $first instanceof String_ || $first->value !== $component) {
+        if (! $first instanceof String_) {
             return null;
         }
 
@@ -330,7 +345,7 @@ final readonly class PageDrift
             $parts = [...$parts, ...$this->withParts($with)];
         }
 
-        return new ReturnedArray($parts);
+        return ['component' => $first->value, 'props' => new ReturnedArray($parts)];
     }
 
     /** @phpstan-assert-if-true StaticCall|FuncCall $expr */
@@ -380,7 +395,8 @@ final readonly class PageDrift
                     return [$this->open($props)];
                 }
 
-                $parts[] = new ReturnedPart(ReturnedPart::ITEM, key: $arg->value->value, value: $arg->value);
+                // The value is the variable compact() reads, keeping the name's attributes (its position, and the scope Rector rules type it in).
+                $parts[] = new ReturnedPart(ReturnedPart::ITEM, key: $arg->value->value, value: new Variable($arg->value->value, $arg->value->getAttributes()));
             }
 
             return $parts;
