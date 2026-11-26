@@ -103,7 +103,7 @@ final class ClassStringResolutionTest extends TestCase
         $this->assertStringContainsString("import type { PostResource } from './resources';", $output);
         $this->assertStringContainsString("import type { User } from './models';", $output);
         $this->assertStringContainsString("import type { PostStatus } from './enums';", $output);
-        $this->assertStringContainsString("'Posts/Show': { post: PostResource; author: User; status: PostStatus | null };", $output);
+        $this->assertStringContainsString("'Posts/Show': { post: WrappedResource<PostResource>; author: User; status: PostStatus | null };", $output);
         $this->assertStringNotContainsString('\\', $output);
     }
 

@@ -13,12 +13,16 @@ use Pentacore\Typefinder\Renderers\Concerns\RendersModels;
 use Pentacore\Typefinder\Renderers\Concerns\RendersResources;
 use Pentacore\Typefinder\Resolvers\PivotResolver;
 use Pentacore\Typefinder\Support\GeneratedClasses;
+use Pentacore\Typefinder\Support\ResourceWrapper;
 
 class TypeScriptRenderer
 {
     use RendersBroadcasting;
     use RendersModels;
     use RendersResources;
+
+    /** A namespaced class name in a type string, with an optional leading backslash. */
+    private const string CLASS_NAME_PATTERN = '/\\\\?[A-Za-z_][A-Za-z0-9_]*(?:\\\\[A-Za-z_][A-Za-z0-9_]*)+/';
 
     public const string FILE_HEADER = <<<'TS'
         // ───────────────────────────────────────────────────────────────────────
@@ -273,7 +277,7 @@ class TypeScriptRenderer
         foreach ($pages as $page) {
             $propLines = [];
             foreach ($page['props'] as $name => $type) {
-                $resolved = $this->resolveClassString((string) $type, '', $allModels, $allEnums, $allResources, $imports);
+                $resolved = $this->resolvePagePropType((string) $type, $allModels, $allEnums, $allResources, $imports);
                 $optional = in_array($name, $page['optional'], true) ? '?' : '';
                 $propLines[] = self::propertyKey((string) $name).$optional.': '.$resolved;
             }
@@ -289,6 +293,81 @@ class TypeScriptRenderer
             : "export type PageProps = {\n".implode("\n", $entries)."\n};\n\n";
 
         return $output."export type PageName = keyof PageProps;\n";
+    }
+
+    /**
+     * The type names helpers.d.ts exports ({@see self::renderHelpers()}).
+     *
+     * @return list<string>
+     */
+    private function helperNames(): array
+    {
+        preg_match_all('/^export type (\w+)/m', $this->renderHelpers(), $matches);
+
+        return $matches[1];
+    }
+
+    /**
+     * A page prop's type: its class-strings resolved, and a resource that is
+     * the prop's type (or a member of its union) as the page receives it.
+     *
+     * Inertia sends a `JsonResource` prop through `toResponse()`, so it keeps
+     * the response's wrapper (#241): `WrappedResource<…>` for `data`, `{ key: … }`
+     * for another key, none when {@see ResourceWrapper::key()} finds no wrapper.
+     * A resource in a list or generic argument is left as written: what the
+     * page gets then depends on what the action passes (a collection is
+     * wrapped as a whole, a paginated one gets `links` / `meta` too).
+     *
+     * @param  list<array>  $allModels
+     * @param  list<array>  $allEnums
+     * @param  list<array>  $allResources
+     * @param  list<string>  $imports
+     */
+    protected function resolvePagePropType(string $type, array $allModels, array $allEnums, array $allResources, array &$imports): string
+    {
+        // A helper written in the type (`WrappedResourceCollection<…>`) is imported too.
+        preg_match_all('/(?<![\\\\\w.])('.implode('|', $this->helperNames()).')\b/', $type, $helpers);
+        foreach (array_unique($helpers[1]) as $helper) {
+            $imports[] = sprintf("import type { %s } from './helpers';", $helper);
+        }
+
+        if (! str_contains($type, '\\')) {
+            return $type;
+        }
+
+        return (string) preg_replace_callback(
+            self::CLASS_NAME_PATTERN,
+            // A closure (not an arrow fn) so `$imports` is captured by reference.
+            function (array $match) use ($type, $allModels, $allEnums, $allResources, &$imports): string {
+                [$name, $offset] = $match[0];
+                $fqcn = ltrim($name, '\\');
+                $resolved = $this->resolveClassReference($fqcn, '', $allModels, $allEnums, $allResources, $imports);
+
+                if ($resolved === null || $resolved === 'unknown' || ! is_subclass_of($fqcn, JsonResource::class)) {
+                    return $resolved ?? $name;
+                }
+
+                $isUnionMember = preg_match('/(?:^|[|(])\s*$/', substr($type, 0, $offset)) === 1
+                    && preg_match('/^\s*(?:$|[|)])/', substr($type, $offset + strlen($name))) === 1;
+                $wrap = $isUnionMember
+                    ? ResourceWrapper::key($fqcn, array_find($allResources, fn (array $resource): bool => ($resource['fqcn'] ?? null) === $fqcn), $allModels)
+                    : null;
+
+                if ($wrap === null) {
+                    return $resolved;
+                }
+
+                if ($wrap === 'data') {
+                    $imports[] = "import type { WrappedResource } from './helpers';";
+
+                    return sprintf('WrappedResource<%s>', $resolved);
+                }
+
+                return sprintf('{ %s }', self::member($wrap, $resolved));
+            },
+            $type,
+            flags: PREG_OFFSET_CAPTURE,
+        );
     }
 
     /**
@@ -325,7 +404,7 @@ class TypeScriptRenderer
         }
 
         return (string) preg_replace_callback(
-            '/\\\\?[A-Za-z_][A-Za-z0-9_]*(?:\\\\[A-Za-z_][A-Za-z0-9_]*)+/',
+            self::CLASS_NAME_PATTERN,
             // A closure (not an arrow fn) so `$imports` is captured by reference.
             function (array $match) use ($fromDir, $allModels, $allEnums, $allResources, &$imports, $selfFqcn): string {
                 return $this->resolveClassReference(ltrim($match[0], '\\'), $fromDir, $allModels, $allEnums, $allResources, $imports, $selfFqcn)
