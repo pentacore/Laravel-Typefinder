@@ -436,6 +436,14 @@ Several actions can render the same component, for example `create` and `edit` s
 - A prop that only some actions declare, or that any action marks optional, becomes optional (`post?: …`).
 - One prop declared with different types in different actions fails the run, naming each `Class::method` and its type. If the type really varies, declare the union in every action.
 
+Inertia sends a `JsonResource` prop the way the resource's response serialises it, in its wrapper. So a resource class-string that is a prop's type (or a member of its union) is typed wrapped, like the response: `'post' => PostResource::class` becomes `post: WrappedResource<PostResource>`. The wrapper is read from the booted app when the types are generated:
+
+- `JsonResource::withoutWrapping()` in a service provider, or `public static $wrap = null` on the resource: `post: PostResource`.
+- Another key (`JsonResource::wrap('item')` or `public static $wrap = 'item'`): `post: { item: PostResource }`.
+- A resource whose shape always has the wrapper key itself is not wrapped again, as in Laravel (unless wrapping is forced).
+
+A resource in a list or generic (`PostResource::class.'[]'`) is left as written, as what the page gets depends on what the action passes: `PostResource::collection($posts)` is one wrapped list. Declare that prop with a helper, for example `'posts' => 'WrappedResourceCollection<'.PostResource::class.'>'` or `PaginatedResourceCollection<…>` for a paginator.
+
 `pages.d.ts` also declares `SharedPageProps`, the props every page gets: Inertia's `errors` (`Record<string, string>`) and each key the `share()` method of your Inertia middleware (classes under `app/Http/Middleware` extending `Inertia\Middleware`) returns. It is written whenever the Inertia category is enabled, with an empty `PageProps` when no action is tagged, so `SharedPageProps` can be used without `#[TypefinderPage]`. Keys are `unknown` unless `share()` documents them:
 
 ```php
