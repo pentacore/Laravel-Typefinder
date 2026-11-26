@@ -1,3 +1,13 @@
+## [8.5.0](https://github.com/pentacore/Laravel-Typefinder/compare/v8.4.2...v8.5.0) (2026-11-26)
+
+### Features
+
+* add Rector rules for apps that use Typefinder ([cfa0e33](https://github.com/pentacore/Laravel-Typefinder/commit/cfa0e334a312815a4333ff1d791fedb5d00d707b))
+
+### Bug Fixes
+
+* type a resource page prop in its response wrapper ([#241](https://github.com/pentacore/Laravel-Typefinder/issues/241)) ([8d909c6](https://github.com/pentacore/Laravel-Typefinder/commit/8d909c612a8272768203aea75df6e69ac16ab48d))
+
 ## [8.4.2](https://github.com/pentacore/Laravel-Typefinder/compare/v8.4.1...v8.4.2) (2026-11-25)
 
 ### Bug Fixes
