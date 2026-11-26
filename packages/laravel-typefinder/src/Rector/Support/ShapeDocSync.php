@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Pentacore\Typefinder\Rector\Support;
 
 use Closure;
+use LogicException;
 use Pentacore\Typefinder\Analysis\DriftComparer;
 use Pentacore\Typefinder\Analysis\ReturnedArray;
 use Pentacore\Typefinder\Analysis\ReturnedPart;
@@ -115,6 +116,16 @@ final readonly class ShapeDocSync
     }
 
     /**
+     * The shape of a doc already known to have one (an earlier edit of it).
+     *
+     * @return array{tokens: DocTokens, type: ArrayShapeNode}
+     */
+    private function reparse(string $doc): array
+    {
+        return $this->shape(DocTokens::of($doc)) ?? throw new LogicException('A synced doc lost its shape');
+    }
+
+    /**
      * @param  list<ReturnedArray>  $returns
      * @param  list<string>  $shared
      * @return array<'undeclared'|'never'|'notAlways'|'conditional', list<string>>
@@ -156,13 +167,7 @@ final readonly class ShapeDocSync
             return $doc;
         }
 
-        $shape = $this->shape(DocTokens::of($doc));
-
-        if ($shape === null) {
-            return $doc;
-        }
-
-        ['tokens' => $tokens, 'type' => $type] = $shape;
+        ['tokens' => $tokens, 'type' => $type] = $this->reparse($doc);
         $items = array_values($type->items);
         $edits = [];
 
@@ -203,13 +208,7 @@ final readonly class ShapeDocSync
             return $doc;
         }
 
-        $shape = $this->shape(DocTokens::of($doc));
-
-        if ($shape === null) {
-            return $doc;
-        }
-
-        ['tokens' => $tokens, 'type' => $type] = $shape;
+        ['tokens' => $tokens, 'type' => $type] = $this->reparse($doc);
         $codeKeys = array_intersect_key($this->codeKeys($returns), array_flip($keys));
         $added = $this->items($codeKeys, $returns);
         $items = array_values($type->items);

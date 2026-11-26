@@ -8,7 +8,6 @@ use Pentacore\Typefinder\Analysis\KeyDriftDetector;
 use Pentacore\Typefinder\Analysis\PageDrift;
 use Pentacore\Typefinder\Analysis\ReturnedArray;
 use Pentacore\Typefinder\Analysis\ReturnedArrayReader;
-use Pentacore\Typefinder\Analysis\ReturnedPart;
 use Pentacore\Typefinder\Attributes\TypefinderIgnore;
 use Pentacore\Typefinder\Attributes\TypefinderPage;
 use Pentacore\Typefinder\Rector\Support\ReturnedExprs;
@@ -145,11 +144,8 @@ final class AddTypefinderPageRector extends AbstractRector
 
         foreach ($renders as $props) {
             foreach ($props->parts as $part) {
-                if ($part->kind !== ReturnedPart::ITEM || $part->key === null) {
-                    continue;
-                }
-
-                $key = $part->key;
+                // The renders are closed, so every part is a literal-key item.
+                $key = (string) $part->key;
                 $type = $part->value instanceof Expr ? $guesser->guess($part->value) : ValueType::unknown();
                 $types[$key] = array_key_exists($key, $types) && ! ($types[$key]?->equals($type) ?? false) ? ValueType::unknown() : $type;
                 $seen[$key] = ($seen[$key] ?? 0) + 1;

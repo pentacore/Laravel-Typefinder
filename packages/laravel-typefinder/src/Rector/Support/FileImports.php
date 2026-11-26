@@ -34,9 +34,10 @@ final readonly class FileImports
                 }
             }
 
-            if ($use instanceof GroupUse && $use->type === Use_::TYPE_NORMAL) {
+            if ($use instanceof GroupUse) {
+                // A group sets its kind per item (`use A\{B, function c}`), or once for all.
                 foreach ($use->uses as $item) {
-                    if ($item->type === Use_::TYPE_NORMAL || $item->type === Use_::TYPE_UNKNOWN) {
+                    if (($use->type === Use_::TYPE_UNKNOWN ? $item->type : $use->type) === Use_::TYPE_NORMAL) {
                         $byAlias[strtolower($item->getAlias()->toString())] = $use->prefix->toString().'\\'.$item->name->toString();
                     }
                 }

@@ -88,11 +88,6 @@ final class DocTokens
         return implode('', array_column($tokens, 0));
     }
 
-    public function text(): string
-    {
-        return implode('', array_column($this->tokens, 0));
-    }
-
     /** @return array{0: string, 1: int, 2: int} */
     public function token(int $index): array
     {

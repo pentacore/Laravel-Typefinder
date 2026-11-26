@@ -58,11 +58,6 @@ final readonly class ValueType
             : new self($this->kind, $this->name, $this->list, true);
     }
 
-    public function isUnknown(): bool
-    {
-        return $this->kind === self::UNKNOWN;
-    }
-
     public function equals(self $other): bool
     {
         return $this == $other;

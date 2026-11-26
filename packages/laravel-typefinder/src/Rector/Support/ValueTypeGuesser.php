@@ -126,7 +126,7 @@ final readonly class ValueTypeGuesser
     /** The value a closure or Inertia prop wrapper stands for, or null when that is not one expression. */
     private function unwrap(Expr $value): ?Expr
     {
-        for ($depth = 0; $depth < 4; $depth++) {
+        while (true) {
             if ($value instanceof ArrowFunction) {
                 $value = $value->expr;
 
@@ -163,8 +163,6 @@ final readonly class ValueTypeGuesser
 
             return $value;
         }
-
-        return null;
     }
 
     private function isResource(Expr $value): bool
