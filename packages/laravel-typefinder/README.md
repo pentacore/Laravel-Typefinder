@@ -30,6 +30,7 @@ Laravel Typefinder introspects your database schema, `$casts` declarations, vali
   - [Drift checks](#drift-checks)
 - [Attribute reference](#attribute-reference)
 - [Custom casts](#custom-casts)
+- [Rector rules](#rector-rules)
 - [Configuration](#configuration)
 - [JSON output shape](#json-output-shape---json)
 - [Publishing the Claude Code skill](#publishing-the-claude-code-skill)
@@ -330,7 +331,7 @@ Classes extending `JsonResource`. The type comes from the first of these that ap
 
 1. **Explicit shape** via `#[TypefinderResource(shape: [...])]`.
 2. **Model extension** via `#[TypefinderResource(model: User::class, omit: [...], extend: [...])]` → `Omit<User, ...> & { ... }`.
-3. **PHPDoc array shape** on `toArray()` — `@return array{…}` (or `@phpstan-return` / `@psalm-return`, which take precedence, or `@typefinder-return`, which beats them all and is checked by no analyser — for a shape PHPStan or Psalm would reject; write a class used only in it fully qualified, since Rector removes its import, see [Pages](#pages-opt-in-typefinderinertiaenabled)), or one composed from documented helpers / a documented parent `toArray()` (see [Composed shapes](#composed-shapes)). Applies whether or not the name convention is on.
+3. **PHPDoc array shape** on `toArray()` — `@return array{…}` (or `@phpstan-return` / `@psalm-return`, which take precedence, or `@typefinder-return`, which beats them all and is checked by no analyser — for a shape PHPStan or Psalm would reject; with Rector, see [Rector rules](#rector-rules) for a class used only in it), or one composed from documented helpers / a documented parent `toArray()` (see [Composed shapes](#composed-shapes)). Applies whether or not the name convention is on.
 4. **Resource collection** — a `ResourceCollection` subclass that does not override `toArray()` is a list of the resource it collects, found as Laravel finds it: `#[Collects]`, `$collects`, or `UserCollection` → `User` / `UserResource` in the same namespace. `export type UserCollection = UserResource[];` (the `{ data: … }` envelope is left to the `Wrapped*` / `*Paginated*` helpers).
 5. **Name convention** — `UserResource` → `User` automatically, when `User` is one of the models typefinder generates (found under `models.paths` and not ignored). Models from other packages and models outside `models.paths` are never matched.
 6. **Literal keys** — a `toArray()` declared in the resource itself that returns only literal-key arrays (no spread, helper call or computed key) is typed from those keys. `when*()`, `whenLoaded()`, `mergeWhen()` keys, and keys missing from another `return`, are optional. Values are typed where it is cheap and certain, otherwise `unknown`: scalar literals and casts, `new XResource(…)` / `XResource::make(…)` (`XResource`), `XResource::collection(…)` (`XResource[]`), nested literal arrays, the value of `when($condition, $value)`, and `$this->column` (`User['column']`) when the class docblock says `@mixin User` for a generated model.
@@ -455,7 +456,7 @@ What the frontend gets is the serialised props, which can differ from what `shar
 public function share(Request $request): array
 ```
 
-Static analysers and Rector do not read `@typefinder-return`, so a class used only in it counts as an unused import: Rector's import cleanup (`withImportNames(removeUnusedImports: true)`) removes its `use` line, and the short name then resolves to the wrong class or to `unknown`. Write such a class fully qualified in the tag (`array<value-of<\App\Enums\Ability>, bool>`). This applies to a resource's `toArray()` too.
+Static analysers and Rector do not read `@typefinder-return`, so a class used only in it counts as an unused import: Rector's import cleanup (`withImportNames(removeUnusedImports: true)`) removes its `use` line, and the short name then resolves to the wrong class or to `unknown`. Write such a class fully qualified in the tag (`array<value-of<\App\Enums\Ability>, bool>`), or let `QualifyTypefinderReturnRector` do it (see [Rector rules](#rector-rules)). This applies to a resource's `toArray()` too.
 
 `PageProps` entries do not include the shared props. Combine them where you read the props; a page's own prop wins over a shared one of the same name, as in Inertia:
 
@@ -601,6 +602,32 @@ When a cast is encountered, the resolver tries in order:
 5. `BackedEnum` detection → emits a reference to the generated enum type.
 6. Parameterised casts (`decimal:2`, `datetime:Y-m-d`, `MyCast::class.':arg'`) with no exact match: steps 1–5 retried with the part before the first `:`. `AsEnumCollection:` / `AsEnumArrayObject:` arguments emit the enum array type.
 7. Fall back to `unknown` (emits a warning).
+
+## Rector rules
+
+Typefinder ships [Rector](https://getrector.com) rules that keep the code it reads in shape. Rector is not a dependency of Typefinder; install `rector/rector` (2.8 or later) to use them, then add one or both sets:
+
+```php
+use Pentacore\Typefinder\Rector\TypefinderSetList;
+
+return RectorConfig::configure()
+    ->withSets([
+        TypefinderSetList::TYPEFINDER, // every app
+        TypefinderSetList::INERTIA,    // with typefinder.inertia.enabled
+    ]);
+```
+
+Or pick single rules with `->withRules([...])`. All of them live under `Pentacore\Typefinder\Rector\`.
+
+| Rule | Set | What it does |
+| --- | --- | --- |
+| `QualifyTypefinderReturnRector` | `TYPEFINDER` | Writes the imported class names in a `@typefinder-return` type fully qualified. Rector does not read that tag, so with `removeUnusedImports` it drops an import used only there; this rule runs first, so the name still resolves. |
+| `SyncResourceShapeRector` | `TYPEFINDER` | Brings the PHPDoc `array{…}` on a resource's `toArray()` in line with the literal keys it returns, so the [drift check](#drift-checks) has nothing to report: adds missing keys, removes required keys that are never returned, and makes conditional or not-always-returned keys optional. Resources with `#[TypefinderResource]` or `#[TypefinderIgnore]`, and docs without a shape, are left alone. |
+| `MigrateLegacyTypefinderApiRector` | `TYPEFINDER` | Moves the APIs removed in v2 and v3 to their attributes: `HasTypeOverrides` + `typeOverrides()` → `#[TypefinderOverrides]`, `HasWriteShapeContract` + `typefinder*()` methods → `#[TypefinderWriteShape]`, `HasTypeDefinition` + `typeDefinition()` → `#[TypefinderCast]`. A method moves only when it returns one constant expression; the removed trait and interface are dropped either way. |
+| `AddTypefinderPageRector` | `INERTIA` | Adds `#[TypefinderPage]` to each public controller action that returns `Inertia::render('X', [...])` or `inertia('X', [...])`, one per component, with the props it passes. Props wrapped in `Inertia::optional()`, `lazy()` or `defer()`, or missing from some render of the component, go in `optional`. Skips actions that already have the attribute, `#[TypefinderIgnore]`, and components whose props are not a literal array. |
+| `SyncSharedPropsShapeRector` | `INERTIA` | Documents what your Inertia middleware's `share()` returns: adds a `@typefinder-return array{…}` of its literal keys when it has no shape, or adds the missing keys to the shape it has. Keys from `parent::share()` are never removed. |
+
+Added keys and props are typed where PHPStan is sure: strings, numbers, booleans, `null`, models and backed enums (`Post::class`, `User::class.' | null'`), and lists or collections of them. Anything else is `mixed` in a PHPDoc and `'unknown'` in a page prop, for you to fill in. A `JsonResource` page prop is `'unknown'` because Inertia sends it wrapped in `data`, which a page prop cannot declare yet ([#241](https://github.com/pentacore/Laravel-Typefinder/issues/241)). The doc rules change only the keys they add, remove or mark optional; the rest of the doc keeps its layout.
 
 ## Configuration
 

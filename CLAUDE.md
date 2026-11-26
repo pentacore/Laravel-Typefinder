@@ -19,6 +19,7 @@ Both are versioned in lockstep by semantic-release.
 │   │   ├── Attributes/             class-level attributes (TypefinderOverrides, TypefinderWriteShape, TypefinderPage)
 │   │   ├── Extractors/             Model / Enum / Request AST→metadata
 │   │   ├── Renderers/              TypeScriptRenderer emits the .d.ts strings
+│   │   ├── Rector/                 Rector rules + TypefinderSetList for apps (rector/rector is only suggested)
 │   │   ├── Resolvers/              column / cast / morph / pivot resolvers
 │   │   ├── Services/               Generator (run + emit), FileExtractor, OutputTree
 │   │   └── Support/                Categories, ClassDiscovery, parsing helpers
@@ -119,6 +120,10 @@ All under `Pentacore\Typefinder\Attributes\`. Detected via reflection; no trait 
 - `#[TypefinderCast('{ … }')]` — declare the TS shape for a custom cast class you own. For third-party casts, use `Typefinder::registerCast()` from a service provider instead.
 
 Workbench fixtures demonstrate each: `Post.php` (overrides), `Invoice.php` (write-shape), `Article.php`/`Product.php` (fillable/guarded), `LegacyModel.php` (ignore), `Http/Resources/*` (resources), `Http/Controllers/*` (pages), `Events/*` (broadcasting), `Casts/SettingsCast.php` (cast attribute).
+
+## Rector rules
+
+`Rector\` holds rules for apps that use Typefinder, grouped in `TypefinderSetList::TYPEFINDER` / `INERTIA` (set files in `Rector/config/`). Rector is a `suggest`, not a dependency, so nothing outside `Rector\` may reference Rector classes. The rules reuse the analysis Typefinder runs: `AddTypefinderPageRector` reads renders with `PageDrift::render()`, and the two shape rules apply `DriftComparer::compare()` through `Rector\Support\ShapeDocSync`, so a synced doc reports no drift. Doc edits go through `Rector\Support\DocTokens` (phpdoc-parser tokens with indexes), which changes only the edited tokens. Tests are Rector fixture tests under `tests/Rector/` (`*.php.inc`, before and after `-----`).
 
 ## Cast type resolution
 
