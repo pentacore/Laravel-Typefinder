@@ -173,10 +173,12 @@ export const typefinder = ({
                 : migrations ?? [`${resolvedRoot}/database/migrations`];
             migrationMatcher = compileMatcher(migrationPaths.map(realpathLoose));
 
-            afterRegen = refreshVueTypes(server, loadVueTypeCacheInvalidator(resolvedRoot), () => {
-                const output = mapper.toHost(watcher?.handshake.output_path ?? '');
-                return isAbsolute(output) ? output : resolve(resolvedRoot, output);
-            });
+            const output = mapper.toHost(watcher.handshake.output_path);
+            afterRegen = refreshVueTypes(
+                server,
+                loadVueTypeCacheInvalidator(resolvedRoot),
+                isAbsolute(output) ? output : resolve(resolvedRoot, output),
+            );
 
             watcher.on('died', (reason: string) => {
                 log(`watcher exited: ${reason} — restart the dev server`);
@@ -262,16 +264,15 @@ export const typefinder = ({
 const refreshVueTypes = (
     server: ViteDevServer,
     invalidateTypeCache: ((file: string) => void) | null,
-    outputPath: () => string,
+    outputPath: string,
 ): ((result: RegenResponse) => void) => {
     if (invalidateTypeCache === null) return () => {};
 
     return (result) => {
         if (result.changed.length === 0) return;
 
-        const output = outputPath();
         for (const file of result.changed) {
-            const path = join(output, file);
+            const path = join(outputPath, file);
             invalidateTypeCache(path);
             // TypeScript resolves symlinks, so Vue may know the file by its real path.
             const real = realpathLoose(path);

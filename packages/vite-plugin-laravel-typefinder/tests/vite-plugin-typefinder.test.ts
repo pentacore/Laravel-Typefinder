@@ -571,6 +571,17 @@ describe('typefinder vite plugin – Vue type cache', () => {
         expect(invalidateTypeCache).toHaveBeenCalledWith('/host/out/pages.d.ts');
     });
 
+    it('resolves a relative output path against the Vite root', async () => {
+        (fakeWatcher as { handshake: Handshake }).handshake = { ...HANDSHAKE, output_path: 'resources/js/typefinder' };
+        const plugin = hooks(typefinder());
+        plugin.configResolved(resolvedConfig());
+        await plugin.configureServer(fakeServer());
+
+        await plugin.buildStart();
+
+        expect(invalidateTypeCache).toHaveBeenCalledWith('/project/resources/js/typefinder/pages.d.ts');
+    });
+
     it('does not reload when no .vue module is compiled yet', async () => {
         const plugin = hooks(typefinder());
         plugin.configResolved(resolvedConfig());
