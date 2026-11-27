@@ -24,8 +24,8 @@ php artisan typefinder:generate [--debug] [--json] [--check] [--strict]
 | Form Requests | on | `{output_path}/requests/{Name}.d.ts` (+ `{Name}Query` for rule keys tagged `@query`) | `app/Http/Requests/*` |
 | Pivots | on | `{output_path}/models/{Name}Pivot.d.ts` | derived from `belongsToMany` / `morphToMany` |
 | Resources | on | `{output_path}/resources/{Name}.d.ts` | `app/Http/Resources/*` |
-| Pages | off | `{output_path}/pages.d.ts` (single file) | controller actions tagged `#[TypefinderPage]` |
-| Broadcasting | off | `{output_path}/broadcasting.d.ts` (single file) | classes implementing `ShouldBroadcast` |
+| Pages | off | `{output_path}/pages.d.ts` (single file) | controller actions tagged `#[TypefinderPage]` (prop types: TypeScript, class-strings or PHPDoc types such as `array{id: int}`, converted) |
+| Broadcasting | off | `{output_path}/broadcasting.d.ts` (single file) | classes implementing `ShouldBroadcast` (payload: `#[TypefinderBroadcast(payload:)]`, else a `@return array{…}` on `broadcastWith()`, else its values) |
 | Helpers | always | `{output_path}/helpers.d.ts` | built-in generic response wrappers |
 | Category barrels | with the category | `{output_path}/{category}/index.d.ts` | re-export every type of every file, companions included |
 | Top-level barrel | always | `{output_path}/index.d.ts` | re-exports every active category |

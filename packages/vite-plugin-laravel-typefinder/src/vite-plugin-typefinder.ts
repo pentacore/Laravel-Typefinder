@@ -1,10 +1,12 @@
 import { exec } from 'node:child_process';
+import { isAbsolute, join, resolve } from 'node:path';
 import { promisify } from 'node:util';
-import type { Plugin, ResolvedConfig } from 'vite';
+import type { Plugin, ResolvedConfig, ViteDevServer } from 'vite';
 import { compileMatcher } from './matcher';
 import { PathMapper, realpathLoose } from './paths';
 import { Watcher } from './watcher';
 import type { Categories, RegenResponse } from './types';
+import { loadVueTypeCacheInvalidator } from './vue';
 
 const execAsync = promisify(exec);
 
@@ -30,6 +32,16 @@ export interface TypefinderOptions {
      */
     migrations?: string[] | false;
 }
+
+/**
+ * Whether `TYPEFINDER_SKIP_BUILD` asks to skip build-time generation: set to
+ * anything but empty, `0` or `false`. For builds without a database (a Docker
+ * image build, say) when the generated types are committed.
+ */
+const skipBuildFromEnv = (): boolean => {
+    const value = process.env.TYPEFINDER_SKIP_BUILD?.trim().toLowerCase();
+    return value !== undefined && value !== '' && value !== '0' && value !== 'false';
+};
 
 const log = (message: string): void => {
     process.stderr.write(`[typefinder] ${message}\n`);
@@ -93,6 +105,7 @@ export const typefinder = ({
     const pending = new Set<string>();
     let timer: ReturnType<typeof setTimeout> | undefined;
     let isBuild = false;
+    let afterRegen: (result: RegenResponse) => void = () => {};
 
     const scheduleRegen = (): void => {
         clearTimeout(timer);
@@ -107,7 +120,10 @@ export const typefinder = ({
             fullPending = false;
             watcher
                 .regen(batch)
-                .then((result) => reportRegen(result, label))
+                .then((result) => {
+                    reportRegen(result, label);
+                    afterRegen(result);
+                })
                 .catch((error: Error) => {
                     log(`regen failed: ${error.message}`);
                 });
@@ -157,6 +173,13 @@ export const typefinder = ({
                 : migrations ?? [`${resolvedRoot}/database/migrations`];
             migrationMatcher = compileMatcher(migrationPaths.map(realpathLoose));
 
+            const output = mapper.toHost(watcher.handshake.output_path);
+            afterRegen = refreshVueTypes(
+                server,
+                loadVueTypeCacheInvalidator(resolvedRoot),
+                isAbsolute(output) ? output : resolve(resolvedRoot, output),
+            );
+
             watcher.on('died', (reason: string) => {
                 log(`watcher exited: ${reason} — restart the dev server`);
             });
@@ -171,7 +194,10 @@ export const typefinder = ({
                 if (watcher && !watcher.dead) {
                     watcher
                         .regen([])
-                        .then((result) => reportRegen(result, 'full regen'))
+                        .then((result) => {
+                            reportRegen(result, 'full regen');
+                            afterRegen(result);
+                        })
                         .catch((error: Error) => {
                             log(`full regen failed: ${error.message}`);
                         });
@@ -186,6 +212,10 @@ export const typefinder = ({
             if (isBuild) {
                 if (buildCommand === false) {
                     log('build-time generation disabled');
+                    return;
+                }
+                if (skipBuildFromEnv()) {
+                    log('build-time generation skipped: TYPEFINDER_SKIP_BUILD is set');
                     return;
                 }
                 let stdout: unknown;
@@ -209,7 +239,9 @@ export const typefinder = ({
             }
 
             if (watcher && !watcher.dead) {
-                reportRegen(await watcher.regen([]), 'initial regen:');
+                const result = await watcher.regen([]);
+                reportRegen(result, 'initial regen:');
+                afterRegen(result);
             }
         },
 
@@ -218,6 +250,43 @@ export const typefinder = ({
                 await watcher.kill();
             }
         },
+    };
+};
+
+/**
+ * After a regen in `vite dev`: clear Vue's SFC type cache for every
+ * generated file that changed, so `defineProps<PageProps['x']>()` sees the
+ * new types (#248). The generated files are not in Vite's module graph, so
+ * nothing else tells Vue they changed. The `.vue` modules already compiled
+ * are invalidated and the page reloaded, as any of them may use the types.
+ * Does nothing without Vue.
+ */
+const refreshVueTypes = (
+    server: ViteDevServer,
+    invalidateTypeCache: ((file: string) => void) | null,
+    outputPath: string,
+): ((result: RegenResponse) => void) => {
+    if (invalidateTypeCache === null) return () => {};
+
+    return (result) => {
+        if (result.changed.length === 0) return;
+
+        for (const file of result.changed) {
+            const path = join(outputPath, file);
+            invalidateTypeCache(path);
+            // TypeScript resolves symlinks, so Vue may know the file by its real path.
+            const real = realpathLoose(path);
+            if (real !== path) invalidateTypeCache(real);
+        }
+
+        const vueModules = [...server.moduleGraph.idToModuleMap.values()]
+            .filter((module) => module.file?.endsWith('.vue'));
+        if (vueModules.length === 0) return;
+
+        for (const module of vueModules) {
+            server.moduleGraph.invalidateModule(module);
+        }
+        server.ws.send({ type: 'full-reload' });
     };
 };
 

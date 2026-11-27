@@ -12,10 +12,10 @@ metadata:
 
 ## Documentation
 
-The documentation for this project can be found either in the vendor directory pentacore/laravel-typefinder README files:
-- pentacore/laravel-typefinder/README.md
-- pentacore/laravel-typefinder/packages/laravel-typefinder/README.md
-- pentacore/laravel-typefinder/packages/vite-plugin-typefinder/README.md
+The documentation for this project is in its README files:
+- vendor/pentacore/laravel-typefinder/README.md
+- vendor/pentacore/laravel-typefinder/packages/laravel-typefinder/README.md
+- node_modules/@pentacore/vite-plugin-laravel-typefinder/README.md (the Vite plugin, when it is installed)
 
 A deeper explanation of Typefinders workings can be found in the neighbouring REFERENCE file.
 

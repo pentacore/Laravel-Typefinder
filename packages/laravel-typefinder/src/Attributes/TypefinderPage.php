@@ -16,9 +16,13 @@ use Attribute;
  * merge. A prop declared by every one of them, and optional in none, is
  * required; any other prop becomes optional.
  *
- * Prop values may be literal TS type strings or class-strings. Model /
- * enum / resource class-strings resolve to their generated short name and
- * trigger the matching import. Anything unrecognised is emitted verbatim.
+ * Prop values may be literal TS type strings, class-strings or PHPDoc
+ * types (`array{id: int}`, `list<User>`, `?string`). Model / enum /
+ * resource class-strings resolve to their generated short name and trigger
+ * the matching import. A PHPDoc type is converted to TypeScript, its short
+ * class names resolved through the controller's imports. A type that mixes
+ * PHPDoc and TypeScript, or is no valid type, becomes `unknown` with a
+ * warning. Any other TypeScript is emitted verbatim.
  *
  * Example:
  * <pre>
@@ -48,7 +52,7 @@ final readonly class TypefinderPage
 {
     /**
      * @param  string  $component  Inertia component name, e.g. `'Users/Show'`.
-     * @param  array<string, string>  $props  Prop name → TS type string or class-string.
+     * @param  array<string, string>  $props  Prop name → TS type string, class-string or PHPDoc type.
      * @param  list<string>  $optional  Prop names emitted as `name?: T` (non-required).
      */
     public function __construct(

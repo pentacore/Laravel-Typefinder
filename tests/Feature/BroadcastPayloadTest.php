@@ -12,11 +12,16 @@ use Illuminate\Support\Facades\File;
 use Pentacore\Typefinder\Extractors\BroadcastExtractor;
 use Pentacore\Typefinder\Extractors\RequestExtractor;
 use Pentacore\Typefinder\Extractors\ResourceExtractor;
+use Pentacore\Typefinder\Renderers\TypeScriptRenderer;
 use Pentacore\Typefinder\Services\Generator;
+use Pentacore\Typefinder\Support\GeneratedClasses;
 use Tests\Fixtures\AbstractRequests\BaseRequest;
 use Tests\Fixtures\AbstractResources\BaseResource;
+use Tests\Fixtures\Broadcasting\AttributeOverDocPayloadEvent;
 use Tests\Fixtures\Broadcasting\BaseEvent;
 use Tests\Fixtures\Broadcasting\ConstructorPayloadEvent;
+use Tests\Fixtures\Broadcasting\DocumentedEvaluablePayloadEvent;
+use Tests\Fixtures\Broadcasting\DocumentedPayloadEvent;
 use Tests\Fixtures\Broadcasting\EdgeTypedPropertiesEvent;
 use Tests\Fixtures\Broadcasting\LiteralPayloadEvent;
 use Tests\Fixtures\Broadcasting\NumericChannelEvent;
@@ -65,6 +70,50 @@ final class BroadcastPayloadTest extends TestCase
         $this->assertCount(1, $this->warnings);
         $this->assertStringContainsString('"other"', $this->warnings[0]);
         $this->assertStringContainsString('#[TypefinderBroadcast(payload:', $this->warnings[0]);
+    }
+
+    public function test_a_phpdoc_shape_on_broadcast_with_types_the_payload(): void
+    {
+        $broadcastExtractor = new BroadcastExtractor(function (string $warning): void {
+            $this->warnings[] = $warning;
+        }, new GeneratedClasses([Post::class], [PostStatus::class], []));
+
+        $event = $broadcastExtractor->extract(DocumentedPayloadEvent::class);
+
+        $this->assertSame([
+            'id' => 'number',
+            'title' => 'string',
+            'status' => '\\'.PostStatus::class,
+            'post' => '\\'.Post::class,
+            'note?' => 'string | null',
+            'tags' => 'string[]',
+            'run' => 'unknown',
+        ], $event['payload']);
+
+        $this->assertSame([DocumentedPayloadEvent::class.'::broadcastWith() @return: "run" has unsupported type callable — emitted as unknown'], $this->warnings);
+
+        $output = new TypeScriptRenderer()->renderBroadcasting(
+            [$event],
+            [['name' => 'Post', 'fqcn' => Post::class]],
+            [['name' => 'PostStatus', 'fqcn' => PostStatus::class]],
+        );
+
+        $this->assertStringContainsString('status: PostStatus; post: Post; note?: string | null; tags: string[]; run: unknown', $output);
+    }
+
+    public function test_a_phpdoc_shape_wins_over_the_values_broadcast_with_returns(): void
+    {
+        $event = $this->broadcastExtractor->extract(DocumentedEvaluablePayloadEvent::class);
+
+        $this->assertSame(['ids' => 'number[]', 'label' => "'a' | 'b'"], $event['payload']);
+        $this->assertSame([], $this->warnings);
+    }
+
+    public function test_the_attribute_wins_over_a_phpdoc_shape(): void
+    {
+        $event = $this->broadcastExtractor->extract(AttributeOverDocPayloadEvent::class);
+
+        $this->assertSame(['ids' => 'string[]'], $event['payload']);
     }
 
     public function test_broadcast_with_that_throws_is_typed_from_its_literal_keys(): void

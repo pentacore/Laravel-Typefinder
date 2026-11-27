@@ -33,7 +33,7 @@ Laravel Typefinder introspects your database schema, `$casts` declarations, vali
 - [Rector rules](#rector-rules)
 - [Configuration](#configuration)
 - [JSON output shape](#json-output-shape---json)
-- [Publishing the Claude Code skill](#publishing-the-claude-code-skill)
+- [AI agent skill (Laravel Boost)](#ai-agent-skill-laravel-boost)
 - [Testing](#testing)
 - [License](#license)
 
@@ -100,7 +100,7 @@ Choose one of two workflows. They differ in whether the generated files are comm
 
 - Run `php artisan typefinder:generate --check` in CI. It fails when someone changed a model, enum, request or resource without regenerating. The job needs a migrated database, since model columns are read from the schema.
 - Add `--strict` to also fail on warnings (`typefinder:generate --check --strict`).
-- Frontend-only jobs (no PHP runtime) can type-check against the committed files. Set the Vite plugin's `buildCommand: false` there.
+- Frontend-only jobs and Docker image builds (no PHP runtime or no database) can type-check and build against the committed files. Set `TYPEFINDER_SKIP_BUILD=1` there (or the Vite plugin's `buildCommand: false`), e.g. `RUN npm ci && TYPEFINDER_SKIP_BUILD=1 npm run build`.
 
 ```yaml
 - run: php artisan migrate --force
@@ -444,6 +444,19 @@ Inertia sends a `JsonResource` prop the way the resource's response serialises i
 
 A resource in a list or generic (`PostResource::class.'[]'`) is left as written, as what the page gets depends on what the action passes: `PostResource::collection($posts)` is one wrapped list. Declare that prop with a helper, for example `'posts' => 'WrappedResourceCollection<'.PostResource::class.'>'` or `PaginatedResourceCollection<…>` for a paginator.
 
+A prop's type can also be written as a PHPDoc type. It is converted to TypeScript, with short class names resolved through the controller file's `use` imports (an import used only inside such a string looks unused to code-style tools, which may remove it; a class-string such as `'list<'.User::class.'>'` avoids that):
+
+```php
+#[TypefinderPage(component: 'Posts/Index', props: [
+    'filters' => 'array{search?: string, page: int}', // → filters: { search?: string; page: number }
+    'counts' => 'array<string, int>',                 // → counts: Record<string, number>
+    'authors' => 'list<User>',                        // → authors: User[]
+    'editor' => '?UserResource',                      // → editor: WrappedResource<UserResource> | null
+])]
+```
+
+A type is read as PHPDoc only when it uses PHPDoc-only syntax (an array shape, `?T`, `int`, `float`, `bool`, `mixed`, `list<…>`, `array<…>`, a hyphenated keyword such as `non-empty-string`) and no TypeScript-only name (`number`, `unknown`, `Record<…>`, a helper type); otherwise it is TypeScript and written as-is. A type that mixes the two (`array<string, number>`), is empty or has unbalanced brackets becomes `unknown` with a warning, so `--strict` fails on it, as does a PHPDoc type Typefinder cannot express (`callable`).
+
 `pages.d.ts` also declares `SharedPageProps`, the props every page gets: Inertia's `errors` (`Record<string, string>`) and each key the `share()` method of your Inertia middleware (classes under `app/Http/Middleware` extending `Inertia\Middleware`) returns. It is written whenever the Inertia category is enabled, with an empty `PageProps` when no action is tagged, so `SharedPageProps` can be used without `#[TypefinderPage]`. Keys are `unknown` unless `share()` documents them:
 
 ```php
@@ -479,6 +492,18 @@ const { auth, post } = usePage<Props<'Posts/Show'>>().props;
 ### Broadcasting (opt-in, `typefinder.broadcasting.enabled`)
 
 Consolidated `broadcasting.d.ts` with four maps: `BroadcastPublicChannels`, `BroadcastPrivateChannels`, `BroadcastPresenceChannels`, and a flat `BroadcastEvents` keyed by broadcast name. Classes implementing `ShouldBroadcast` are discovered automatically; `#[TypefinderBroadcast(payload: [...], channel: ...)]` overrides reflection for the tricky cases.
+
+An event's payload is typed, first match wins, from:
+
+1. `#[TypefinderBroadcast(payload: [...])]`.
+2. A PHPDoc `@return array{…}` shape on `broadcastWith()` (also `@phpstan-return` / `@psalm-return` and type aliases), read like a resource's `toArray()` shape. Class names resolve through the event file's imports; a key marked `key?:` is optional.
+3. The values `broadcastWith()` returns when it runs on an instance built without the constructor, or, when it cannot run, the literal keys it returns, typed `unknown` with a warning.
+4. Without `broadcastWith()`, the event's public properties.
+
+```php
+/** @return array{id: int, status: PostStatus, note?: string} */
+public function broadcastWith(): array { … }   // → { id: number; status: PostStatus; note?: string }
+```
 
 ### Helpers (always emitted)
 
@@ -709,15 +734,21 @@ return [
 
 `counts` is the number of types each output directory or file holds after the run (`models` includes pivots; `pages` and `broadcasting` count pages and events), changed or not. It is `{}` when nothing is generated. `files` lists only the files the run wrote or removed.
 
-## Publishing the Claude Code skill
+## AI agent skill (Laravel Boost)
 
-Optional — if you use [Claude Code](https://claude.com/claude-code), publish the bundled skill so Claude knows how to invoke Typefinder itself:
+Optional. The package ships a [Laravel Boost](https://github.com/laravel/boost) guideline and a `typefinder-development` skill. They teach AI coding agents (Claude Code, Cursor, Codex and others Boost supports) when to regenerate, to run `php artisan typefinder:generate --json`, to parse the output and to act on its warnings.
+
+Boost finds them in the installed package, so there is nothing to publish. With Boost installed, run:
 
 ```bash
-php artisan vendor:publish --tag=typefinder-skill
+php artisan boost:install
 ```
 
-This copies a skill definition into `.claude/skills/` that teaches Claude Code to run `php artisan typefinder:generate --json`, parse the output, and act on warnings.
+and pick Typefinder when it asks which third-party guidelines and skills to install. After updating Typefinder, refresh the installed copies with:
+
+```bash
+php artisan boost:update
+```
 
 ## Testing
 
