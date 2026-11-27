@@ -1,3 +1,9 @@
+## [8.6.0](https://github.com/pentacore/Laravel-Typefinder/compare/v8.5.0...v8.6.0) (2026-11-27)
+
+### Features
+
+* convert PHPDoc page props, read broadcastWith() shapes, refresh Vue types on regen ([301d6e1](https://github.com/pentacore/Laravel-Typefinder/commit/301d6e16d6db5dc889e81ecd24235c2506e3041b)), closes [#245](https://github.com/pentacore/Laravel-Typefinder/issues/245) [#246](https://github.com/pentacore/Laravel-Typefinder/issues/246) [#247](https://github.com/pentacore/Laravel-Typefinder/issues/247) [#248](https://github.com/pentacore/Laravel-Typefinder/issues/248) [#249](https://github.com/pentacore/Laravel-Typefinder/issues/249)
+
 ## [8.5.0](https://github.com/pentacore/Laravel-Typefinder/compare/v8.4.2...v8.5.0) (2026-11-26)
 
 ### Features
