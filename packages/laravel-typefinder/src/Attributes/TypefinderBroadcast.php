@@ -13,7 +13,8 @@ use Attribute;
  * configured paths and collecting classes that implement
  * `Illuminate\Contracts\Broadcasting\ShouldBroadcast`. It then calls
  * `broadcastOn()` and `broadcastWith()` on an instance built without its
- * constructor. The payload is typed from the values `broadcastWith()`
+ * constructor. A PHPDoc `@return array{…}` shape on `broadcastWith()`
+ * types the payload. Without one, the payload is typed from the values `broadcastWith()`
  * returns (a string is `string`, a model, backed enum or resource its
  * generated type, anything else `unknown` with a warning). When
  * `broadcastWith()` cannot run without the constructor, the literal keys it

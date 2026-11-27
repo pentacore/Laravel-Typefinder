@@ -19,9 +19,15 @@ use Illuminate\Support\Collection;
 use Pentacore\Typefinder\Analysis\ReturnedArrayReader;
 use Pentacore\Typefinder\Attributes\TypefinderBroadcast;
 use Pentacore\Typefinder\Attributes\TypefinderIgnore;
+use Pentacore\Typefinder\Renderers\TypeScriptRenderer;
+use Pentacore\Typefinder\Resolvers\PhpDocReader;
+use Pentacore\Typefinder\Resolvers\PhpDocScope;
+use Pentacore\Typefinder\Resolvers\PhpDocTypeMapper;
 use Pentacore\Typefinder\Support\ClassDiscovery;
+use Pentacore\Typefinder\Support\GeneratedClasses;
 use Pentacore\Typefinder\Support\ParsedSource;
 use PhpParser\Node\Stmt\ClassMethod;
+use PHPStan\PhpDocParser\Ast\Type\TypeNode;
 use ReflectionAttribute;
 use ReflectionClass;
 use ReflectionMethod;
@@ -49,13 +55,24 @@ class BroadcastExtractor
     /** @var array<string, string> sentinel value => `{name}` placeholder */
     private array $intSentinels = [];
 
+    private readonly PhpDocReader $phpDocReader;
+
+    private readonly PhpDocTypeMapper $phpDocTypeMapper;
+
     /**
      * @param  null|callable(string): void  $onWarn  Receives warnings about payload
      *                                               entries typed `unknown`.
+     * @param  ?GeneratedClasses  $classes  the models, enums and resources a PHPDoc payload shape may name
+     *                                      (discovered from config when null)
      */
-    public function __construct(?callable $onWarn = null)
+    public function __construct(?callable $onWarn = null, ?GeneratedClasses $classes = null)
     {
         $this->onWarn = $onWarn === null ? null : $onWarn(...);
+        $collect = function (string $warning): void {
+            $this->warnings[] = $warning;
+        };
+        $this->phpDocReader = new PhpDocReader($collect);
+        $this->phpDocTypeMapper = new PhpDocTypeMapper($classes ?? new GeneratedClasses, $collect);
     }
 
     /**
@@ -347,13 +364,19 @@ class BroadcastExtractor
 
     /**
      * The payload Laravel sends: what `broadcastWith()` returns when the
-     * event has one, else its public properties.
+     * event has one (its PHPDoc `@return array{…}` shape, else the values it
+     * returns), else its public properties.
      *
      * @return array<string, string>
      */
     protected function resolvePayload(object $instance, ReflectionClass $reflectionClass): array
     {
         if (method_exists($instance, 'broadcastWith')) {
+            $documented = $this->documentedPayload(new ReflectionMethod($instance, 'broadcastWith'), $reflectionClass->getName());
+            if ($documented !== null) {
+                return $documented;
+            }
+
             try {
                 $with = $instance->broadcastWith();
             } catch (Throwable) {
@@ -392,6 +415,37 @@ class BroadcastExtractor
             }
 
             $payload[$name] = $type;
+        }
+
+        return $payload;
+    }
+
+    /**
+     * The payload `broadcastWith()` declares with a PHPDoc `@return
+     * array{…}` shape (#249), read in the file of the class that declares
+     * the method; null when it declares none. A key the shape marks optional
+     * is `name?`.
+     *
+     * @return ?array<string, string>
+     */
+    private function documentedPayload(ReflectionMethod $method, string $eventClass): ?array
+    {
+        $doc = $this->phpDocReader->parseDoc($method->getDocComment() ?: null);
+        $type = $this->phpDocReader->returnType($doc);
+        $scopes = [];
+        $scope = $type instanceof TypeNode ? $this->phpDocReader->scopeFor($method->getDeclaringClass()->getName(), $eventClass, $scopes) : null;
+        $shape = ! $type instanceof TypeNode || ! $scope instanceof PhpDocScope ? null : $this->phpDocReader->shapeOf($type, $scope);
+
+        if ($shape === null) {
+            return null;
+        }
+
+        $node = $this->phpDocTypeMapper->map($shape[0], $shape[1], '', 'broadcastWith');
+        $renderer = new TypeScriptRenderer;
+        $payload = [];
+
+        foreach ($node['fields'] ?? [] as $field) {
+            $payload[$field['name'].($field['optional'] ? '?' : '')] = $renderer->renderTypeNodeWithClassNames($field['type']);
         }
 
         return $payload;
@@ -441,11 +495,11 @@ class BroadcastExtractor
         }
 
         if ($keys === []) {
-            throw new RuntimeException(sprintf('%s::broadcastWith() cannot be evaluated without the constructor and returns no literal keys; declare the payload with #[TypefinderBroadcast(payload: …)]', $eventClass));
+            throw new RuntimeException(sprintf('%s::broadcastWith() cannot be evaluated without the constructor and returns no literal keys; declare the payload with #[TypefinderBroadcast(payload: …)] or a @return array{…} shape on broadcastWith()', $eventClass));
         }
 
         $this->warnings[] = sprintf(
-            '%s: broadcastWith() cannot be evaluated without the constructor, so the literal keys it returns are typed unknown%s. Declare the payload with #[TypefinderBroadcast(payload: …)].',
+            '%s: broadcastWith() cannot be evaluated without the constructor, so the literal keys it returns are typed unknown%s. Declare the payload with #[TypefinderBroadcast(payload: …)] or a @return array{…} shape on broadcastWith().',
             $eventClass,
             $open ? ' (it also returns keys that cannot be read statically)' : '',
         );
@@ -462,7 +516,7 @@ class BroadcastExtractor
     private function warnUnknown(string $eventClass, string $key, string $reason): void
     {
         $this->warnings[] = sprintf(
-            '%s: payload key "%s" is typed unknown: %s. Declare the payload with #[TypefinderBroadcast(payload: …)].',
+            '%s: payload key "%s" is typed unknown: %s. Declare the payload with #[TypefinderBroadcast(payload: …)] or a @return array{…} shape on broadcastWith().',
             $eventClass,
             $key,
             $reason,

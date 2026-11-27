@@ -224,7 +224,10 @@ final class FileExtractor
      */
     private function pages(string $class): ?array
     {
-        $this->controllerExtractor ??= new ControllerExtractor;
+        $this->controllerExtractor ??= new ControllerExtractor(
+            new GeneratedClasses($this->generatedClasses('models'), $this->generatedClasses('enums')),
+            $this->warn,
+        );
 
         $pages = $this->controllerExtractor->isEmittable($class) ? $this->controllerExtractor->extract($class) : [];
         if ($pages === []) {
@@ -241,7 +244,10 @@ final class FileExtractor
      */
     private function broadcast(string $class): ?array
     {
-        $this->broadcastExtractor ??= new BroadcastExtractor($this->warn);
+        $this->broadcastExtractor ??= new BroadcastExtractor(
+            $this->warn,
+            new GeneratedClasses($this->generatedClasses('models'), $this->generatedClasses('enums')),
+        );
 
         return $this->broadcastExtractor->isEmittable($class)
             ? $this->broadcastExtractor->tryExtract($class, $this->skipped(...))

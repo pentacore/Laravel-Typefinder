@@ -38,10 +38,14 @@ const REGEN_RESPONSE: RegenResponse = {
 
 let lastServer: (ViteDevServer & { watcher: EventEmitter }) | null = null;
 
-function fakeServer() {
+function fakeServer(modules: Array<{ file: string | null }> = []) {
     const httpServer = new EventEmitter();
     lastServer = {
-        ws: { on: vi.fn() },
+        ws: { on: vi.fn(), send: vi.fn() },
+        moduleGraph: {
+            idToModuleMap: new Map(modules.map((module, index) => [String(index), module])),
+            invalidateModule: vi.fn(),
+        },
         watcher: new EventEmitter(),
         httpServer,
     } as unknown as ViteDevServer & { watcher: EventEmitter };
@@ -463,7 +467,12 @@ describe('typefinder vite plugin – serve mode', () => {
 /* ------------------------------------------------------------------ */
 
 // vi.mock factories are hoisted — use vi.hoisted to declare the mock fn
-const { mockExec } = vi.hoisted(() => ({ mockExec: vi.fn() }));
+const { mockExec, mockLoadVue } = vi.hoisted(() => ({
+    mockExec: vi.fn(),
+    mockLoadVue: vi.fn((): ((file: string) => void) | null => null),
+}));
+
+vi.mock('../src/vue', () => ({ loadVueTypeCacheInvalidator: mockLoadVue }));
 
 vi.mock('node:child_process', async (importOriginal) => {
     const actual = await importOriginal<typeof import('node:child_process')>();
@@ -489,6 +498,115 @@ vi.mock('node:util', async (importOriginal) => {
     };
 });
 
+describe('typefinder vite plugin – Vue type cache', () => {
+    const invalidateTypeCache = vi.fn();
+    let fakeWatcher: Watcher;
+
+    beforeEach(() => {
+        fakeWatcher = Object.assign(new EventEmitter(), {
+            handshake: HANDSHAKE,
+            dead: false,
+            regen: vi.fn().mockResolvedValue({ ...REGEN_RESPONSE, changed: ['pages.d.ts', 'models/User.d.ts'] }),
+            kill: vi.fn().mockResolvedValue(undefined),
+        }) as unknown as Watcher;
+        vi.spyOn(Watcher, 'spawn').mockResolvedValue(fakeWatcher);
+        vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+        mockLoadVue.mockReturnValue(invalidateTypeCache);
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+        invalidateTypeCache.mockReset();
+        mockLoadVue.mockReset();
+        mockLoadVue.mockReturnValue(null);
+    });
+
+    it('loads Vue from the Vite root', async () => {
+        const plugin = hooks(typefinder());
+        plugin.configResolved(resolvedConfig());
+        await plugin.configureServer(fakeServer());
+
+        expect(mockLoadVue).toHaveBeenCalledWith('/project');
+    });
+
+    it('clears the type cache of every changed file and reloads the compiled .vue modules', async () => {
+        const vue = { file: '/project/resources/js/Pages/Show.vue' };
+        const plugin = hooks(typefinder());
+        plugin.configResolved(resolvedConfig());
+        await plugin.configureServer(fakeServer([vue, { file: '/project/resources/js/app.ts' }, { file: null }]));
+
+        await plugin.buildStart();
+
+        expect(invalidateTypeCache).toHaveBeenCalledWith('/tmp/out/pages.d.ts');
+        expect(invalidateTypeCache).toHaveBeenCalledWith('/tmp/out/models/User.d.ts');
+        expect(lastServer!.moduleGraph.invalidateModule).toHaveBeenCalledTimes(1);
+        expect(lastServer!.moduleGraph.invalidateModule).toHaveBeenCalledWith(vue);
+        expect(lastServer!.ws.send).toHaveBeenCalledWith({ type: 'full-reload' });
+    });
+
+    it('refreshes after a regen triggered by a file change', async () => {
+        vi.useFakeTimers();
+        try {
+            const plugin = hooks(typefinder());
+            plugin.configResolved(resolvedConfig());
+            await plugin.configureServer(fakeServer([{ file: '/project/resources/js/Pages/Show.vue' }]));
+
+            fileEvent('/app/Models/User.php');
+            await vi.advanceTimersByTimeAsync(200);
+
+            expect(invalidateTypeCache).toHaveBeenCalledWith('/tmp/out/pages.d.ts');
+            expect(lastServer!.ws.send).toHaveBeenCalledWith({ type: 'full-reload' });
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('maps the output path to the host with pathMap', async () => {
+        const plugin = hooks(typefinder({ pathMap: { '/tmp': '/host' } }));
+        plugin.configResolved(resolvedConfig());
+        await plugin.configureServer(fakeServer());
+
+        await plugin.buildStart();
+
+        expect(invalidateTypeCache).toHaveBeenCalledWith('/host/out/pages.d.ts');
+    });
+
+    it('does not reload when no .vue module is compiled yet', async () => {
+        const plugin = hooks(typefinder());
+        plugin.configResolved(resolvedConfig());
+        await plugin.configureServer(fakeServer([{ file: '/project/resources/js/app.ts' }]));
+
+        await plugin.buildStart();
+
+        expect(invalidateTypeCache).toHaveBeenCalled();
+        expect(lastServer!.ws.send).not.toHaveBeenCalled();
+    });
+
+    it('does nothing when the regen changed no file', async () => {
+        (fakeWatcher.regen as ReturnType<typeof vi.fn>).mockResolvedValue({ ...REGEN_RESPONSE, changed: [] });
+        const plugin = hooks(typefinder());
+        plugin.configResolved(resolvedConfig());
+        await plugin.configureServer(fakeServer([{ file: '/project/resources/js/Pages/Show.vue' }]));
+
+        await plugin.buildStart();
+
+        expect(invalidateTypeCache).not.toHaveBeenCalled();
+        expect(lastServer!.ws.send).not.toHaveBeenCalled();
+    });
+
+    it('does nothing without Vue', async () => {
+        mockLoadVue.mockReturnValue(null);
+        const plugin = hooks(typefinder());
+        plugin.configResolved(resolvedConfig());
+        await plugin.configureServer(fakeServer([{ file: '/project/resources/js/Pages/Show.vue' }]));
+
+        await plugin.buildStart();
+
+        expect(lastServer!.moduleGraph.invalidateModule).not.toHaveBeenCalled();
+        expect(lastServer!.ws.send).not.toHaveBeenCalled();
+    });
+});
+
 describe('typefinder vite plugin – build mode', () => {
     let stderrSpy: MockInstance;
 
@@ -504,6 +622,7 @@ describe('typefinder vite plugin – build mode', () => {
     afterEach(() => {
         mockExec.mockReset();
         vi.restoreAllMocks();
+        vi.unstubAllEnvs();
     });
 
     it('runs buildCommand during buildStart in build mode', async () => {
@@ -542,6 +661,29 @@ describe('typefinder vite plugin – build mode', () => {
         expect(stderrSpy).toHaveBeenCalledWith(
             expect.stringContaining('build-time generation disabled'),
         );
+    });
+
+    it.each(['1', 'true', 'yes'])('TYPEFINDER_SKIP_BUILD=%s skips generation and logs', async (value) => {
+        vi.stubEnv('TYPEFINDER_SKIP_BUILD', value);
+        const plugin = hooks(typefinder());
+        plugin.configResolved(resolvedConfig({ command: 'build' } as Partial<ResolvedConfig>));
+
+        await plugin.buildStart();
+
+        expect(mockExec).not.toHaveBeenCalled();
+        expect(stderrSpy).toHaveBeenCalledWith(
+            expect.stringContaining('TYPEFINDER_SKIP_BUILD'),
+        );
+    });
+
+    it.each(['', '0', 'false', 'FALSE'])('TYPEFINDER_SKIP_BUILD=%j still generates', async (value) => {
+        vi.stubEnv('TYPEFINDER_SKIP_BUILD', value);
+        const plugin = hooks(typefinder());
+        plugin.configResolved(resolvedConfig({ command: 'build' } as Partial<ResolvedConfig>));
+
+        await plugin.buildStart();
+
+        expect(mockExec).toHaveBeenCalled();
     });
 
     it('throws when buildCommand fails', async () => {

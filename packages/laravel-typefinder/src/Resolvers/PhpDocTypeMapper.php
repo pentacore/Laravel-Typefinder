@@ -97,6 +97,9 @@ final class PhpDocTypeMapper
     /** The method whose doc the current map() call reads, named in warnings. */
     private string $method = 'toArray';
 
+    /** What warnings of the current map() call name instead of `{resource}::{method}() @return`. */
+    private ?string $origin = null;
+
     /**
      * @param  null|callable(string): void  $onWarn
      */
@@ -109,12 +112,15 @@ final class PhpDocTypeMapper
      * Map one type tree. Identical warnings within one call are emitted once.
      *
      * @param  string  $method  the resource method whose `@return` this is (a helper when composing)
+     * @param  ?string  $origin  where the type is written, named in warnings in place of
+     *                           `{resource}::{method}() @return` (a type that is no return tag)
      * @return array<string, mixed>
      */
-    public function map(TypeNode $type, PhpDocScope $scope, string $fieldPath, string $method = 'toArray'): array
+    public function map(TypeNode $type, PhpDocScope $scope, string $fieldPath, string $method = 'toArray', ?string $origin = null): array
     {
         $this->warned = [];
         $this->method = $method;
+        $this->origin = $origin;
 
         return $this->mapType($type, $scope, $fieldPath);
     }
@@ -547,9 +553,8 @@ final class PhpDocTypeMapper
     private function warn(TypeNode $type, PhpDocScope $scope, string $fieldPath, string $emitted = 'unknown'): void
     {
         $message = sprintf(
-            '%s::%s() @return: "%s" has unsupported type %s — emitted as %s',
-            $scope->resourceFqcn,
-            $this->method,
+            '%s: "%s" has unsupported type %s — emitted as %s',
+            $this->origin ?? sprintf('%s::%s() @return', $scope->resourceFqcn, $this->method),
             $fieldPath,
             (string) $type,
             $emitted,
