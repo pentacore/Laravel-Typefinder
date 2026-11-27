@@ -61,7 +61,8 @@ typefinder({
     command: 'php artisan typefinder:watch',
 
     // Shell command used in `vite build` (one-shot, no watcher).
-    // Set to `false` to skip generation entirely in build mode.
+    // Set to `false` to skip generation entirely in build mode
+    // (the TYPEFINDER_SKIP_BUILD environment variable does the same).
     buildCommand: 'php artisan typefinder:generate --json',
 
     // Override the paths the plugin watches. When unset (the default),
@@ -133,9 +134,21 @@ The watched paths are read from the watcher's startup handshake, which mirrors y
 
 Creating, editing or deleting a migration triggers a full regeneration. The schema itself changes only when the migration runs, and the watcher notices that on the next regeneration: after `php artisan migrate`, save any watched file (or send the `typefinder:full-regen` event) to pick up the new columns.
 
+**Vue:** Vue's SFC compiler caches the types it resolves for `defineProps<PageProps['Users/Show']>()`, and the generated files are not in Vite's module graph, so nothing would tell it they changed: new props would compile to no props until the dev server restarts. When the project has `vue` installed, the plugin clears that cache for every file a regeneration changed, invalidates the `.vue` modules already compiled and reloads the page. Without Vue this does nothing.
+
 Warnings and per-file failures of every regeneration, the initial one included, are written to stderr. A regeneration that gets no answer within `regenTimeoutMs` is reported as failed and the next one is sent.
 
-**Production (`vite build`):** No watcher. The plugin runs `typefinder:generate --json` once in `buildStart`, prints its warnings, and fails the build on non-zero exit with the generator's error. Set `buildCommand: false` to skip generation entirely (e.g. for pre-built containers without a PHP runtime).
+**Production (`vite build`):** No watcher. The plugin runs `typefinder:generate --json` once in `buildStart`, prints its warnings, and fails the build on non-zero exit with the generator's error. Set `buildCommand: false`, or the `TYPEFINDER_SKIP_BUILD` environment variable, to skip generation entirely.
+
+### Builds without a database (Docker, CI)
+
+Generating reads the database schema, so a build without a database (a Docker image build, a frontend-only CI job) cannot run it. Commit the generated types and skip build-time generation there: set `TYPEFINDER_SKIP_BUILD` to any value except empty, `0` or `false`, and the plugin uses the committed files as they are.
+
+```dockerfile
+RUN npm ci && TYPEFINDER_SKIP_BUILD=1 npm run build
+```
+
+Keep a check that the committed types are current where the database is available, e.g. `php artisan typefinder:generate --check` in the test job.
 
 **Shutdown:** The watcher is killed on `closeBundle` and on process exit. A PHP fatal error or out-of-memory while regenerating ends only the worker of that request: the plugin logs the error and the watcher keeps running. If the watcher itself dies mid-session, the plugin logs the error and stops regenerating — restart the dev server to recover.
 

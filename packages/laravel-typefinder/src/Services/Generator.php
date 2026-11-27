@@ -28,8 +28,11 @@ use ReflectionClass;
  */
 final class Generator
 {
-    /** Categories whose extractions depend on which models and enums get a type. */
-    private const array READ_GENERATED_CLASSES = ['resources', 'inertia'];
+    /**
+     * Categories whose extractions depend on which models and enums get a
+     * type (a PHPDoc type names them: page props, broadcast payloads).
+     */
+    private const array READ_GENERATED_CLASSES = ['resources', 'inertia', 'broadcasting'];
 
     public function __construct(
         private readonly TypefinderRegistry $typefinderRegistry,

@@ -6,7 +6,9 @@ namespace Pentacore\Typefinder\Extractors;
 
 use Pentacore\Typefinder\Attributes\TypefinderIgnore;
 use Pentacore\Typefinder\Attributes\TypefinderPage;
+use Pentacore\Typefinder\Resolvers\PagePropType;
 use Pentacore\Typefinder\Support\ClassDiscovery;
+use Pentacore\Typefinder\Support\GeneratedClasses;
 use ReflectionAttribute;
 use ReflectionClass;
 use ReflectionMethod;
@@ -14,6 +16,17 @@ use Throwable;
 
 class ControllerExtractor
 {
+    private readonly PagePropType $pagePropType;
+
+    /**
+     * @param  ?GeneratedClasses  $classes  the models, enums and resources a PHPDoc prop type may name (discovered from config when null)
+     * @param  null|callable(string): void  $onWarn  told about prop types that are emitted as `unknown`
+     */
+    public function __construct(?GeneratedClasses $classes = null, ?callable $onWarn = null)
+    {
+        $this->pagePropType = new PagePropType($classes ?? new GeneratedClasses, $onWarn);
+    }
+
     /**
      * @return list<array{component: string, props: array<string, string>, optional: list<string>, source: string}>
      */
@@ -41,7 +54,7 @@ class ControllerExtractor
                 $instance = $attr->newInstance();
                 $results[] = [
                     'component' => $instance->component,
-                    'props' => $instance->props,
+                    'props' => $this->propTypes($instance->props, $reflectionClass->getName(), $reflectionMethod->getName()),
                     'optional' => $instance->optional,
                     'source' => $controllerClass.'::'.$reflectionMethod->getName(),
                 ];
@@ -49,6 +62,23 @@ class ControllerExtractor
         }
 
         return $results;
+    }
+
+    /**
+     * Each prop's TypeScript type; a PHPDoc type is converted (#247).
+     *
+     * @param  array<array-key, string>  $props
+     * @param  class-string  $controller
+     * @return array<string, string>
+     */
+    private function propTypes(array $props, string $controller, string $method): array
+    {
+        $types = [];
+        foreach ($props as $name => $type) {
+            $types[(string) $name] = $this->pagePropType->resolve((string) $type, $controller, $method, (string) $name);
+        }
+
+        return $types;
     }
 
     /**

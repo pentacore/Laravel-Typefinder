@@ -201,6 +201,50 @@ trait RendersResources
     }
 
     /**
+     * A type-tree node as TypeScript text whose model, enum and resource
+     * leaves stay fully qualified class names (`\App\Models\User`), for
+     * text that is resolved later as a page prop is.
+     *
+     * @param  array<string, mixed>  $node
+     */
+    public function renderTypeNodeWithClassNames(array $node): string
+    {
+        $imports = [];
+
+        return $this->renderTypeNode(self::classLeavesAsNames($node), $imports, '', [], [], [], '');
+    }
+
+    /**
+     * @param  array<string, mixed>  $node
+     * @return array<string, mixed>
+     */
+    private static function classLeavesAsNames(array $node): array
+    {
+        if (in_array($node['kind'], ['model', 'enum', 'resource'], true)) {
+            return ['kind' => 'ts', 'ts' => '\\'.ltrim((string) $node['fqcn'], '\\')];
+        }
+
+        foreach (['of', 'key'] as $child) {
+            if (isset($node[$child]['kind'])) {
+                $node[$child] = self::classLeavesAsNames($node[$child]);
+            } elseif (isset($node[$child]) && is_array($node[$child])) {
+                $node[$child] = array_map(self::classLeavesAsNames(...), $node[$child]);
+            }
+        }
+
+        foreach (['items', 'fields'] as $members) {
+            if (isset($node[$members])) {
+                $node[$members] = array_map(
+                    static fn (array $member): array => ['type' => self::classLeavesAsNames($member['type'])] + $member,
+                    $node[$members],
+                );
+            }
+        }
+
+        return $node;
+    }
+
+    /**
      * `Model['col']` for a column of a generated model's type; `unknown`
      * for anything else (a relation, an accessor the type lacks).
      *
