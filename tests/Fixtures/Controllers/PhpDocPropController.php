@@ -34,6 +34,7 @@ class PhpDocPropController
         'model' => User::class,
         'nullable' => 'string | null',
         'classStringList' => 'list<'.User::class.'>',
+        'tsQuotesAndArrow' => "{ label: 'a}b' | \"it\\\"s\" | `x>`; run: () => void }",
         'classStringNullable' => '?'.UserResource::class,
     ])]
     public function show(): void {}
@@ -43,6 +44,7 @@ class PhpDocPropController
         'empty' => '',
         'callable' => 'callable',
         'mixed' => 'array<string, number>',
+        'mismatched' => '{ id: number ]',
     ])]
     public function broken(): void {}
 }

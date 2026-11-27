@@ -10,7 +10,9 @@ use App\Models\User;
 use Pentacore\Typefinder\Extractors\ControllerExtractor;
 use Pentacore\Typefinder\Renderers\TypeScriptRenderer;
 use Pentacore\Typefinder\Support\GeneratedClasses;
+use RuntimeException;
 use Tests\Fixtures\Controllers\PhpDocPropController;
+use Tests\Fixtures\Controllers\ThrowingAutoloadPropController;
 use Tests\TestCase;
 
 /**
@@ -71,6 +73,7 @@ final class PagePropTypeTest extends TestCase
         $this->assertSame('Array<number>', $props['tsGeneric']);
         $this->assertSame('Record<string, number>', $props['tsRecord']);
         $this->assertSame("'a' | 'b'", $props['literal']);
+        $this->assertSame("{ label: 'a}b' | \"it\\\"s\" | `x>`; run: () => void }", $props['tsQuotesAndArrow']);
         $this->assertSame(User::class, $props['model']);
         $this->assertSame('string | null', $props['nullable']);
     }
@@ -79,14 +82,37 @@ final class PagePropTypeTest extends TestCase
     {
         $props = $this->props['PhpDoc/Broken'];
 
-        $this->assertSame(['unbalanced' => 'unknown', 'empty' => 'unknown', 'callable' => 'unknown', 'mixed' => 'unknown'], $props);
+        $this->assertSame(['unbalanced' => 'unknown', 'empty' => 'unknown', 'callable' => 'unknown', 'mixed' => 'unknown', 'mismatched' => 'unknown'], $props);
 
         $origin = PhpDocPropController::class.'::broken() #[TypefinderPage] prop';
         $this->assertContains($origin.' "unbalanced": "array{id: int" is no valid type (unbalanced brackets or quotes) — emitted as unknown', $this->warnings);
         $this->assertContains($origin.' "empty": is empty — emitted as unknown', $this->warnings);
         $this->assertContains($origin.' "callable": "callable" has unsupported type callable — emitted as unknown', $this->warnings);
         $this->assertContains($origin.' "mixed": "array<string, number>" mixes PHPDoc and TypeScript syntax; write it in one of them — emitted as unknown', $this->warnings);
-        $this->assertCount(4, $this->warnings);
+        $this->assertContains($origin.' "mismatched": "{ id: number ]" is no valid type (unbalanced brackets or quotes) — emitted as unknown', $this->warnings);
+        $this->assertCount(5, $this->warnings);
+    }
+
+    public function test_a_class_whose_autoloader_throws_is_no_class(): void
+    {
+        $autoload = static function (string $class): void {
+            if (str_ends_with($class, 'Broken\\Thing')) {
+                throw new RuntimeException('cannot load '.$class);
+            }
+        };
+        spl_autoload_register($autoload);
+
+        try {
+            $warnings = [];
+            $pages = new ControllerExtractor(new GeneratedClasses([], [], []), function (string $warning) use (&$warnings): void {
+                $warnings[] = $warning;
+            })->extract(ThrowingAutoloadPropController::class);
+        } finally {
+            spl_autoload_unregister($autoload);
+        }
+
+        $this->assertSame(['things' => 'unknown'], $pages[0]['props']);
+        $this->assertStringContainsString('mixes PHPDoc and TypeScript syntax', $warnings[0]);
     }
 
     public function test_converted_props_render_with_imports_and_resource_wrapping(): void
